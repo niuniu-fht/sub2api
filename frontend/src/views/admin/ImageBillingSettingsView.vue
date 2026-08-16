@@ -244,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Select from '@/components/common/Select.vue'
 import { accountsAPI, groupsAPI } from '@/api/admin'
@@ -277,6 +277,7 @@ const saving = ref(false)
 const savingRouting = ref(false)
 const groups = ref<AdminGroup[]>([])
 const accounts = ref<Account[]>([])
+const lastAutoReloadAt = ref(0)
 
 const form = reactive({
   two_k_pixel_threshold: DEFAULT_2K_THRESHOLD,
@@ -405,24 +406,58 @@ function buildRoutingPayload(): { groups: Record<string, { two_k_account_id: num
   return { groups: payload }
 }
 
+async function loadRoutingAccounts(): Promise<Account[]> {
+  // 后端 page_size 上限是 1000；传 10000 会被回退成默认 20，导致新加账号不出现在调度下拉框。
+  const pageSize = 1000
+  const firstPage = await accountsAPI.list(1, pageSize, { lite: 'true' })
+  const allAccounts = [...(firstPage.items || [])]
+  const totalPages = Math.max(1, Number(firstPage.pages) || 1)
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const nextPage = await accountsAPI.list(page, pageSize, { lite: 'true' })
+    allAccounts.push(...(nextPage.items || []))
+  }
+
+  return allAccounts
+}
+
 async function loadAllSettings(): Promise<void> {
+  if (loading.value) return
   loading.value = true
   try {
-    const [thresholds, groupItems, accountPage, routing] = await Promise.all([
+    const [thresholds, groupItems, accountItems, routing] = await Promise.all([
       getImageBillingThresholdSettings(),
       groupsAPI.getAllIncludingInactive(),
-      accountsAPI.list(1, 10000, { lite: 'true' }),
+      loadRoutingAccounts(),
       getImageBillingAccountRoutingSettings(),
     ])
     form.two_k_pixel_threshold = thresholds.two_k_pixel_threshold || DEFAULT_2K_THRESHOLD
     form.four_k_pixel_threshold = thresholds.four_k_pixel_threshold || DEFAULT_4K_THRESHOLD
     groups.value = groupItems || []
-    accounts.value = accountPage.items || []
+    accounts.value = accountItems || []
     applyRoutingSettings(routing)
   } catch (error: any) {
     appStore.showError(error?.message || '加载图片计费配置失败')
   } finally {
     loading.value = false
+  }
+}
+
+function autoReloadSettings(): void {
+  if (saving.value || savingRouting.value) return
+  const now = Date.now()
+  if (now - lastAutoReloadAt.value < 1500) return
+  lastAutoReloadAt.value = now
+  void loadAllSettings()
+}
+
+function handleWindowFocus(): void {
+  autoReloadSettings()
+}
+
+function handleVisibilityChange(): void {
+  if (document.visibilityState === 'visible') {
+    autoReloadSettings()
   }
 }
 
@@ -439,5 +474,14 @@ async function saveRoutingSettings(): Promise<void> {
   }
 }
 
-onMounted(loadAllSettings)
+onMounted(() => {
+  void loadAllSettings()
+  window.addEventListener('focus', handleWindowFocus)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', handleWindowFocus)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 </script>
