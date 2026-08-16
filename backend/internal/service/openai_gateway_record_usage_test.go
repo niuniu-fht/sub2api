@@ -1896,7 +1896,7 @@ func TestOpenAIGatewayServiceRecordUsage_ImageOnlyUsageStillPersists(t *testing.
 }
 
 func TestOpenAIGatewayServiceRecordUsage_EmptyImageSizeDefaultsBeforeBillingAndPersistence(t *testing.T) {
-	imagePrice2K := 0.31
+	imagePrice1K := 0.13
 	groupID := int64(1201)
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
@@ -1915,7 +1915,7 @@ func TestOpenAIGatewayServiceRecordUsage_EmptyImageSizeDefaultsBeforeBillingAndP
 			Group: &Group{
 				ID:             groupID,
 				RateMultiplier: 1.0,
-				ImagePrice2K:   &imagePrice2K,
+				ImagePrice1K:   &imagePrice1K,
 			},
 		},
 		User:    &User{ID: 21201},
@@ -1926,13 +1926,13 @@ func TestOpenAIGatewayServiceRecordUsage_EmptyImageSizeDefaultsBeforeBillingAndP
 	require.NotNil(t, usageRepo.lastLog)
 	require.Equal(t, 2, usageRepo.lastLog.ImageCount)
 	require.NotNil(t, usageRepo.lastLog.ImageSize)
-	require.Equal(t, ImageBillingSize2K, *usageRepo.lastLog.ImageSize)
+	require.Equal(t, ImageBillingSize1K, *usageRepo.lastLog.ImageSize)
 	require.NotNil(t, usageRepo.lastLog.ImageSizeSource)
 	require.Equal(t, ImageSizeSourceDefault, *usageRepo.lastLog.ImageSizeSource)
 	require.Nil(t, usageRepo.lastLog.ImageInputSize)
 	require.Nil(t, usageRepo.lastLog.ImageOutputSize)
-	require.InDelta(t, 0.62, usageRepo.lastLog.TotalCost, 1e-12)
-	require.InDelta(t, 0.62, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 0.26, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 0.26, usageRepo.lastLog.ActualCost, 1e-12)
 	require.NotNil(t, usageRepo.lastLog.BillingMode)
 	require.Equal(t, string(BillingModeImage), *usageRepo.lastLog.BillingMode)
 }
@@ -2807,6 +2807,6 @@ func TestGatewayServiceCalculateRecordUsageCost_ChannelImageBillingNormalizesMis
 
 	require.NotNil(t, cost)
 	require.Equal(t, string(BillingModeImage), cost.BillingMode)
-	require.InDelta(t, 0.44, cost.TotalCost, 1e-12)
-	require.InDelta(t, 0.44, cost.ActualCost, 1e-12)
+	require.InDelta(t, 0.20, cost.TotalCost, 1e-12)
+	require.InDelta(t, 0.20, cost.ActualCost, 1e-12)
 }

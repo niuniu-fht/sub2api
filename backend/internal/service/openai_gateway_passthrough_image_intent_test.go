@@ -53,7 +53,7 @@ func TestOpenAIGatewayService_APIKeyPassthrough_ImageIntentPreservesGateAndBilli
 		require.Equal(t, body, upstream.lastBody)
 		require.Equal(t, 1, result.ImageCount)
 		require.Equal(t, "gpt-image-2", result.BillingModel)
-		require.Equal(t, "2K", result.ImageSize)
+		require.Equal(t, "1K", result.ImageSize)
 		require.Equal(t, "2048x1152", result.ImageInputSize)
 	})
 }

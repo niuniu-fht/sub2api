@@ -164,8 +164,8 @@ func (g *Group) GetImagePrice(imageSize string) *float64 {
 	case "4K":
 		return g.ImagePrice4K
 	default:
-		// 未知尺寸默认按 2K 计费
-		return g.ImagePrice2K
+		// 未知尺寸默认按 1K 计费
+		return g.ImagePrice1K
 	}
 }
 

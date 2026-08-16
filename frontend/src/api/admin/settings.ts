@@ -1434,6 +1434,57 @@ export interface OpenAIFastPolicySettings {
   rules: OpenAIFastPolicyRule[];
 }
 
+
+// ==================== Image Billing Threshold Settings ====================
+
+export interface ImageBillingThresholdSettings {
+  two_k_pixel_threshold: number;
+  four_k_pixel_threshold: number;
+}
+
+export async function getImageBillingThresholdSettings(): Promise<ImageBillingThresholdSettings> {
+  const { data } = await apiClient.get<ImageBillingThresholdSettings>(
+    "/admin/settings/image-billing-thresholds",
+  );
+  return data;
+}
+
+export async function updateImageBillingThresholdSettings(
+  settings: ImageBillingThresholdSettings,
+): Promise<ImageBillingThresholdSettings> {
+  const { data } = await apiClient.put<ImageBillingThresholdSettings>(
+    "/admin/settings/image-billing-thresholds",
+    settings,
+  );
+  return data;
+}
+
+export interface ImageBillingGroupAccountRouting {
+  two_k_account_id?: number;
+  four_k_account_id?: number;
+}
+
+export interface ImageBillingAccountRoutingSettings {
+  groups: Record<string, ImageBillingGroupAccountRouting>;
+}
+
+export async function getImageBillingAccountRoutingSettings(): Promise<ImageBillingAccountRoutingSettings> {
+  const { data } = await apiClient.get<ImageBillingAccountRoutingSettings>(
+    "/admin/settings/image-billing-account-routing",
+  );
+  return { groups: data.groups || {} };
+}
+
+export async function updateImageBillingAccountRoutingSettings(
+  settings: ImageBillingAccountRoutingSettings,
+): Promise<ImageBillingAccountRoutingSettings> {
+  const { data } = await apiClient.put<ImageBillingAccountRoutingSettings>(
+    "/admin/settings/image-billing-account-routing",
+    settings,
+  );
+  return { groups: data.groups || {} };
+}
+
 // ==================== Beta Policy Settings ====================
 
 /**
@@ -1565,6 +1616,10 @@ export const settingsAPI = {
   updateStreamTimeoutSettings,
   getRectifierSettings,
   updateRectifierSettings,
+  getImageBillingThresholdSettings,
+  updateImageBillingThresholdSettings,
+  getImageBillingAccountRoutingSettings,
+  updateImageBillingAccountRoutingSettings,
   getBetaPolicySettings,
   updateBetaPolicySettings,
   getWebSearchEmulationConfig,

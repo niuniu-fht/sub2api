@@ -236,6 +236,80 @@ func (h *SettingHandler) GetStreamTimeoutSettings(c *gin.Context) {
 	})
 }
 
+// GetImageBillingThresholdSettings 获取图片计费像素阈值配置
+// GET /api/v1/admin/settings/image-billing-thresholds
+func (h *SettingHandler) GetImageBillingThresholdSettings(c *gin.Context) {
+	settings, err := h.settingService.GetImageBillingAreaThresholdSettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"two_k_pixel_threshold":  settings.TwoKPixelThreshold,
+		"four_k_pixel_threshold": settings.FourKPixelThreshold,
+	})
+}
+
+type UpdateImageBillingThresholdSettingsRequest struct {
+	TwoKPixelThreshold  int64 `json:"two_k_pixel_threshold"`
+	FourKPixelThreshold int64 `json:"four_k_pixel_threshold"`
+}
+
+// UpdateImageBillingThresholdSettings 更新图片计费像素阈值配置
+// PUT /api/v1/admin/settings/image-billing-thresholds
+func (h *SettingHandler) UpdateImageBillingThresholdSettings(c *gin.Context) {
+	var req UpdateImageBillingThresholdSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	settings, err := h.settingService.SetImageBillingAreaThresholdSettings(c.Request.Context(), service.ImageBillingAreaThresholds{
+		TwoKPixelThreshold:  req.TwoKPixelThreshold,
+		FourKPixelThreshold: req.FourKPixelThreshold,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"two_k_pixel_threshold":  settings.TwoKPixelThreshold,
+		"four_k_pixel_threshold": settings.FourKPixelThreshold,
+	})
+}
+
+// GetImageBillingAccountRoutingSettings 获取图片档位账号调度配置
+// GET /api/v1/admin/settings/image-billing-account-routing
+func (h *SettingHandler) GetImageBillingAccountRoutingSettings(c *gin.Context) {
+	settings, err := h.settingService.GetImageBillingAccountRoutingSettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, settings)
+}
+
+type UpdateImageBillingAccountRoutingSettingsRequest struct {
+	Groups map[int64]service.ImageBillingGroupAccountRouting `json:"groups"`
+}
+
+// UpdateImageBillingAccountRoutingSettings 更新图片档位账号调度配置
+// PUT /api/v1/admin/settings/image-billing-account-routing
+func (h *SettingHandler) UpdateImageBillingAccountRoutingSettings(c *gin.Context) {
+	var req UpdateImageBillingAccountRoutingSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	settings, err := h.settingService.SetImageBillingAccountRoutingSettings(c.Request.Context(), service.ImageBillingAccountRoutingSettings{
+		Groups: req.Groups,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, settings)
+}
+
 // GetRectifierSettings 获取请求整流器配置
 // GET /api/v1/admin/settings/rectifier
 func (h *SettingHandler) GetRectifierSettings(c *gin.Context) {

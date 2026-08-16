@@ -967,6 +967,18 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	cfg := s.schedulingConfig()
+	if selection, configured, err := s.selectForcedOpenAIImageBillingAccount(ctx, OpenAIAccountScheduleRequest{
+		GroupID:            groupID,
+		Platform:           platform,
+		SessionHash:        sessionHash,
+		RequestedModel:     requestedModel,
+		RequiredTransport:  OpenAIUpstreamTransportHTTPSSE,
+		RequiredCapability: requiredCapability,
+		RequireCompact:     requireCompact,
+		ExcludedIDs:        excludedIDs,
+	}); configured {
+		return selection, err
+	}
 	preferLowUpstreamRate := useUpstreamTokenCost && s.isOpenAILowUpstreamRatePriorityEnabled(ctx)
 	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
 	var stickyAccountID int64

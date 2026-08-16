@@ -140,6 +140,7 @@ docs/*
 !docs/legal/*.md
 .serena/
 .codex/
+.local-data/
 frontend/coverage/
 aicodex
 output/

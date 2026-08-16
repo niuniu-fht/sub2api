@@ -253,7 +253,7 @@ func TestGatewayServiceRecordUsage_PreservesLoopedChannelAndAccountUpstreamModel
 }
 
 func TestGatewayServiceRecordUsage_EmptyImageSizeDefaultsBeforeBillingAndPersistence(t *testing.T) {
-	imagePrice2K := 0.19
+	imagePrice1K := 0.09
 	groupID := int64(901)
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	svc := newGatewayRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
@@ -272,7 +272,7 @@ func TestGatewayServiceRecordUsage_EmptyImageSizeDefaultsBeforeBillingAndPersist
 			Group: &Group{
 				ID:             groupID,
 				RateMultiplier: 1.0,
-				ImagePrice2K:   &imagePrice2K,
+				ImagePrice1K:   &imagePrice1K,
 			},
 		},
 		User:    &User{ID: 601},
@@ -283,13 +283,13 @@ func TestGatewayServiceRecordUsage_EmptyImageSizeDefaultsBeforeBillingAndPersist
 	require.NotNil(t, usageRepo.lastLog)
 	require.Equal(t, 1, usageRepo.lastLog.ImageCount)
 	require.NotNil(t, usageRepo.lastLog.ImageSize)
-	require.Equal(t, ImageBillingSize2K, *usageRepo.lastLog.ImageSize)
+	require.Equal(t, ImageBillingSize1K, *usageRepo.lastLog.ImageSize)
 	require.NotNil(t, usageRepo.lastLog.ImageInputSize)
 	require.Equal(t, "auto", *usageRepo.lastLog.ImageInputSize)
 	require.NotNil(t, usageRepo.lastLog.ImageSizeSource)
 	require.Equal(t, ImageSizeSourceDefault, *usageRepo.lastLog.ImageSizeSource)
-	require.InDelta(t, 0.19, usageRepo.lastLog.TotalCost, 1e-12)
-	require.InDelta(t, 0.19, usageRepo.lastLog.ActualCost, 1e-12)
+	require.InDelta(t, 0.09, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 0.09, usageRepo.lastLog.ActualCost, 1e-12)
 }
 
 func TestGatewayServiceRecordUsage_PeakRateAffectsTokenModeImageOutputTokens(t *testing.T) {

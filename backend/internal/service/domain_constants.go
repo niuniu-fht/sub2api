@@ -316,6 +316,10 @@ const (
 	SettingKeyDefaultSubscriptions = "default_subscriptions"  // 新用户默认订阅列表（JSON）
 	SettingKeyDefaultUserRPMLimit  = "default_user_rpm_limit" // 新用户默认 RPM 限制（0 = 不限制）
 
+	SettingKeyImageBilling2KPixelThreshold = "image_billing_2k_pixel_threshold" // 图片计费 2K 档位：width*height 大于该值
+	SettingKeyImageBilling4KPixelThreshold = "image_billing_4k_pixel_threshold" // 图片计费 4K 档位：width*height 大于该值
+	SettingKeyImageBillingAccountRouting   = "image_billing_account_routing"    // 图片档位按分组强制账号调度配置（JSON）
+
 	// 第三方认证来源默认授予配置
 	SettingKeyAuthSourceDefaultEmailBalance             = "auth_source_default_email_balance"
 	SettingKeyAuthSourceDefaultEmailConcurrency         = "auth_source_default_email_concurrency"

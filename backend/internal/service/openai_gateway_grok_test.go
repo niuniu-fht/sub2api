@@ -1011,7 +1011,7 @@ func TestForwardGrokMediaImagesGenerationNormalizesImagineAlias(t *testing.T) {
 	require.Equal(t, "grok-imagine-image-quality", result.Model)
 	require.Equal(t, "grok-imagine-image-quality", result.BillingModel)
 	require.Equal(t, 1, result.ImageCount)
-	require.Equal(t, ImageBillingSize2K, result.ImageSize)
+	require.Equal(t, ImageBillingSize1K, result.ImageSize)
 }
 
 func TestForwardGrokMediaAppliesAccountModelMappingAfterEndpointNormalization(t *testing.T) {

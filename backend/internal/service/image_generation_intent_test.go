@@ -281,7 +281,7 @@ func TestResolveOpenAIResponsesImageBillingConfigToolModelWins(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, "gpt-image-2", imageModel)
-	require.Equal(t, "2K", imageSize)
+	require.Equal(t, "1K", imageSize)
 }
 
 func TestResolveOpenAIResponsesImageBillingConfigFromBodyIgnoresUnrelatedLargeInput(t *testing.T) {
@@ -291,7 +291,7 @@ func TestResolveOpenAIResponsesImageBillingConfigFromBodyIgnoresUnrelatedLargeIn
 	)
 	require.NoError(t, err)
 	require.Equal(t, "gpt-image-2", cfg.Model)
-	require.Equal(t, "2K", cfg.SizeTier)
+	require.Equal(t, "1K", cfg.SizeTier)
 	require.Equal(t, "2048x1152", cfg.InputSize)
 }
 
@@ -302,9 +302,9 @@ func TestResolveOpenAIResponsesImageBillingConfigSupportsOfficialAndCustomSizes(
 		wantTier string
 	}{
 		{
-			name:     "official 2k landscape",
+			name:     "official landscape under 3mp",
 			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","model":"gpt-image-2","size":"2048x1152"}]}`),
-			wantTier: "2K",
+			wantTier: "1K",
 		},
 		{
 			name:     "official 4k landscape",
@@ -312,14 +312,14 @@ func TestResolveOpenAIResponsesImageBillingConfigSupportsOfficialAndCustomSizes(
 			wantTier: "4K",
 		},
 		{
-			name:     "custom valid 2k",
+			name:     "custom under 3mp",
 			body:     []byte(`{"model":"gpt-5.5","tools":[{"type":"image_generation","model":"gpt-image-2","size":"1280x768"}]}`),
-			wantTier: "2K",
+			wantTier: "1K",
 		},
 		{
 			name:     "default image tool model supports flexible size",
 			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","size":"2048x1152"}]}`),
-			wantTier: "2K",
+			wantTier: "1K",
 		},
 		{
 			name:     "top level image size is moved into billing",
@@ -345,7 +345,7 @@ func TestResolveOpenAIResponsesImageBillingConfigDoesNotRejectUnknownSizes(t *te
 	)
 	require.NoError(t, err)
 	require.Equal(t, "gpt-image-1.5", imageModel)
-	require.Equal(t, "2K", imageSize)
+	require.Equal(t, "1K", imageSize)
 }
 
 func TestOpenAIImageOutputCounterDeduplicatesFinalImages(t *testing.T) {

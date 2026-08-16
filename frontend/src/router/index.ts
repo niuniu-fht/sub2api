@@ -585,6 +585,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/image-billing',
+    name: 'AdminImageBilling',
+    component: () => import('@/views/admin/ImageBillingSettingsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Image Billing',
+      titleKey: 'admin.imageBilling.title',
+      descriptionKey: 'admin.imageBilling.description'
+    }
+  },
+  {
     path: '/admin/risk-control',
     name: 'AdminRiskControl',
     component: () => import('@/views/admin/RiskControlView.vue'),

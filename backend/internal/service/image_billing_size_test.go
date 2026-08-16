@@ -14,12 +14,16 @@ func TestClassifyImageBillingTier(t *testing.T) {
 		wantOK   bool
 	}{
 		{name: "explicit 2k square", size: "2048x2048", wantTier: "2K", wantOK: true},
-		{name: "explicit 2k landscape", size: "2048x1152", wantTier: "2K", wantOK: true},
+		{name: "under 3mp stays 1k", size: "2048x1152", wantTier: "1K", wantOK: true},
 		{name: "explicit 4k landscape", size: "3840x2160", wantTier: "4K", wantOK: true},
 		{name: "explicit 4k portrait", size: "2160x3840", wantTier: "4K", wantOK: true},
 		{name: "long edge 1k", size: "1024X768", wantTier: "1K", wantOK: true},
-		{name: "long edge 2k", size: "1280x768", wantTier: "2K", wantOK: true},
-		{name: "long edge 4k", size: "2560x1600", wantTier: "4K", wantOK: true},
+		{name: "long edge no longer bumps tier", size: "1280x768", wantTier: "1K", wantOK: true},
+		{name: "area 2k", size: "2560x1600", wantTier: "2K", wantOK: true},
+		{name: "area boundary 1k", size: "2000x1500", wantTier: "1K", wantOK: true},
+		{name: "area boundary plus one 2k", size: "2001x1500", wantTier: "2K", wantOK: true},
+		{name: "area boundary 2k", size: "3000x2000", wantTier: "2K", wantOK: true},
+		{name: "area boundary plus one 4k", size: "3001x2000", wantTier: "4K", wantOK: true},
 		{name: "tier string 1k", size: "1k", wantTier: "1K", wantOK: true},
 		{name: "empty", size: "", wantOK: false},
 		{name: "auto", size: "auto", wantOK: false},
@@ -33,6 +37,19 @@ func TestClassifyImageBillingTier(t *testing.T) {
 			require.Equal(t, tt.wantTier, gotTier)
 		})
 	}
+}
+
+func TestClassifyImageBillingTierUsesConfiguredAreaThresholds(t *testing.T) {
+	SetImageBillingAreaThresholds(100, 200)
+	defer SetImageBillingAreaThresholds(DefaultImageBilling2KPixelThreshold, DefaultImageBilling4KPixelThreshold)
+
+	tier, ok := ClassifyImageBillingTier("11x10")
+	require.True(t, ok)
+	require.Equal(t, ImageBillingSize2K, tier)
+
+	tier, ok = ClassifyImageBillingTier("21x10")
+	require.True(t, ok)
+	require.Equal(t, ImageBillingSize4K, tier)
 }
 
 func TestResolveImageBillingSize(t *testing.T) {
@@ -63,19 +80,19 @@ func TestResolveImageBillingSize(t *testing.T) {
 		{
 			name:        "auto defaults",
 			inputSize:   "auto",
-			wantBilling: "2K",
+			wantBilling: "1K",
 			wantSource:  ImageSizeSourceDefault,
 		},
 		{
 			name:        "empty defaults",
 			inputSize:   "",
-			wantBilling: "2K",
+			wantBilling: "1K",
 			wantSource:  ImageSizeSourceDefault,
 		},
 		{
 			name:        "invalid defaults",
 			inputSize:   "largest",
-			wantBilling: "2K",
+			wantBilling: "1K",
 			wantSource:  ImageSizeSourceDefault,
 		},
 		{
@@ -85,13 +102,13 @@ func TestResolveImageBillingSize(t *testing.T) {
 			wantBilling:   "4K",
 			wantOutput:    "1024x1024",
 			wantSource:    ImageSizeSourceOutput,
-			wantBreakdown: map[string]int{"1K": 1, "2K": 1, "4K": 1},
+			wantBreakdown: map[string]int{"1K": 2, "4K": 1},
 		},
 		{
 			name:        "unparseable output falls back to parseable input",
 			inputSize:   "2048x1152",
 			outputSizes: []string{"auto"},
-			wantBilling: "2K",
+			wantBilling: "1K",
 			wantOutput:  "auto",
 			wantSource:  ImageSizeSourceInput,
 		},

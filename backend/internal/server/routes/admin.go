@@ -559,6 +559,12 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// 流超时处理配置
 		adminSettings.GET("/stream-timeout", h.Admin.Setting.GetStreamTimeoutSettings)
 		adminSettings.PUT("/stream-timeout", h.Admin.Setting.UpdateStreamTimeoutSettings)
+		// 图片计费阈值配置
+		adminSettings.GET("/image-billing-thresholds", h.Admin.Setting.GetImageBillingThresholdSettings)
+		adminSettings.PUT("/image-billing-thresholds", h.Admin.Setting.UpdateImageBillingThresholdSettings)
+		// 图片档位账号调度配置
+		adminSettings.GET("/image-billing-account-routing", h.Admin.Setting.GetImageBillingAccountRoutingSettings)
+		adminSettings.PUT("/image-billing-account-routing", h.Admin.Setting.UpdateImageBillingAccountRoutingSettings)
 		// 请求整流器配置
 		adminSettings.GET("/rectifier", h.Admin.Setting.GetRectifierSettings)
 		adminSettings.PUT("/rectifier", h.Admin.Setting.UpdateRectifierSettings)

@@ -144,6 +144,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	account := input.Account
 	subscription := input.Subscription
 	if !isGrokVideoUsageResult(result, nil) {
+		if s.settingService != nil {
+			_ = s.settingService.GetImageBillingAreaThresholdSettingsCached(ctx)
+		}
 		ApplyOpenAIImageBillingResolution(result)
 	}
 

@@ -44,22 +44,22 @@ func TestGroup_GetImagePrice_4K(t *testing.T) {
 	require.InDelta(t, 0.30, *result, 0.0001)
 }
 
-// TestGroup_GetImagePrice_UnknownSize 测试未知尺寸回退 2K
+// TestGroup_GetImagePrice_UnknownSize 测试未知尺寸回退 1K
 func TestGroup_GetImagePrice_UnknownSize(t *testing.T) {
-	price2K := 0.15
+	price1K := 0.10
 	group := &Group{
-		ImagePrice2K: &price2K,
+		ImagePrice1K: &price1K,
 	}
 
-	// 未知尺寸 "3K" 应该回退到 2K
+	// 未知尺寸 "3K" 应该回退到 1K
 	result := group.GetImagePrice("3K")
 	require.NotNil(t, result)
-	require.InDelta(t, 0.15, *result, 0.0001)
+	require.InDelta(t, 0.10, *result, 0.0001)
 
-	// 空字符串也回退到 2K
+	// 空字符串也回退到 1K
 	result = group.GetImagePrice("")
 	require.NotNil(t, result)
-	require.InDelta(t, 0.15, *result, 0.0001)
+	require.InDelta(t, 0.10, *result, 0.0001)
 }
 
 // TestGroup_GetImagePrice_NilValues 测试未配置时返回 nil

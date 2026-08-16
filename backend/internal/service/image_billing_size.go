@@ -4,9 +4,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 const (
+	DefaultImageBilling2KPixelThreshold int64 = 3000000
+	DefaultImageBilling4KPixelThreshold int64 = 6000000
+
 	ImageBillingSize1K = "1K"
 	ImageBillingSize2K = "2K"
 	ImageBillingSize4K = "4K"
@@ -25,6 +29,54 @@ type ImageBillingSizeResolution struct {
 	Breakdown   map[string]int
 }
 
+// ImageBillingAreaThresholds controls area-based image billing tier classification.
+// A request is 2K when width*height > TwoKPixelThreshold, and 4K when
+// width*height > FourKPixelThreshold. Otherwise it remains 1K.
+type ImageBillingAreaThresholds struct {
+	TwoKPixelThreshold  int64 `json:"two_k_pixel_threshold"`
+	FourKPixelThreshold int64 `json:"four_k_pixel_threshold"`
+}
+
+var imageBillingAreaThresholdsStore atomic.Value // stores ImageBillingAreaThresholds
+
+func DefaultImageBillingAreaThresholds() ImageBillingAreaThresholds {
+	return ImageBillingAreaThresholds{
+		TwoKPixelThreshold:  DefaultImageBilling2KPixelThreshold,
+		FourKPixelThreshold: DefaultImageBilling4KPixelThreshold,
+	}
+}
+
+func NormalizeImageBillingAreaThresholds(twoKPixelThreshold int64, fourKPixelThreshold int64) ImageBillingAreaThresholds {
+	if twoKPixelThreshold <= 0 {
+		twoKPixelThreshold = DefaultImageBilling2KPixelThreshold
+	}
+	if fourKPixelThreshold <= 0 {
+		fourKPixelThreshold = DefaultImageBilling4KPixelThreshold
+	}
+	if fourKPixelThreshold <= twoKPixelThreshold {
+		fourKPixelThreshold = twoKPixelThreshold * 2
+	}
+	return ImageBillingAreaThresholds{
+		TwoKPixelThreshold:  twoKPixelThreshold,
+		FourKPixelThreshold: fourKPixelThreshold,
+	}
+}
+
+func SetImageBillingAreaThresholds(twoKPixelThreshold int64, fourKPixelThreshold int64) ImageBillingAreaThresholds {
+	thresholds := NormalizeImageBillingAreaThresholds(twoKPixelThreshold, fourKPixelThreshold)
+	imageBillingAreaThresholdsStore.Store(thresholds)
+	return thresholds
+}
+
+func CurrentImageBillingAreaThresholds() ImageBillingAreaThresholds {
+	if value := imageBillingAreaThresholdsStore.Load(); value != nil {
+		if thresholds, ok := value.(ImageBillingAreaThresholds); ok {
+			return NormalizeImageBillingAreaThresholds(thresholds.TwoKPixelThreshold, thresholds.FourKPixelThreshold)
+		}
+	}
+	return DefaultImageBillingAreaThresholds()
+}
+
 func ClassifyImageBillingTier(size string) (string, bool) {
 	trimmed := strings.TrimSpace(size)
 	normalized := strings.ToLower(trimmed)
@@ -37,35 +89,36 @@ func ClassifyImageBillingTier(size string) (string, bool) {
 		return ImageBillingSize2K, true
 	case "4k":
 		return ImageBillingSize4K, true
-	case "2048x2048", "2048x1152":
-		return ImageBillingSize2K, true
-	case "3840x2160", "2160x3840":
-		return ImageBillingSize4K, true
 	}
 
 	width, height, ok := parseImageBillingDimensions(trimmed)
 	if !ok {
 		return "", false
 	}
-	maxEdge := width
-	if height > maxEdge {
-		maxEdge = height
-	}
+
+	thresholds := CurrentImageBillingAreaThresholds()
 	switch {
-	case maxEdge <= 1024:
-		return ImageBillingSize1K, true
-	case maxEdge <= 2048:
+	case imageBillingAreaGreaterThan(width, height, thresholds.FourKPixelThreshold):
+		return ImageBillingSize4K, true
+	case imageBillingAreaGreaterThan(width, height, thresholds.TwoKPixelThreshold):
 		return ImageBillingSize2K, true
 	default:
-		return ImageBillingSize4K, true
+		return ImageBillingSize1K, true
 	}
+}
+
+func imageBillingAreaGreaterThan(width int, height int, threshold int64) bool {
+	if width <= 0 || height <= 0 || threshold < 0 {
+		return false
+	}
+	return int64(width) > threshold/int64(height)
 }
 
 func NormalizeImageBillingTierOrDefault(size string) string {
 	if tier, ok := ClassifyImageBillingTier(size); ok {
 		return tier
 	}
-	return ImageBillingSize2K
+	return ImageBillingSize1K
 }
 
 func ResolveImageBillingSize(inputSize string, outputSizes []string) ImageBillingSizeResolution {
@@ -105,7 +158,7 @@ func ResolveImageBillingSize(inputSize string, outputSizes []string) ImageBillin
 	}
 
 	return ImageBillingSizeResolution{
-		BillingSize: ImageBillingSize2K,
+		BillingSize: ImageBillingSize1K,
 		InputSize:   inputSize,
 		OutputSize:  outputSize,
 		Source:      ImageSizeSourceDefault,
@@ -117,7 +170,7 @@ func ApplyOpenAIImageBillingResolution(result *OpenAIForwardResult) {
 		return
 	}
 	inputSize := strings.TrimSpace(result.ImageInputSize)
-	if inputSize == "" && strings.TrimSpace(result.ImageSize) != ImageBillingSize2K {
+	if inputSize == "" {
 		inputSize = strings.TrimSpace(result.ImageSize)
 	}
 	outputSizes := result.ImageOutputSizes
@@ -140,7 +193,7 @@ func ApplyForwardImageBillingResolution(result *ForwardResult) {
 		return
 	}
 	inputSize := strings.TrimSpace(result.ImageInputSize)
-	if inputSize == "" && strings.TrimSpace(result.ImageSize) != ImageBillingSize2K {
+	if inputSize == "" {
 		inputSize = strings.TrimSpace(result.ImageSize)
 	}
 	outputSizes := result.ImageOutputSizes
@@ -178,18 +231,19 @@ func parseImageBillingDimensions(size string) (int, int, bool) {
 	if len(parts) != 2 {
 		return 0, 0, false
 	}
-	width, err := strconv.Atoi(strings.TrimSpace(parts[0]))
+	width64, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
 	if err != nil {
 		return 0, 0, false
 	}
-	height, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+	height64, err := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
 	if err != nil {
 		return 0, 0, false
 	}
-	if width <= 0 || height <= 0 {
+	maxInt := int64(^uint(0) >> 1)
+	if width64 <= 0 || height64 <= 0 || width64 > maxInt || height64 > maxInt {
 		return 0, 0, false
 	}
-	return width, height, true
+	return int(width64), int(height64), true
 }
 
 func compactTrimmedStrings(values []string) []string {
