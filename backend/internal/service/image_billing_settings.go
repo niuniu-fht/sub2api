@@ -28,8 +28,12 @@ type cachedImageBillingAccountRoutingSettings struct {
 }
 
 type ImageBillingGroupAccountRouting struct {
-	TwoKAccountID  int64 `json:"two_k_account_id"`
-	FourKAccountID int64 `json:"four_k_account_id"`
+	// AccountIDs fields are the current multi-account configuration.
+	// AccountID fields are kept for backward compatibility with old saved JSON.
+	TwoKAccountIDs  []int64 `json:"two_k_account_ids,omitempty"`
+	FourKAccountIDs []int64 `json:"four_k_account_ids,omitempty"`
+	TwoKAccountID   int64   `json:"two_k_account_id,omitempty"`
+	FourKAccountID  int64   `json:"four_k_account_id,omitempty"`
 }
 
 type ImageBillingAccountRoutingSettings struct {
@@ -42,13 +46,12 @@ func NormalizeImageBillingAccountRoutingSettings(settings ImageBillingAccountRou
 		if groupID <= 0 {
 			continue
 		}
-		if routing.TwoKAccountID <= 0 {
-			routing.TwoKAccountID = 0
-		}
-		if routing.FourKAccountID <= 0 {
-			routing.FourKAccountID = 0
-		}
-		if routing.TwoKAccountID == 0 && routing.FourKAccountID == 0 {
+		routing.TwoKAccountIDs = normalizeImageBillingRoutingAccountIDs(routing.TwoKAccountIDs, routing.TwoKAccountID)
+		routing.FourKAccountIDs = normalizeImageBillingRoutingAccountIDs(routing.FourKAccountIDs, routing.FourKAccountID)
+		// Store only the multi-account shape after normalization; old single fields remain accepted on input.
+		routing.TwoKAccountID = 0
+		routing.FourKAccountID = 0
+		if len(routing.TwoKAccountIDs) == 0 && len(routing.FourKAccountIDs) == 0 {
 			continue
 		}
 		normalized.Groups[groupID] = routing
@@ -56,22 +59,50 @@ func NormalizeImageBillingAccountRoutingSettings(settings ImageBillingAccountRou
 	return normalized
 }
 
-func (s ImageBillingAccountRoutingSettings) AccountIDFor(groupID int64, tier string) int64 {
+func normalizeImageBillingRoutingAccountIDs(ids []int64, legacyID int64) []int64 {
+	seen := make(map[int64]struct{}, len(ids)+1)
+	out := make([]int64, 0, len(ids)+1)
+	appendID := func(id int64) {
+		if id <= 0 {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	for _, id := range ids {
+		appendID(id)
+	}
+	appendID(legacyID)
+	return out
+}
+
+func (s ImageBillingAccountRoutingSettings) AccountIDsFor(groupID int64, tier string) []int64 {
 	if groupID <= 0 {
-		return 0
+		return nil
 	}
 	routing, ok := s.Groups[groupID]
 	if !ok {
-		return 0
+		return nil
 	}
 	switch strings.ToUpper(strings.TrimSpace(tier)) {
 	case ImageBillingSize2K:
-		return routing.TwoKAccountID
+		return append([]int64(nil), routing.TwoKAccountIDs...)
 	case ImageBillingSize4K:
-		return routing.FourKAccountID
+		return append([]int64(nil), routing.FourKAccountIDs...)
 	default:
+		return nil
+	}
+}
+
+func (s ImageBillingAccountRoutingSettings) AccountIDFor(groupID int64, tier string) int64 {
+	ids := s.AccountIDsFor(groupID, tier)
+	if len(ids) == 0 {
 		return 0
 	}
+	return ids[0]
 }
 
 // GetImageBillingAreaThresholdSettings reads image billing thresholds from storage.

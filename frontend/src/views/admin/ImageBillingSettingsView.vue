@@ -74,7 +74,7 @@
         <div>
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">分组图片档位账号调度</h2>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            配置后，图片请求命中该分组的 2K/4K 档位会强制走指定账号；未配置的档位继续使用默认账号调度。
+            配置后，图片请求命中该分组的 2K/4K 档位会按多选账号顺序尝试调度；未配置的档位继续使用默认账号调度。
           </p>
         </div>
         <button
@@ -103,81 +103,87 @@
                 <div class="font-medium text-gray-900 dark:text-white">{{ group.name }}</div>
                 <div class="text-xs text-gray-500 dark:text-gray-400">#{{ group.id }} · {{ group.platform }}</div>
               </td>
-              <td class="px-4 py-3">
-                <Select
-                  v-model="routingForm[String(group.id)].two_k_account_id"
-                  :options="accountSelectOptionsForGroup(group.id)"
-                  :searchable="accountOptionsForGroup(group.id).length > 6"
-                  empty-text="无可用账号"
-                  aria-label="2K 指定账号"
-                >
-                  <template #selected="{ option }">
-                    <span class="flex min-w-0 items-center gap-2">
-                      <span
-                        class="h-2 w-2 flex-shrink-0 rounded-full"
-                        :class="option?.isDefault ? 'bg-gray-400' : option?.status === 'active' ? 'bg-emerald-500' : option?.status === 'error' ? 'bg-red-500' : 'bg-amber-400'"
-                      />
-                      <span class="truncate">{{ option?.label || '默认调度' }}</span>
+              <td class="px-4 py-3 align-top">
+                <div class="min-w-[260px] rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/70">
+                  <div class="mb-2 flex items-center justify-between gap-2">
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-300">
+                      {{ selectedRoutingLabel(group.id, 'two_k') }}
                     </span>
-                  </template>
-                  <template #option="{ option }">
-                    <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
-                      <div class="min-w-0">
-                        <div class="truncate font-medium text-gray-900 dark:text-white">{{ option.label }}</div>
-                        <div v-if="!option.isDefault" class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                          {{ option.platform }} · 并发 {{ option.concurrency ?? '-' }}
-                        </div>
-                        <div v-else class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                          使用当前分组默认调度策略
-                        </div>
-                      </div>
-                      <span
-                        class="flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
-                        :class="option.isDefault ? 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300' : option.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : option.status === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'"
-                      >
-                        {{ option.isDefault ? '默认' : option.status }}
+                    <button
+                      v-if="routingAccountIDsFor(group.id, 'two_k').length > 0"
+                      type="button"
+                      class="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200"
+                      @click="clearRoutingAccounts(group.id, 'two_k')"
+                    >
+                      清空
+                    </button>
+                  </div>
+                  <div class="max-h-44 space-y-1 overflow-y-auto pr-1">
+                    <label
+                      v-for="account in accountOptionsForGroup(group.id)"
+                      :key="account.id"
+                      class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white dark:hover:bg-dark-800"
+                    >
+                      <input
+                        type="checkbox"
+                        class="mt-1 h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-900"
+                        :checked="routingAccountIDsFor(group.id, 'two_k').includes(account.id)"
+                        :aria-label="`${accountLabel(account)} 2K指定账号`"
+                        @change="toggleRoutingAccount(group.id, 'two_k', account.id, ($event.target as HTMLInputElement).checked)"
+                      />
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate font-medium text-gray-900 dark:text-white">{{ accountLabel(account) }}</span>
+                        <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
+                          {{ String(account.platform || '').toUpperCase() }} · 并发 {{ account.concurrency ?? '-' }}
+                        </span>
                       </span>
+                    </label>
+                    <div v-if="accountOptionsForGroup(group.id).length === 0" class="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
+                      无已启用账号
                     </div>
-                  </template>
-                </Select>
+                  </div>
+                </div>
               </td>
-              <td class="px-4 py-3">
-                <Select
-                  v-model="routingForm[String(group.id)].four_k_account_id"
-                  :options="accountSelectOptionsForGroup(group.id)"
-                  :searchable="accountOptionsForGroup(group.id).length > 6"
-                  empty-text="无可用账号"
-                  aria-label="4K 指定账号"
-                >
-                  <template #selected="{ option }">
-                    <span class="flex min-w-0 items-center gap-2">
-                      <span
-                        class="h-2 w-2 flex-shrink-0 rounded-full"
-                        :class="option?.isDefault ? 'bg-gray-400' : option?.status === 'active' ? 'bg-emerald-500' : option?.status === 'error' ? 'bg-red-500' : 'bg-amber-400'"
-                      />
-                      <span class="truncate">{{ option?.label || '默认调度' }}</span>
+              <td class="px-4 py-3 align-top">
+                <div class="min-w-[260px] rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/70">
+                  <div class="mb-2 flex items-center justify-between gap-2">
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-300">
+                      {{ selectedRoutingLabel(group.id, 'four_k') }}
                     </span>
-                  </template>
-                  <template #option="{ option }">
-                    <div class="flex min-w-0 flex-1 items-center justify-between gap-3">
-                      <div class="min-w-0">
-                        <div class="truncate font-medium text-gray-900 dark:text-white">{{ option.label }}</div>
-                        <div v-if="!option.isDefault" class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                          {{ option.platform }} · 并发 {{ option.concurrency ?? '-' }}
-                        </div>
-                        <div v-else class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                          使用当前分组默认调度策略
-                        </div>
-                      </div>
-                      <span
-                        class="flex-shrink-0 rounded-full px-2 py-0.5 text-xs font-medium"
-                        :class="option.isDefault ? 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300' : option.status === 'active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : option.status === 'error' ? 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'"
-                      >
-                        {{ option.isDefault ? '默认' : option.status }}
+                    <button
+                      v-if="routingAccountIDsFor(group.id, 'four_k').length > 0"
+                      type="button"
+                      class="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200"
+                      @click="clearRoutingAccounts(group.id, 'four_k')"
+                    >
+                      清空
+                    </button>
+                  </div>
+                  <div class="max-h-44 space-y-1 overflow-y-auto pr-1">
+                    <label
+                      v-for="account in accountOptionsForGroup(group.id)"
+                      :key="account.id"
+                      class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white dark:hover:bg-dark-800"
+                    >
+                      <input
+                        type="checkbox"
+                        class="mt-1 h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-900"
+                        :checked="routingAccountIDsFor(group.id, 'four_k').includes(account.id)"
+                        :aria-label="`${accountLabel(account)} 4K指定账号`"
+                        @change="toggleRoutingAccount(group.id, 'four_k', account.id, ($event.target as HTMLInputElement).checked)"
+                      />
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate font-medium text-gray-900 dark:text-white">{{ accountLabel(account) }}</span>
+                        <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
+                          {{ String(account.platform || '').toUpperCase() }} · 并发 {{ account.concurrency ?? '-' }}
+                        </span>
                       </span>
+                    </label>
+                    <div v-if="accountOptionsForGroup(group.id).length === 0" class="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
+                      无已启用账号
                     </div>
-                  </template>
-                </Select>
+                  </div>
+                </div>
               </td>
               <td class="px-4 py-3 text-gray-600 dark:text-gray-300">
                 {{ accountOptionsForGroup(group.id).length }}
@@ -192,7 +198,7 @@
         </table>
       </div>
       <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
-        注意：强制账号仍会经过账号状态、分组归属、模型能力、并发和上游限制检查；账号不可用时，该档位请求会返回无可用账号，不再绕回默认调度。
+        注意：可选账号仅统计状态 active 且调度开关开启的账号；多选账号会按配置顺序尝试获取可用并发，仍会经过分组归属、模型能力、并发和上游限制检查。
       </p>
     </div>
 
@@ -246,7 +252,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import Select from '@/components/common/Select.vue'
 import { accountsAPI, groupsAPI } from '@/api/admin'
 import {
   getImageBillingAccountRoutingSettings,
@@ -257,16 +262,6 @@ import {
 import { useAppStore } from '@/stores'
 import type { Account, AdminGroup } from '@/types'
 
-interface AccountSelectOptionItem {
-  [key: string]: unknown
-  value: number
-  label: string
-  name?: string
-  platform?: string
-  status?: string
-  concurrency?: number
-  isDefault?: boolean
-}
 
 const DEFAULT_2K_THRESHOLD = 3000000
 const DEFAULT_4K_THRESHOLD = 6000000
@@ -295,7 +290,27 @@ const sampleTier = computed(() => {
   if (sampleArea.value > form.two_k_pixel_threshold) return '2K'
   return '1K'
 })
-const routingForm = reactive<Record<string, { two_k_account_id: number; four_k_account_id: number }>>({})
+type ImageBillingRoutingFormRow = {
+  two_k_account_ids: number[]
+  four_k_account_ids: number[]
+}
+
+type ImageBillingRoutingTier = 'two_k' | 'four_k'
+
+type ImageBillingRoutingSettingsInput = {
+  groups?: Record<string, {
+    two_k_account_ids?: number[]
+    four_k_account_ids?: number[]
+    two_k_account_id?: number
+    four_k_account_id?: number
+  }>
+}
+
+type ImageBillingRoutingPayload = {
+  groups: Record<string, { two_k_account_ids: number[]; four_k_account_ids: number[] }>
+}
+
+const routingForm = reactive<Record<string, ImageBillingRoutingFormRow>>({})
 const schedulableGroups = computed(() =>
   groups.value
     .filter((group) => ['openai', 'composite', 'grok'].includes(String(group.platform || '').toLowerCase()))
@@ -344,9 +359,28 @@ function ensureRoutingRows(): void {
   for (const group of schedulableGroups.value) {
     const key = String(group.id)
     if (!routingForm[key]) {
-      routingForm[key] = { two_k_account_id: 0, four_k_account_id: 0 }
+      routingForm[key] = { two_k_account_ids: [], four_k_account_ids: [] }
     }
   }
+}
+
+function normalizeAccountIDs(ids?: number[], legacyID?: number): number[] {
+  const seen = new Set<number>()
+  const result: number[] = []
+  const add = (value: unknown) => {
+    const id = Math.trunc(Number(value) || 0)
+    if (id <= 0 || seen.has(id)) return
+    seen.add(id)
+    result.push(id)
+  }
+  ;(ids || []).forEach(add)
+  add(legacyID)
+  return result
+}
+
+function accountBelongsToGroup(account: Account, groupId: number): boolean {
+  if (Array.isArray(account.group_ids) && account.group_ids.includes(groupId)) return true
+  return Number((account as any).group_id || 0) === groupId
 }
 
 function accountOptionsForGroup(groupId: number): Account[] {
@@ -354,53 +388,90 @@ function accountOptionsForGroup(groupId: number): Account[] {
     .filter((account) => {
       const platform = String(account.platform || '').toLowerCase()
       if (!['openai', 'grok'].includes(platform)) return false
-      if (Array.isArray(account.group_ids) && account.group_ids.includes(groupId)) return true
-      return Number((account as any).group_id || 0) === groupId
+      if (account.status !== 'active' || account.schedulable !== true) return false
+      return accountBelongsToGroup(account, groupId)
     })
     .sort((a, b) => a.id - b.id)
 }
 
 function accountLabel(account: Account): string {
-  return `#${account.id} ${account.name || '-'} (${account.status})`
+  return `#${account.id} ${account.name || '-'}`
 }
 
-function accountSelectOptionsForGroup(groupId: number): AccountSelectOptionItem[] {
-  return [
-    {
-      value: 0,
-      label: '默认调度',
-      isDefault: true,
-    },
-    ...accountOptionsForGroup(groupId).map((account) => ({
-      value: account.id,
-      label: accountLabel(account),
-      name: account.name || '-',
-      platform: String(account.platform || '').toUpperCase(),
-      status: account.status,
-      concurrency: account.concurrency,
-    })),
-  ]
+function enabledAccountIDSetForGroup(groupId: number): Set<number> {
+  return new Set(accountOptionsForGroup(groupId).map((account) => account.id))
 }
 
-function applyRoutingSettings(settings: { groups?: Record<string, { two_k_account_id?: number; four_k_account_id?: number }> }): void {
+function pruneRoutingRowsToEnabledAccounts(): void {
+  for (const group of schedulableGroups.value) {
+    const key = String(group.id)
+    const row = routingForm[key]
+    if (!row) continue
+    const enabledIDs = enabledAccountIDSetForGroup(group.id)
+    row.two_k_account_ids = normalizeAccountIDs(row.two_k_account_ids).filter((id) => enabledIDs.has(id))
+    row.four_k_account_ids = normalizeAccountIDs(row.four_k_account_ids).filter((id) => enabledIDs.has(id))
+  }
+}
+
+function routingAccountIDsFor(groupId: number, tier: ImageBillingRoutingTier): number[] {
+  const key = String(groupId)
+  const row = routingForm[key]
+  if (!row) return []
+  return tier === 'two_k' ? row.two_k_account_ids : row.four_k_account_ids
+}
+
+function selectedRoutingLabel(groupId: number, tier: ImageBillingRoutingTier): string {
+  const count = routingAccountIDsFor(groupId, tier).length
+  return count > 0 ? `已选 ${count} 个账号` : '默认调度'
+}
+
+function toggleRoutingAccount(groupId: number, tier: ImageBillingRoutingTier, accountId: number, checked: boolean): void {
+  const key = String(groupId)
+  if (!routingForm[key]) {
+    routingForm[key] = { two_k_account_ids: [], four_k_account_ids: [] }
+  }
+  const list = tier === 'two_k' ? routingForm[key].two_k_account_ids : routingForm[key].four_k_account_ids
+  const id = Math.trunc(Number(accountId) || 0)
+  const index = list.indexOf(id)
+  if (checked && id > 0 && index === -1) {
+    list.push(id)
+  } else if (!checked && index !== -1) {
+    list.splice(index, 1)
+  }
+}
+
+function clearRoutingAccounts(groupId: number, tier: ImageBillingRoutingTier): void {
+  const key = String(groupId)
+  if (!routingForm[key]) return
+  if (tier === 'two_k') {
+    routingForm[key].two_k_account_ids = []
+  } else {
+    routingForm[key].four_k_account_ids = []
+  }
+}
+
+function applyRoutingSettings(settings: ImageBillingRoutingSettingsInput): void {
   Object.keys(routingForm).forEach((key) => delete routingForm[key])
   const rows = settings.groups || {}
   for (const [groupId, routing] of Object.entries(rows)) {
     routingForm[groupId] = {
-      two_k_account_id: Number(routing.two_k_account_id || 0),
-      four_k_account_id: Number(routing.four_k_account_id || 0),
+      two_k_account_ids: normalizeAccountIDs(routing.two_k_account_ids, routing.two_k_account_id),
+      four_k_account_ids: normalizeAccountIDs(routing.four_k_account_ids, routing.four_k_account_id),
     }
   }
   ensureRoutingRows()
+  pruneRoutingRowsToEnabledAccounts()
 }
 
-function buildRoutingPayload(): { groups: Record<string, { two_k_account_id: number; four_k_account_id: number }> } {
-  const payload: Record<string, { two_k_account_id: number; four_k_account_id: number }> = {}
+function buildRoutingPayload(): ImageBillingRoutingPayload {
+  const payload: ImageBillingRoutingPayload['groups'] = {}
   for (const [groupId, routing] of Object.entries(routingForm)) {
-    const twoK = Math.trunc(Number(routing.two_k_account_id) || 0)
-    const fourK = Math.trunc(Number(routing.four_k_account_id) || 0)
-    if (twoK > 0 || fourK > 0) {
-      payload[groupId] = { two_k_account_id: Math.max(0, twoK), four_k_account_id: Math.max(0, fourK) }
+    const groupIDNumber = Math.trunc(Number(groupId) || 0)
+    const enabledIDs = enabledAccountIDSetForGroup(groupIDNumber)
+    const twoK = normalizeAccountIDs(routing.two_k_account_ids).filter((id) => enabledIDs.has(id))
+    const fourK = normalizeAccountIDs(routing.four_k_account_ids).filter((id) => enabledIDs.has(id))
+    if (twoK.length > 0 || fourK.length > 0) {
+      payload[groupId] = { two_k_account_ids: twoK, four_k_account_ids: fourK }
     }
   }
   return { groups: payload }

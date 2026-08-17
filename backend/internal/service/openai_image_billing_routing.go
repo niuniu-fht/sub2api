@@ -4,92 +4,141 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 const openAIAccountScheduleLayerImageBillingRouting = "image_billing_routing"
 
-func (s *OpenAIGatewayService) imageBillingForcedAccountID(ctx context.Context, groupID *int64) (accountID int64, tier string, ok bool) {
+var openAIImageBillingRoutingCounters sync.Map
+
+func (s *OpenAIGatewayService) imageBillingForcedAccountIDs(ctx context.Context, groupID *int64) (accountIDs []int64, tier string, ok bool) {
 	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 {
-		return 0, "", false
+		return nil, "", false
 	}
 	tier = ImageBillingSchedulingTierFromContext(ctx)
 	if tier == "" {
-		return 0, "", false
+		return nil, "", false
 	}
 	settings := s.settingService.GetImageBillingAccountRoutingSettingsCached(ctx)
-	accountID = settings.AccountIDFor(*groupID, tier)
-	return accountID, tier, accountID > 0
+	accountIDs = rotateOpenAIImageBillingRoutingAccountIDs(*groupID, tier, settings.AccountIDsFor(*groupID, tier))
+	return accountIDs, tier, len(accountIDs) > 0
+}
+
+func rotateOpenAIImageBillingRoutingAccountIDs(groupID int64, tier string, accountIDs []int64) []int64 {
+	if len(accountIDs) <= 1 {
+		return append([]int64(nil), accountIDs...)
+	}
+	keyBuilder := strings.Builder{}
+	_, _ = fmt.Fprintf(&keyBuilder, "%d:%s:", groupID, strings.ToUpper(strings.TrimSpace(tier)))
+	for _, id := range accountIDs {
+		_, _ = fmt.Fprintf(&keyBuilder, "%d,", id)
+	}
+	counterValue, _ := openAIImageBillingRoutingCounters.LoadOrStore(keyBuilder.String(), &atomic.Uint64{})
+	counter := counterValue.(*atomic.Uint64)
+	start := int((counter.Add(1) - 1) % uint64(len(accountIDs)))
+	rotated := make([]int64, 0, len(accountIDs))
+	rotated = append(rotated, accountIDs[start:]...)
+	rotated = append(rotated, accountIDs[:start]...)
+	return rotated
 }
 
 func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
 ) (*AccountSelectionResult, bool, error) {
-	accountID, tier, configured := s.imageBillingForcedAccountID(ctx, req.GroupID)
+	accountIDs, tier, configured := s.imageBillingForcedAccountIDs(ctx, req.GroupID)
 	if !configured {
 		return nil, false, nil
 	}
-	if req.ExcludedIDs != nil {
-		if _, excluded := req.ExcludedIDs[accountID]; excluded {
-			return nil, true, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact, fmt.Sprintf("image_billing_forced_%s_account_excluded=%d", tier, accountID))
+
+	platform := normalizeOpenAICompatiblePlatform(req.Platform)
+	var waitAccount *Account
+	reasons := make([]string, 0, len(accountIDs))
+
+	for _, accountID := range accountIDs {
+		if accountID <= 0 {
+			continue
+		}
+		if req.ExcludedIDs != nil {
+			if _, excluded := req.ExcludedIDs[accountID]; excluded {
+				reasons = append(reasons, fmt.Sprintf("excluded=%d", accountID))
+				continue
+			}
+		}
+
+		account, err := s.getSchedulableAccount(ctx, accountID)
+		if err != nil || account == nil {
+			reasons = append(reasons, fmt.Sprintf("not_schedulable=%d", accountID))
+			continue
+		}
+		if account.Platform != platform || !account.IsOpenAICompatible() || !account.IsSchedulable() {
+			reasons = append(reasons, fmt.Sprintf("platform_or_status_mismatch=%d", accountID))
+			continue
+		}
+		if !s.openAIAccountMatchesSchedulingGroup(account, req.GroupID) {
+			reasons = append(reasons, fmt.Sprintf("not_in_group=%d", accountID))
+			continue
+		}
+		if shouldClearStickySession(account, req.RequestedModel) ||
+			!isOpenAICompatibleAccountEligibleForRequest(ctx, account, platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability) ||
+			!accountSupportsOpenAICapabilities(account, req.RequiredCapability, req.RequiredImageCapability) ||
+			!s.isOpenAIAccountTransportCompatible(account, req.RequiredTransport) ||
+			s.isOpenAIAccountRequestRuntimeBlocked(account, req.RequestedModel) ||
+			!parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
+			reasons = append(reasons, fmt.Sprintf("incompatible=%d", accountID))
+			continue
+		}
+		if req.GroupID != nil && s.needsUpstreamChannelRestrictionCheck(ctx, req.GroupID) &&
+			s.isUpstreamModelRestrictedByChannel(ctx, *req.GroupID, account, req.RequestedModel, req.RequireCompact) {
+			reasons = append(reasons, fmt.Sprintf("channel_restricted=%d", accountID))
+			continue
+		}
+
+		account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, req.GroupID, platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
+		if account == nil ||
+			!s.openAIAccountMatchesSchedulingGroup(account, req.GroupID) ||
+			!accountSupportsOpenAICapabilities(account, req.RequiredCapability, req.RequiredImageCapability) ||
+			!s.isOpenAIAccountTransportCompatible(account, req.RequiredTransport) ||
+			!parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
+			reasons = append(reasons, fmt.Sprintf("recheck_failed=%d", accountID))
+			continue
+		}
+
+		if result, acquireErr := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency); acquireErr == nil && result != nil && result.Acquired {
+			slog.Debug("openai image billing forced account selected",
+				"group_id", derefGroupID(req.GroupID),
+				"tier", tier,
+				"account_id", account.ID,
+				"rotated_account_ids", accountIDs,
+				"acquired", true,
+			)
+			selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+			return selection, true, selectErr
+		}
+
+		if waitAccount == nil {
+			waitAccount = account
 		}
 	}
 
-	account, err := s.getSchedulableAccount(ctx, accountID)
-	if err != nil || account == nil {
-		return nil, true, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact, fmt.Sprintf("image_billing_forced_%s_account_not_schedulable=%d", tier, accountID))
-	}
-	platform := normalizeOpenAICompatiblePlatform(req.Platform)
-	if account.Platform != platform || !account.IsOpenAICompatible() || !account.IsSchedulable() {
-		return nil, true, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact, fmt.Sprintf("image_billing_forced_%s_account_platform_or_status_mismatch=%d", tier, accountID))
-	}
-	if !s.openAIAccountMatchesSchedulingGroup(account, req.GroupID) {
-		return nil, true, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact, fmt.Sprintf("image_billing_forced_%s_account_not_in_group=%d", tier, accountID))
-	}
-	if shouldClearStickySession(account, req.RequestedModel) ||
-		!isOpenAICompatibleAccountEligibleForRequest(ctx, account, platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability) ||
-		!accountSupportsOpenAICapabilities(account, req.RequiredCapability, req.RequiredImageCapability) ||
-		!s.isOpenAIAccountTransportCompatible(account, req.RequiredTransport) ||
-		s.isOpenAIAccountRequestRuntimeBlocked(account, req.RequestedModel) ||
-		!parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
-		return nil, true, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact, fmt.Sprintf("image_billing_forced_%s_account_incompatible=%d", tier, accountID))
-	}
-	if req.GroupID != nil && s.needsUpstreamChannelRestrictionCheck(ctx, req.GroupID) &&
-		s.isUpstreamModelRestrictedByChannel(ctx, *req.GroupID, account, req.RequestedModel, req.RequireCompact) {
-		return nil, true, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact, fmt.Sprintf("image_billing_forced_%s_account_channel_restricted=%d", tier, accountID))
-	}
-
-	account = s.recheckSelectedOpenAIAccountFromDB(ctx, account, req.GroupID, platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
-	if account == nil ||
-		!s.openAIAccountMatchesSchedulingGroup(account, req.GroupID) ||
-		!accountSupportsOpenAICapabilities(account, req.RequiredCapability, req.RequiredImageCapability) ||
-		!s.isOpenAIAccountTransportCompatible(account, req.RequiredTransport) ||
-		!parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
-		return nil, true, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact, fmt.Sprintf("image_billing_forced_%s_account_recheck_failed=%d", tier, accountID))
-	}
-
-	if result, acquireErr := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency); acquireErr == nil && result != nil && result.Acquired {
-		slog.Debug("openai image billing forced account selected",
+	if waitAccount != nil {
+		cfg := s.schedulingConfig()
+		slog.Debug("openai image billing forced account selected with wait plan",
 			"group_id", derefGroupID(req.GroupID),
 			"tier", tier,
-			"account_id", account.ID,
-			"acquired", true,
+			"account_id", waitAccount.ID,
+			"rotated_account_ids", accountIDs,
 		)
-		selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+		selection, selectErr := s.newSelectionResult(ctx, waitAccount, false, nil, &AccountWaitPlan{
+			AccountID:      waitAccount.ID,
+			MaxConcurrency: waitAccount.Concurrency,
+			Timeout:        cfg.FallbackWaitTimeout,
+			MaxWaiting:     cfg.FallbackMaxWaiting,
+		})
 		return selection, true, selectErr
 	}
 
-	cfg := s.schedulingConfig()
-	slog.Debug("openai image billing forced account selected with wait plan",
-		"group_id", derefGroupID(req.GroupID),
-		"tier", tier,
-		"account_id", account.ID,
-	)
-	selection, selectErr := s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-		AccountID:      account.ID,
-		MaxConcurrency: account.Concurrency,
-		Timeout:        cfg.FallbackWaitTimeout,
-		MaxWaiting:     cfg.FallbackMaxWaiting,
-	})
-	return selection, true, selectErr
+	return nil, true, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact, fmt.Sprintf("image_billing_forced_%s_accounts_unavailable=%v reasons=%v", tier, accountIDs, reasons))
 }

@@ -1,10 +1,46 @@
 package service
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestNormalizeImageBillingAccountRoutingSettingsSupportsMultiAccounts(t *testing.T) {
+	settings := NormalizeImageBillingAccountRoutingSettings(ImageBillingAccountRoutingSettings{Groups: map[int64]ImageBillingGroupAccountRouting{
+		1: {
+			TwoKAccountIDs:  []int64{10, 20, 10, -1, 0},
+			FourKAccountIDs: []int64{30},
+			FourKAccountID:  40,
+		},
+		2: {
+			TwoKAccountID: 50,
+		},
+		-1: {
+			TwoKAccountIDs: []int64{60},
+		},
+	}})
+
+	require.Equal(t, []int64{10, 20}, settings.AccountIDsFor(1, ImageBillingSize2K))
+	require.Equal(t, []int64{30, 40}, settings.AccountIDsFor(1, ImageBillingSize4K))
+	require.Equal(t, []int64{50}, settings.AccountIDsFor(2, ImageBillingSize2K))
+	require.Equal(t, int64(10), settings.AccountIDFor(1, ImageBillingSize2K))
+	require.NotContains(t, settings.Groups, int64(-1))
+}
+
+func TestRotateOpenAIImageBillingRoutingAccountIDs(t *testing.T) {
+	openAIImageBillingRoutingCounters = sync.Map{}
+	ids := []int64{10, 20, 30}
+
+	require.Equal(t, []int64{10, 20, 30}, rotateOpenAIImageBillingRoutingAccountIDs(1, ImageBillingSize2K, ids))
+	require.Equal(t, []int64{20, 30, 10}, rotateOpenAIImageBillingRoutingAccountIDs(1, ImageBillingSize2K, ids))
+	require.Equal(t, []int64{30, 10, 20}, rotateOpenAIImageBillingRoutingAccountIDs(1, ImageBillingSize2K, ids))
+	require.Equal(t, []int64{10, 20, 30}, rotateOpenAIImageBillingRoutingAccountIDs(1, ImageBillingSize2K, ids))
+
+	require.Equal(t, []int64{10, 20, 30}, rotateOpenAIImageBillingRoutingAccountIDs(2, ImageBillingSize2K, ids))
+	require.Equal(t, []int64{10, 20, 30}, ids, "rotation must not mutate configured order")
+}
 
 func TestClassifyImageBillingTier(t *testing.T) {
 	tests := []struct {
