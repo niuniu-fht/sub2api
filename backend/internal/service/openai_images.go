@@ -562,6 +562,13 @@ func (s *OpenAIGatewayService) ForwardImages(
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
 	}
+	parsedCopy := *parsed
+	parsed = &parsedCopy
+	var err error
+	body, parsed.ContentType, err = applyOpenAIImagesAccountRequestDefaults(account, body, parsed.ContentType, parsed)
+	if err != nil {
+		return nil, err
+	}
 	switch account.Type {
 	case AccountTypeAPIKey:
 		return s.forwardOpenAIImagesAPIKey(ctx, c, account, body, parsed, channelMappedModel)
@@ -797,6 +804,163 @@ func (s *OpenAIGatewayService) buildOpenAIImagesRequest(
 
 func buildOpenAIImagesURL(base string, endpoint string) string {
 	return buildOpenAIEndpointURL(base, endpoint)
+}
+
+func getOpenAIImagesAccountRequestDefaults(account *Account) map[string]any {
+	if account == nil || !account.IsOpenAI() || len(account.Extra) == 0 {
+		return nil
+	}
+	for _, key := range []string{"openai_image_request_defaults", "openai_images_request_defaults"} {
+		raw, ok := account.Extra[key]
+		if !ok || raw == nil {
+			continue
+		}
+		if defaults, ok := raw.(map[string]any); ok {
+			return defaults
+		}
+		if defaults, ok := raw.(map[string]interface{}); ok {
+			return defaults
+		}
+	}
+	return nil
+}
+
+func applyOpenAIImagesAccountRequestDefaults(account *Account, body []byte, contentType string, parsed *OpenAIImagesRequest) ([]byte, string, error) {
+	defaults := getOpenAIImagesAccountRequestDefaults(account)
+	if len(defaults) == 0 || parsed == nil {
+		return body, contentType, nil
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err == nil && strings.EqualFold(mediaType, "multipart/form-data") {
+		return applyOpenAIImagesMultipartAccountRequestDefaults(body, contentType, defaults, parsed)
+	}
+	if !gjson.ValidBytes(body) {
+		return body, contentType, nil
+	}
+	updated := body
+	for key, value := range defaults {
+		key = strings.TrimSpace(key)
+		if key == "" || gjson.GetBytes(updated, key).Exists() {
+			continue
+		}
+		var setErr error
+		updated, setErr = sjson.SetBytes(updated, key, value)
+		if setErr != nil {
+			return nil, "", fmt.Errorf("apply OpenAI image request default %q: %w", key, setErr)
+		}
+		applyOpenAIImageParsedDefault(parsed, key, value)
+	}
+	return updated, contentType, nil
+}
+
+func applyOpenAIImagesMultipartAccountRequestDefaults(body []byte, contentType string, defaults map[string]any, parsed *OpenAIImagesRequest) ([]byte, string, error) {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return body, contentType, nil
+	}
+	boundary := strings.TrimSpace(params["boundary"])
+	if boundary == "" {
+		return body, contentType, nil
+	}
+
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	seen := make(map[string]struct{})
+
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("read multipart body: %w", err)
+		}
+		formName := strings.TrimSpace(part.FormName())
+		if formName != "" {
+			seen[formName] = struct{}{}
+		}
+		partHeader := cloneMultipartHeader(part.Header)
+		target, err := writer.CreatePart(partHeader)
+		if err != nil {
+			_ = part.Close()
+			return nil, "", fmt.Errorf("create multipart part: %w", err)
+		}
+		if _, err := io.Copy(target, part); err != nil {
+			_ = part.Close()
+			return nil, "", fmt.Errorf("copy multipart part: %w", err)
+		}
+		_ = part.Close()
+	}
+	for key, value := range defaults {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		if err := writer.WriteField(key, formatOpenAIImageRequestDefaultValue(value)); err != nil {
+			return nil, "", fmt.Errorf("append multipart default field %q: %w", key, err)
+		}
+		applyOpenAIImageParsedDefault(parsed, key, value)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", fmt.Errorf("finalize multipart body: %w", err)
+	}
+	return buffer.Bytes(), writer.FormDataContentType(), nil
+}
+
+func formatOpenAIImageRequestDefaultValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprint(v)
+		}
+		return string(b)
+	}
+}
+
+func applyOpenAIImageParsedDefault(parsed *OpenAIImagesRequest, key string, value any) {
+	if parsed == nil {
+		return
+	}
+	valueString := strings.TrimSpace(fmt.Sprint(value))
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "response_format":
+		if parsed.ResponseFormat == "" {
+			parsed.ResponseFormat = strings.ToLower(valueString)
+		}
+	case "quality":
+		if parsed.Quality == "" {
+			parsed.Quality = valueString
+		}
+	case "background":
+		if parsed.Background == "" {
+			parsed.Background = valueString
+		}
+	case "output_format":
+		if parsed.OutputFormat == "" {
+			parsed.OutputFormat = valueString
+		}
+	case "moderation":
+		if parsed.Moderation == "" {
+			parsed.Moderation = valueString
+		}
+	case "input_fidelity":
+		if parsed.InputFidelity == "" {
+			parsed.InputFidelity = valueString
+		}
+	case "style":
+		if parsed.Style == "" {
+			parsed.Style = valueString
+		}
+	}
 }
 
 func rewriteOpenAIImagesModel(body []byte, contentType string, model string) ([]byte, string, error) {

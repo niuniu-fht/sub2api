@@ -1641,6 +1641,50 @@
         </div>
       </div>
 
+      <!-- OpenAI Images 请求默认参数（账号级） -->
+      <div
+        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'apikey')"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <label class="input-label mb-0">OpenAI Images 请求默认参数</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              仅在此账号被调度时补齐缺失参数；请求里已有同名参数时保持原值。
+            </p>
+          </div>
+          <button type="button" class="btn btn-secondary whitespace-nowrap px-3 py-1.5 text-xs" @click="addOpenAIImageRequestDefaultRow()">
+            + 参数
+          </button>
+        </div>
+        <div class="mt-3 space-y-2">
+          <div
+            v-for="(row, index) in openAIImageRequestDefaultRows"
+            :key="getOpenAIImageRequestDefaultRowKey(row)"
+            class="grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto] gap-2"
+          >
+            <input
+              v-model="row.key"
+              type="text"
+              class="input text-sm"
+              placeholder="key，如 response_format / quality"
+            />
+            <input
+              v-model="row.value"
+              type="text"
+              class="input font-mono text-sm"
+              placeholder="value，如 url / high / true / 1"
+            />
+            <button type="button" class="btn btn-secondary px-3 text-sm" @click="removeOpenAIImageRequestDefaultRow(index)">
+              删除
+            </button>
+          </div>
+          <p v-if="openAIImageRequestDefaultRows.length === 0" class="text-xs text-gray-400">
+            暂未添加参数。常用示例：response_format=url，quality=high。
+          </p>
+        </div>
+      </div>
+
       <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
       <div
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
@@ -2983,6 +3027,9 @@ type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
 const codexFingerprintMode = ref<CodexFingerprintMode>('off')
 type CodexImageToolMode = 'inherit' | 'enabled' | 'disabled' | 'block'
 const codexImageToolMode = ref<CodexImageToolMode>('inherit')
+interface OpenAIImageRequestDefaultRow { key: string; value: string }
+const openAIImageRequestDefaultRows = ref<OpenAIImageRequestDefaultRow[]>([])
+const getOpenAIImageRequestDefaultRowKey = createStableObjectKeyResolver<OpenAIImageRequestDefaultRow>('edit-openai-image-request-default-row')
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
 const anthropicPassthroughEnabled = ref(false)
 const anthropicAPIKeyAuthScheme = ref<AnthropicAPIKeyAuthScheme>('x_api_key')
@@ -3320,6 +3367,78 @@ const statusOptions = computed(() => {
   return options
 })
 
+const addOpenAIImageRequestDefaultRow = (preset?: OpenAIImageRequestDefaultRow) => {
+  openAIImageRequestDefaultRows.value.push(preset ? { ...preset } : { key: '', value: '' })
+}
+
+const removeOpenAIImageRequestDefaultRow = (index: number) => {
+  openAIImageRequestDefaultRows.value.splice(index, 1)
+}
+
+const formatOpenAIImageDefaultValue = (value: unknown): string => {
+  if (typeof value === 'string') return value
+  if (value === null || typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value)
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value ?? '')
+  }
+}
+
+const loadOpenAIImageRequestDefaultRows = (raw: unknown) => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    openAIImageRequestDefaultRows.value = []
+    return
+  }
+  openAIImageRequestDefaultRows.value = Object.entries(raw as Record<string, unknown>).map(([key, value]) => ({
+    key,
+    value: formatOpenAIImageDefaultValue(value)
+  }))
+}
+
+const parseOpenAIImageDefaultValue = (rawValue: string): unknown => {
+  const value = rawValue.trim()
+  if (value === '') return ''
+  if (value === 'true') return true
+  if (value === 'false') return false
+  if (value === 'null') return null
+  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value)
+  if (value.startsWith('{') || value.startsWith('[') || value.startsWith('"')) {
+    return JSON.parse(value)
+  }
+  return value
+}
+
+const parseOpenAIImageRequestDefaults = (): Record<string, unknown> | null | undefined => {
+  const result: Record<string, unknown> = {}
+  const seen = new Set<string>()
+  for (const row of openAIImageRequestDefaultRows.value) {
+    const key = row.key.trim()
+    const rawValue = row.value.trim()
+    if (!key && !rawValue) continue
+    if (!key) {
+      appStore.showError('OpenAI Images 默认参数存在空 key')
+      return undefined
+    }
+    if (key === '__proto__' || key === 'prototype' || key === 'constructor') {
+      appStore.showError(`OpenAI Images 默认参数 key 不允许使用：${key}`)
+      return undefined
+    }
+    if (seen.has(key)) {
+      appStore.showError(`OpenAI Images 默认参数 key 重复：${key}`)
+      return undefined
+    }
+    seen.add(key)
+    try {
+      result[key] = parseOpenAIImageDefaultValue(row.value)
+    } catch {
+      appStore.showError(`OpenAI Images 默认参数 value 不是合法 JSON：${key}`)
+      return undefined
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null
+}
+
 const expiresAtInput = computed({
   get: () => formatDateTimeLocal(form.expires_at),
   set: (value: string) => {
@@ -3442,11 +3561,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   codexCLIOnlyAppServerEnabled.value = false
   codexFingerprintMode.value = 'off'
   codexImageToolMode.value = 'inherit'
+  openAIImageRequestDefaultRows.value = []
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
+    loadOpenAIImageRequestDefaultRows(extra?.openai_image_request_defaults || extra?.openai_images_request_defaults)
     openaiFlattenNamespacesEnabled.value =
       newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
     const longContextBillingValue = extra?.openai_long_context_billing_enabled
@@ -4824,6 +4945,17 @@ const handleSubmit = async () => {
         default:
           delete newExtra.codex_image_generation_bridge
           delete newExtra.codex_image_generation_explicit_tool_policy
+      }
+
+      const imageDefaults = parseOpenAIImageRequestDefaults()
+      if (imageDefaults === undefined) {
+        return
+      }
+      if (imageDefaults && Object.keys(imageDefaults).length > 0) {
+        newExtra.openai_image_request_defaults = imageDefaults
+      } else {
+        delete newExtra.openai_image_request_defaults
+        delete newExtra.openai_images_request_defaults
       }
 
       if (props.account.type === 'oauth' || props.account.type === 'setup-token') {
