@@ -74,7 +74,7 @@
         <div>
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">分组图片档位账号调度</h2>
           <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            配置后，图片请求命中该分组的 2K/4K 档位会按多选账号顺序尝试调度；未配置的档位继续使用默认账号调度。
+            配置后，图片请求命中该分组的 1K/2K/4K 档位会按多选账号顺序尝试调度；未配置的档位继续使用默认账号调度。
           </p>
         </div>
         <button
@@ -92,6 +92,7 @@
           <thead class="bg-gray-50 dark:bg-dark-900">
             <tr>
               <th class="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">分组</th>
+              <th class="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">1K 指定账号</th>
               <th class="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">2K 指定账号</th>
               <th class="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">4K 指定账号</th>
               <th class="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">可选账号数</th>
@@ -102,6 +103,47 @@
               <td class="px-4 py-3">
                 <div class="font-medium text-gray-900 dark:text-white">{{ group.name }}</div>
                 <div class="text-xs text-gray-500 dark:text-gray-400">#{{ group.id }} · {{ group.platform }}</div>
+              </td>
+              <td class="px-4 py-3 align-top">
+                <div class="min-w-[260px] rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/70">
+                  <div class="mb-2 flex items-center justify-between gap-2">
+                    <span class="text-xs font-medium text-gray-600 dark:text-gray-300">
+                      {{ selectedRoutingLabel(group.id, 'one_k') }}
+                    </span>
+                    <button
+                      v-if="routingAccountIDsFor(group.id, 'one_k').length > 0"
+                      type="button"
+                      class="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200"
+                      @click="clearRoutingAccounts(group.id, 'one_k')"
+                    >
+                      清空
+                    </button>
+                  </div>
+                  <div class="max-h-44 space-y-1 overflow-y-auto pr-1">
+                    <label
+                      v-for="account in accountOptionsForGroup(group.id)"
+                      :key="account.id"
+                      class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white dark:hover:bg-dark-800"
+                    >
+                      <input
+                        type="checkbox"
+                        class="mt-1 h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-900"
+                        :checked="routingAccountIDsFor(group.id, 'one_k').includes(account.id)"
+                        :aria-label="`${accountLabel(account)} 1K指定账号`"
+                        @change="toggleRoutingAccount(group.id, 'one_k', account.id, ($event.target as HTMLInputElement).checked)"
+                      />
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate font-medium text-gray-900 dark:text-white">{{ accountLabel(account) }}</span>
+                        <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
+                          {{ String(account.platform || '').toUpperCase() }} · 并发 {{ account.concurrency ?? '-' }}
+                        </span>
+                      </span>
+                    </label>
+                    <div v-if="accountOptionsForGroup(group.id).length === 0" class="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
+                      无已启用账号
+                    </div>
+                  </div>
+                </div>
               </td>
               <td class="px-4 py-3 align-top">
                 <div class="min-w-[260px] rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/70">
@@ -190,7 +232,7 @@
               </td>
             </tr>
             <tr v-if="!loading && schedulableGroups.length === 0">
-              <td colspan="4" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
+              <td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
                 暂无可配置分组
               </td>
             </tr>
@@ -291,23 +333,26 @@ const sampleTier = computed(() => {
   return '1K'
 })
 type ImageBillingRoutingFormRow = {
+  one_k_account_ids: number[]
   two_k_account_ids: number[]
   four_k_account_ids: number[]
 }
 
-type ImageBillingRoutingTier = 'two_k' | 'four_k'
+type ImageBillingRoutingTier = 'one_k' | 'two_k' | 'four_k'
 
 type ImageBillingRoutingSettingsInput = {
   groups?: Record<string, {
+    one_k_account_ids?: number[]
     two_k_account_ids?: number[]
     four_k_account_ids?: number[]
+    one_k_account_id?: number
     two_k_account_id?: number
     four_k_account_id?: number
   }>
 }
 
 type ImageBillingRoutingPayload = {
-  groups: Record<string, { two_k_account_ids: number[]; four_k_account_ids: number[] }>
+  groups: Record<string, { one_k_account_ids: number[]; two_k_account_ids: number[]; four_k_account_ids: number[] }>
 }
 
 const routingForm = reactive<Record<string, ImageBillingRoutingFormRow>>({})
@@ -359,7 +404,7 @@ function ensureRoutingRows(): void {
   for (const group of schedulableGroups.value) {
     const key = String(group.id)
     if (!routingForm[key]) {
-      routingForm[key] = { two_k_account_ids: [], four_k_account_ids: [] }
+      routingForm[key] = { one_k_account_ids: [], two_k_account_ids: [], four_k_account_ids: [] }
     }
   }
 }
@@ -408,6 +453,7 @@ function pruneRoutingRowsToEnabledAccounts(): void {
     const row = routingForm[key]
     if (!row) continue
     const enabledIDs = enabledAccountIDSetForGroup(group.id)
+    row.one_k_account_ids = normalizeAccountIDs(row.one_k_account_ids).filter((id) => enabledIDs.has(id))
     row.two_k_account_ids = normalizeAccountIDs(row.two_k_account_ids).filter((id) => enabledIDs.has(id))
     row.four_k_account_ids = normalizeAccountIDs(row.four_k_account_ids).filter((id) => enabledIDs.has(id))
   }
@@ -417,6 +463,7 @@ function routingAccountIDsFor(groupId: number, tier: ImageBillingRoutingTier): n
   const key = String(groupId)
   const row = routingForm[key]
   if (!row) return []
+  if (tier === 'one_k') return row.one_k_account_ids
   return tier === 'two_k' ? row.two_k_account_ids : row.four_k_account_ids
 }
 
@@ -428,9 +475,9 @@ function selectedRoutingLabel(groupId: number, tier: ImageBillingRoutingTier): s
 function toggleRoutingAccount(groupId: number, tier: ImageBillingRoutingTier, accountId: number, checked: boolean): void {
   const key = String(groupId)
   if (!routingForm[key]) {
-    routingForm[key] = { two_k_account_ids: [], four_k_account_ids: [] }
+    routingForm[key] = { one_k_account_ids: [], two_k_account_ids: [], four_k_account_ids: [] }
   }
-  const list = tier === 'two_k' ? routingForm[key].two_k_account_ids : routingForm[key].four_k_account_ids
+  const list = tier === 'one_k' ? routingForm[key].one_k_account_ids : tier === 'two_k' ? routingForm[key].two_k_account_ids : routingForm[key].four_k_account_ids
   const id = Math.trunc(Number(accountId) || 0)
   const index = list.indexOf(id)
   if (checked && id > 0 && index === -1) {
@@ -443,7 +490,9 @@ function toggleRoutingAccount(groupId: number, tier: ImageBillingRoutingTier, ac
 function clearRoutingAccounts(groupId: number, tier: ImageBillingRoutingTier): void {
   const key = String(groupId)
   if (!routingForm[key]) return
-  if (tier === 'two_k') {
+  if (tier === 'one_k') {
+    routingForm[key].one_k_account_ids = []
+  } else if (tier === 'two_k') {
     routingForm[key].two_k_account_ids = []
   } else {
     routingForm[key].four_k_account_ids = []
@@ -455,6 +504,7 @@ function applyRoutingSettings(settings: ImageBillingRoutingSettingsInput): void 
   const rows = settings.groups || {}
   for (const [groupId, routing] of Object.entries(rows)) {
     routingForm[groupId] = {
+      one_k_account_ids: normalizeAccountIDs(routing.one_k_account_ids, routing.one_k_account_id),
       two_k_account_ids: normalizeAccountIDs(routing.two_k_account_ids, routing.two_k_account_id),
       four_k_account_ids: normalizeAccountIDs(routing.four_k_account_ids, routing.four_k_account_id),
     }
@@ -468,10 +518,11 @@ function buildRoutingPayload(): ImageBillingRoutingPayload {
   for (const [groupId, routing] of Object.entries(routingForm)) {
     const groupIDNumber = Math.trunc(Number(groupId) || 0)
     const enabledIDs = enabledAccountIDSetForGroup(groupIDNumber)
+    const oneK = normalizeAccountIDs(routing.one_k_account_ids).filter((id) => enabledIDs.has(id))
     const twoK = normalizeAccountIDs(routing.two_k_account_ids).filter((id) => enabledIDs.has(id))
     const fourK = normalizeAccountIDs(routing.four_k_account_ids).filter((id) => enabledIDs.has(id))
-    if (twoK.length > 0 || fourK.length > 0) {
-      payload[groupId] = { two_k_account_ids: twoK, four_k_account_ids: fourK }
+    if (oneK.length > 0 || twoK.length > 0 || fourK.length > 0) {
+      payload[groupId] = { one_k_account_ids: oneK, two_k_account_ids: twoK, four_k_account_ids: fourK }
     }
   }
   return { groups: payload }

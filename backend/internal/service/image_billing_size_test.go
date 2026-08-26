@@ -10,8 +10,10 @@ import (
 func TestNormalizeImageBillingAccountRoutingSettingsSupportsMultiAccounts(t *testing.T) {
 	settings := NormalizeImageBillingAccountRoutingSettings(ImageBillingAccountRoutingSettings{Groups: map[int64]ImageBillingGroupAccountRouting{
 		1: {
+			OneKAccountIDs:  []int64{5, 6, 5, -1, 0},
 			TwoKAccountIDs:  []int64{10, 20, 10, -1, 0},
 			FourKAccountIDs: []int64{30},
+			OneKAccountID:   7,
 			FourKAccountID:  40,
 		},
 		2: {
@@ -22,11 +24,17 @@ func TestNormalizeImageBillingAccountRoutingSettingsSupportsMultiAccounts(t *tes
 		},
 	}})
 
+	require.Equal(t, []int64{5, 6, 7}, settings.AccountIDsFor(1, ImageBillingSize1K))
 	require.Equal(t, []int64{10, 20}, settings.AccountIDsFor(1, ImageBillingSize2K))
 	require.Equal(t, []int64{30, 40}, settings.AccountIDsFor(1, ImageBillingSize4K))
 	require.Equal(t, []int64{50}, settings.AccountIDsFor(2, ImageBillingSize2K))
 	require.Equal(t, int64(10), settings.AccountIDFor(1, ImageBillingSize2K))
 	require.NotContains(t, settings.Groups, int64(-1))
+}
+
+func TestImageBillingSchedulingTierContextSupportsOneK(t *testing.T) {
+	ctx := WithImageBillingSchedulingTier(nil, ImageBillingSize1K)
+	require.Equal(t, ImageBillingSize1K, ImageBillingSchedulingTierFromContext(ctx))
 }
 
 func TestRotateOpenAIImageBillingRoutingAccountIDs(t *testing.T) {

@@ -30,8 +30,10 @@ type cachedImageBillingAccountRoutingSettings struct {
 type ImageBillingGroupAccountRouting struct {
 	// AccountIDs fields are the current multi-account configuration.
 	// AccountID fields are kept for backward compatibility with old saved JSON.
+	OneKAccountIDs  []int64 `json:"one_k_account_ids,omitempty"`
 	TwoKAccountIDs  []int64 `json:"two_k_account_ids,omitempty"`
 	FourKAccountIDs []int64 `json:"four_k_account_ids,omitempty"`
+	OneKAccountID   int64   `json:"one_k_account_id,omitempty"`
 	TwoKAccountID   int64   `json:"two_k_account_id,omitempty"`
 	FourKAccountID  int64   `json:"four_k_account_id,omitempty"`
 }
@@ -46,12 +48,14 @@ func NormalizeImageBillingAccountRoutingSettings(settings ImageBillingAccountRou
 		if groupID <= 0 {
 			continue
 		}
+		routing.OneKAccountIDs = normalizeImageBillingRoutingAccountIDs(routing.OneKAccountIDs, routing.OneKAccountID)
 		routing.TwoKAccountIDs = normalizeImageBillingRoutingAccountIDs(routing.TwoKAccountIDs, routing.TwoKAccountID)
 		routing.FourKAccountIDs = normalizeImageBillingRoutingAccountIDs(routing.FourKAccountIDs, routing.FourKAccountID)
 		// Store only the multi-account shape after normalization; old single fields remain accepted on input.
+		routing.OneKAccountID = 0
 		routing.TwoKAccountID = 0
 		routing.FourKAccountID = 0
-		if len(routing.TwoKAccountIDs) == 0 && len(routing.FourKAccountIDs) == 0 {
+		if len(routing.OneKAccountIDs) == 0 && len(routing.TwoKAccountIDs) == 0 && len(routing.FourKAccountIDs) == 0 {
 			continue
 		}
 		normalized.Groups[groupID] = routing
@@ -88,6 +92,8 @@ func (s ImageBillingAccountRoutingSettings) AccountIDsFor(groupID int64, tier st
 		return nil
 	}
 	switch strings.ToUpper(strings.TrimSpace(tier)) {
+	case ImageBillingSize1K:
+		return append([]int64(nil), routing.OneKAccountIDs...)
 	case ImageBillingSize2K:
 		return append([]int64(nil), routing.TwoKAccountIDs...)
 	case ImageBillingSize4K:

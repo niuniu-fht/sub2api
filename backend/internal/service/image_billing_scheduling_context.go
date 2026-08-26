@@ -13,7 +13,7 @@ func WithImageBillingSchedulingTier(ctx context.Context, tier string) context.Co
 	}
 	tier = strings.ToUpper(strings.TrimSpace(tier))
 	switch tier {
-	case ImageBillingSize2K, ImageBillingSize4K:
+	case ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K:
 		return context.WithValue(ctx, imageBillingSchedulingTierContextKey{}, tier)
 	default:
 		return ctx
@@ -26,6 +26,8 @@ func ImageBillingSchedulingTierFromContext(ctx context.Context) string {
 	}
 	tier, _ := ctx.Value(imageBillingSchedulingTierContextKey{}).(string)
 	switch strings.ToUpper(strings.TrimSpace(tier)) {
+	case ImageBillingSize1K:
+		return ImageBillingSize1K
 	case ImageBillingSize2K:
 		return ImageBillingSize2K
 	case ImageBillingSize4K:

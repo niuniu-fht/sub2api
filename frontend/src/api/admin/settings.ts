@@ -1460,9 +1460,11 @@ export async function updateImageBillingThresholdSettings(
 }
 
 export interface ImageBillingGroupAccountRouting {
+  one_k_account_ids?: number[];
   two_k_account_ids?: number[];
   four_k_account_ids?: number[];
   // Backward compatibility with old API payloads.
+  one_k_account_id?: number;
   two_k_account_id?: number;
   four_k_account_id?: number;
 }
@@ -1632,3 +1634,4 @@ export const settingsAPI = {
 };
 
 export default settingsAPI;
+
