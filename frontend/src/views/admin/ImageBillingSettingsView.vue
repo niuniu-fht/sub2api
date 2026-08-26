@@ -87,157 +87,80 @@
         </button>
       </div>
 
-      <div class="mt-5 overflow-hidden rounded-xl border border-gray-200 dark:border-dark-700">
-        <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-dark-700">
-          <thead class="bg-gray-50 dark:bg-dark-900">
-            <tr>
-              <th class="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">分组</th>
-              <th class="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">1K 指定账号</th>
-              <th class="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">2K 指定账号</th>
-              <th class="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">4K 指定账号</th>
-              <th class="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">可选账号数</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-gray-200 dark:divide-dark-700">
-            <tr v-for="group in schedulableGroups" :key="group.id">
-              <td class="px-4 py-3">
-                <div class="font-medium text-gray-900 dark:text-white">{{ group.name }}</div>
-                <div class="text-xs text-gray-500 dark:text-gray-400">#{{ group.id }} · {{ group.platform }}</div>
-              </td>
-              <td class="px-4 py-3 align-top">
-                <div class="min-w-[260px] rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/70">
-                  <div class="mb-2 flex items-center justify-between gap-2">
-                    <span class="text-xs font-medium text-gray-600 dark:text-gray-300">
-                      {{ selectedRoutingLabel(group.id, 'one_k') }}
-                    </span>
-                    <button
-                      v-if="routingAccountIDsFor(group.id, 'one_k').length > 0"
-                      type="button"
-                      class="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200"
-                      @click="clearRoutingAccounts(group.id, 'one_k')"
-                    >
-                      清空
-                    </button>
-                  </div>
-                  <div class="max-h-44 space-y-1 overflow-y-auto pr-1">
-                    <label
-                      v-for="account in accountOptionsForGroup(group.id)"
-                      :key="account.id"
-                      class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white dark:hover:bg-dark-800"
-                    >
-                      <input
-                        type="checkbox"
-                        class="mt-1 h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-900"
-                        :checked="routingAccountIDsFor(group.id, 'one_k').includes(account.id)"
-                        :aria-label="`${accountLabel(account)} 1K指定账号`"
-                        @change="toggleRoutingAccount(group.id, 'one_k', account.id, ($event.target as HTMLInputElement).checked)"
-                      />
-                      <span class="min-w-0 flex-1">
-                        <span class="block truncate font-medium text-gray-900 dark:text-white">{{ accountLabel(account) }}</span>
-                        <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
-                          {{ String(account.platform || '').toUpperCase() }} · 并发 {{ account.concurrency ?? '-' }}
-                        </span>
-                      </span>
-                    </label>
-                    <div v-if="accountOptionsForGroup(group.id).length === 0" class="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
-                      无已启用账号
-                    </div>
-                  </div>
+      <div class="mt-5 space-y-4">
+        <div
+          v-for="group in schedulableGroups"
+          :key="group.id"
+          class="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/60"
+        >
+          <div class="flex flex-col gap-2 border-b border-gray-200 pb-3 dark:border-dark-700 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div class="font-medium text-gray-900 dark:text-white">{{ group.name }}</div>
+              <div class="text-xs text-gray-500 dark:text-gray-400">#{{ group.id }} · {{ group.platform }}</div>
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">
+              可选账号：<span class="font-medium text-gray-700 dark:text-gray-200">{{ accountOptionsForGroup(group.id).length }}</span>
+            </div>
+          </div>
+
+          <div class="mt-4 grid gap-3 xl:grid-cols-3">
+            <div
+              v-for="tier in routingTiers"
+              :key="tier.key"
+              class="min-w-0 rounded-xl border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800"
+            >
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <div>
+                  <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ tier.label }} 指定账号</div>
+                  <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ selectedRoutingLabel(group.id, tier.key) }}</div>
                 </div>
-              </td>
-              <td class="px-4 py-3 align-top">
-                <div class="min-w-[260px] rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/70">
-                  <div class="mb-2 flex items-center justify-between gap-2">
-                    <span class="text-xs font-medium text-gray-600 dark:text-gray-300">
-                      {{ selectedRoutingLabel(group.id, 'two_k') }}
+                <button
+                  v-if="routingAccountIDsFor(group.id, tier.key).length > 0"
+                  type="button"
+                  class="shrink-0 text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200"
+                  @click="clearRoutingAccounts(group.id, tier.key)"
+                >
+                  清空
+                </button>
+              </div>
+
+              <div class="max-h-44 space-y-1 overflow-y-auto pr-1">
+                <label
+                  v-for="account in accountOptionsForGroup(group.id)"
+                  :key="account.id"
+                  class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-gray-50 dark:hover:bg-dark-900"
+                >
+                  <input
+                    type="checkbox"
+                    class="mt-1 h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-900"
+                    :checked="routingAccountIDsFor(group.id, tier.key).includes(account.id)"
+                    :aria-label="`${accountLabel(account)} ${tier.label}指定账号`"
+                    @change="toggleRoutingAccount(group.id, tier.key, account.id, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <span class="min-w-0 flex-1">
+                    <span class="block truncate font-medium text-gray-900 dark:text-white">{{ accountLabel(account) }}</span>
+                    <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
+                      {{ String(account.platform || '').toUpperCase() }} · 并发 {{ account.concurrency ?? '-' }}
                     </span>
-                    <button
-                      v-if="routingAccountIDsFor(group.id, 'two_k').length > 0"
-                      type="button"
-                      class="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200"
-                      @click="clearRoutingAccounts(group.id, 'two_k')"
-                    >
-                      清空
-                    </button>
-                  </div>
-                  <div class="max-h-44 space-y-1 overflow-y-auto pr-1">
-                    <label
-                      v-for="account in accountOptionsForGroup(group.id)"
-                      :key="account.id"
-                      class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white dark:hover:bg-dark-800"
-                    >
-                      <input
-                        type="checkbox"
-                        class="mt-1 h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-900"
-                        :checked="routingAccountIDsFor(group.id, 'two_k').includes(account.id)"
-                        :aria-label="`${accountLabel(account)} 2K指定账号`"
-                        @change="toggleRoutingAccount(group.id, 'two_k', account.id, ($event.target as HTMLInputElement).checked)"
-                      />
-                      <span class="min-w-0 flex-1">
-                        <span class="block truncate font-medium text-gray-900 dark:text-white">{{ accountLabel(account) }}</span>
-                        <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
-                          {{ String(account.platform || '').toUpperCase() }} · 并发 {{ account.concurrency ?? '-' }}
-                        </span>
-                      </span>
-                    </label>
-                    <div v-if="accountOptionsForGroup(group.id).length === 0" class="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
-                      无已启用账号
-                    </div>
-                  </div>
+                  </span>
+                </label>
+                <div
+                  v-if="accountOptionsForGroup(group.id).length === 0"
+                  class="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400"
+                >
+                  无已启用账号
                 </div>
-              </td>
-              <td class="px-4 py-3 align-top">
-                <div class="min-w-[260px] rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/70">
-                  <div class="mb-2 flex items-center justify-between gap-2">
-                    <span class="text-xs font-medium text-gray-600 dark:text-gray-300">
-                      {{ selectedRoutingLabel(group.id, 'four_k') }}
-                    </span>
-                    <button
-                      v-if="routingAccountIDsFor(group.id, 'four_k').length > 0"
-                      type="button"
-                      class="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200"
-                      @click="clearRoutingAccounts(group.id, 'four_k')"
-                    >
-                      清空
-                    </button>
-                  </div>
-                  <div class="max-h-44 space-y-1 overflow-y-auto pr-1">
-                    <label
-                      v-for="account in accountOptionsForGroup(group.id)"
-                      :key="account.id"
-                      class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-white dark:hover:bg-dark-800"
-                    >
-                      <input
-                        type="checkbox"
-                        class="mt-1 h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-900"
-                        :checked="routingAccountIDsFor(group.id, 'four_k').includes(account.id)"
-                        :aria-label="`${accountLabel(account)} 4K指定账号`"
-                        @change="toggleRoutingAccount(group.id, 'four_k', account.id, ($event.target as HTMLInputElement).checked)"
-                      />
-                      <span class="min-w-0 flex-1">
-                        <span class="block truncate font-medium text-gray-900 dark:text-white">{{ accountLabel(account) }}</span>
-                        <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
-                          {{ String(account.platform || '').toUpperCase() }} · 并发 {{ account.concurrency ?? '-' }}
-                        </span>
-                      </span>
-                    </label>
-                    <div v-if="accountOptionsForGroup(group.id).length === 0" class="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
-                      无已启用账号
-                    </div>
-                  </div>
-                </div>
-              </td>
-              <td class="px-4 py-3 text-gray-600 dark:text-gray-300">
-                {{ accountOptionsForGroup(group.id).length }}
-              </td>
-            </tr>
-            <tr v-if="!loading && schedulableGroups.length === 0">
-              <td colspan="5" class="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                暂无可配置分组
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="!loading && schedulableGroups.length === 0"
+          class="rounded-xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400"
+        >
+          暂无可配置分组
+        </div>
       </div>
       <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
         注意：可选账号仅统计状态 active 且调度开关开启的账号；多选账号会按配置顺序尝试获取可用并发，仍会经过分组归属、模型能力、并发和上游限制检查。
@@ -339,6 +262,12 @@ type ImageBillingRoutingFormRow = {
 }
 
 type ImageBillingRoutingTier = 'one_k' | 'two_k' | 'four_k'
+
+const routingTiers: Array<{ key: ImageBillingRoutingTier; label: string }> = [
+  { key: 'one_k', label: '1K' },
+  { key: 'two_k', label: '2K' },
+  { key: 'four_k', label: '4K' },
+]
 
 type ImageBillingRoutingSettingsInput = {
   groups?: Record<string, {
