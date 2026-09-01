@@ -171,35 +171,42 @@
                     <div
                       v-for="(account, index) in selectedAccountsForTier(group.id, tier.key)"
                       :key="account.id"
-                      class="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs shadow-sm dark:bg-dark-900"
+                      class="rounded-lg bg-white px-2.5 py-2 text-xs shadow-sm dark:bg-dark-900"
                     >
-                      <span class="shrink-0 rounded-full bg-primary-600 px-2 py-0.5 font-semibold text-white">
-                        优先级 {{ index + 1 }}
-                      </span>
-                      <span class="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-100">{{ accountLabel(account) }}</span>
-                      <button
-                        type="button"
-                        class="rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800"
-                        :disabled="index === 0"
-                        @click="moveRoutingAccount(group.id, tier.key, index, -1)"
-                      >
-                        上移
-                      </button>
-                      <button
-                        type="button"
-                        class="rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800"
-                        :disabled="index === selectedAccountsForTier(group.id, tier.key).length - 1"
-                        @click="moveRoutingAccount(group.id, tier.key, index, 1)"
-                      >
-                        下移
-                      </button>
-                      <button
-                        type="button"
-                        class="rounded border border-red-200 px-1.5 py-0.5 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20"
-                        @click="removeRoutingAccount(group.id, tier.key, account.id)"
-                      >
-                        移除
-                      </button>
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="shrink-0 rounded-full bg-primary-600 px-2 py-0.5 font-semibold text-white">
+                          优先级 {{ index + 1 }}
+                        </span>
+                        <button
+                          type="button"
+                          class="ml-auto rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800"
+                          :disabled="index === 0"
+                          @click="moveRoutingAccount(group.id, tier.key, index, -1)"
+                        >
+                          上移
+                        </button>
+                        <button
+                          type="button"
+                          class="rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800"
+                          :disabled="index === selectedAccountsForTier(group.id, tier.key).length - 1"
+                          @click="moveRoutingAccount(group.id, tier.key, index, 1)"
+                        >
+                          下移
+                        </button>
+                        <button
+                          type="button"
+                          class="rounded border border-red-200 px-1.5 py-0.5 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20"
+                          @click="removeRoutingAccount(group.id, tier.key, account.id)"
+                        >
+                          移除
+                        </button>
+                      </div>
+                      <div class="mt-1.5 min-w-0 break-words font-medium leading-5 text-gray-900 dark:text-gray-100">
+                        {{ accountLabel(account) }}
+                      </div>
+                      <div class="mt-0.5 break-words text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+                        {{ accountMeta(account) }}
+                      </div>
                     </div>
                     <div
                       v-if="selectedAccountsForTier(group.id, tier.key).length === 0"
@@ -309,13 +316,20 @@
                     <div
                       v-for="(account, index) in selectedAccountsForGeminiRule(group.id, ruleIndex)"
                       :key="account.id"
-                      class="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs shadow-sm dark:bg-dark-900"
+                      class="rounded-lg bg-white px-2.5 py-2 text-xs shadow-sm dark:bg-dark-900"
                     >
-                      <span class="shrink-0 rounded-full bg-primary-600 px-2 py-0.5 font-semibold text-white">优先级 #{{ index + 1 }}</span>
-                      <span class="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-100">{{ accountLabel(account) }}</span>
-                      <button type="button" class="rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800" :disabled="index === 0" @click="moveGeminiRuleAccount(group.id, ruleIndex, index, -1)">上移</button>
-                      <button type="button" class="rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800" :disabled="index === selectedAccountsForGeminiRule(group.id, ruleIndex).length - 1" @click="moveGeminiRuleAccount(group.id, ruleIndex, index, 1)">下移</button>
-                      <button type="button" class="rounded border border-red-200 px-1.5 py-0.5 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20" @click="removeGeminiRuleAccount(group.id, ruleIndex, account.id)">移除</button>
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="shrink-0 rounded-full bg-primary-600 px-2 py-0.5 font-semibold text-white">优先级 #{{ index + 1 }}</span>
+                        <button type="button" class="ml-auto rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800" :disabled="index === 0" @click="moveGeminiRuleAccount(group.id, ruleIndex, index, -1)">上移</button>
+                        <button type="button" class="rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800" :disabled="index === selectedAccountsForGeminiRule(group.id, ruleIndex).length - 1" @click="moveGeminiRuleAccount(group.id, ruleIndex, index, 1)">下移</button>
+                        <button type="button" class="rounded border border-red-200 px-1.5 py-0.5 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20" @click="removeGeminiRuleAccount(group.id, ruleIndex, account.id)">移除</button>
+                      </div>
+                      <div class="mt-1.5 min-w-0 break-words font-medium leading-5 text-gray-900 dark:text-gray-100">
+                        {{ accountLabel(account) }}
+                      </div>
+                      <div class="mt-0.5 break-words text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+                        {{ accountMeta(account) }}
+                      </div>
                     </div>
                     <div v-if="selectedAccountsForGeminiRule(group.id, ruleIndex).length === 0" class="rounded-lg border border-dashed border-primary-200 px-3 py-4 text-center text-xs text-primary-700/70 dark:border-primary-900/60 dark:text-primary-200/70">未指定账号，保存时会忽略该规则</div>
                   </div>
@@ -693,6 +707,10 @@ function accountOptionsForGroupPlatform(groupId: number, platformTab: 'openai' |
 
 function accountLabel(account: Account): string {
   return `#${account.id} ${account.name || '-'}`
+}
+
+function accountMeta(account: Account): string {
+  return `${String(account.platform || '').toUpperCase()} · 并发 ${account.concurrency ?? '-'}${account.schedulable === true ? ' · 可调度' : ''}`
 }
 
 function tierSearchKey(groupId: number, tier: ImageBillingRoutingTier): string {
