@@ -1473,6 +1473,20 @@ export interface ImageBillingAccountRoutingSettings {
   groups: Record<string, ImageBillingGroupAccountRouting>;
 }
 
+export interface GeminiImageBillingRoutingRule {
+  tier: '1K' | '2K' | '4K' | string;
+  aspect_ratio: string;
+  account_ids: number[];
+}
+
+export interface GeminiImageBillingGroupRouting {
+  rules: GeminiImageBillingRoutingRule[];
+}
+
+export interface GeminiImageBillingRoutingSettings {
+  groups: Record<string, GeminiImageBillingGroupRouting>;
+}
+
 export async function getImageBillingAccountRoutingSettings(): Promise<ImageBillingAccountRoutingSettings> {
   const { data } = await apiClient.get<ImageBillingAccountRoutingSettings>(
     "/admin/settings/image-billing-account-routing",
@@ -1485,6 +1499,23 @@ export async function updateImageBillingAccountRoutingSettings(
 ): Promise<ImageBillingAccountRoutingSettings> {
   const { data } = await apiClient.put<ImageBillingAccountRoutingSettings>(
     "/admin/settings/image-billing-account-routing",
+    settings,
+  );
+  return { groups: data.groups || {} };
+}
+
+export async function getGeminiImageBillingRoutingSettings(): Promise<GeminiImageBillingRoutingSettings> {
+  const { data } = await apiClient.get<GeminiImageBillingRoutingSettings>(
+    "/admin/settings/gemini-image-billing-routing",
+  );
+  return { groups: data.groups || {} };
+}
+
+export async function updateGeminiImageBillingRoutingSettings(
+  settings: GeminiImageBillingRoutingSettings,
+): Promise<GeminiImageBillingRoutingSettings> {
+  const { data } = await apiClient.put<GeminiImageBillingRoutingSettings>(
+    "/admin/settings/gemini-image-billing-routing",
     settings,
   );
   return { groups: data.groups || {} };
@@ -1625,6 +1656,8 @@ export const settingsAPI = {
   updateImageBillingThresholdSettings,
   getImageBillingAccountRoutingSettings,
   updateImageBillingAccountRoutingSettings,
+  getGeminiImageBillingRoutingSettings,
+  updateGeminiImageBillingRoutingSettings,
   getBetaPolicySettings,
   updateBetaPolicySettings,
   getWebSearchEmulationConfig,

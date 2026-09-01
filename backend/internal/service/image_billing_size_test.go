@@ -46,6 +46,33 @@ func TestImageBillingAccountRoutingSettingsKeepsConfiguredPriority(t *testing.T)
 	}
 }
 
+func TestNormalizeGeminiImageBillingRoutingSettings(t *testing.T) {
+	settings := NormalizeGeminiImageBillingRoutingSettings(GeminiImageBillingRoutingSettings{Groups: map[int64]GeminiImageBillingGroupRouting{
+		1: {Rules: []GeminiImageBillingRoutingRule{
+			{Tier: "2k", AspectRatio: "16 : 9", AccountIDs: []int64{10, 20, 10, 0}},
+			{Tier: "2K", AspectRatio: "16:9", AccountIDs: []int64{30, 20}},
+			{Tier: "4K", AspectRatio: "all", AccountIDs: []int64{40}},
+			{Tier: "1K", AspectRatio: "1:1"},
+		}},
+		-1: {Rules: []GeminiImageBillingRoutingRule{{Tier: "1K", AspectRatio: "*", AccountIDs: []int64{99}}}},
+	}})
+
+	require.Equal(t, []int64{10, 20, 30}, settings.AccountIDsFor(1, ImageBillingSize2K, "16:9"))
+	require.Equal(t, []int64{40}, settings.AccountIDsFor(1, ImageBillingSize4K, "9:16"))
+	require.Nil(t, settings.AccountIDsFor(1, ImageBillingSize1K, "1:1"))
+	require.NotContains(t, settings.Groups, int64(-1))
+}
+
+func TestParseGeminiImageBillingRequestInfo(t *testing.T) {
+	info := ParseGeminiImageBillingRequestInfo([]byte(`{"generationConfig":{"imageConfig":{"imageSize":"2k","aspectRatio":"16:9"}}}`))
+	require.Equal(t, ImageBillingSize2K, info.Tier)
+	require.Equal(t, "16:9", info.AspectRatio)
+
+	info = ParseGeminiImageBillingRequestInfo([]byte(`{"generationConfig":{"imageConfig":{}}}`))
+	require.Equal(t, ImageBillingSize1K, info.Tier)
+	require.Empty(t, info.AspectRatio)
+}
+
 func TestClassifyImageBillingTier(t *testing.T) {
 	tests := []struct {
 		name     string

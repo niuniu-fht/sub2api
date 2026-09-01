@@ -134,6 +134,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyImageBilling2KPixelThreshold:              strconv.FormatInt(DefaultImageBilling2KPixelThreshold, 10),
 		SettingKeyImageBilling4KPixelThreshold:              strconv.FormatInt(DefaultImageBilling4KPixelThreshold, 10),
 		SettingKeyImageBillingAccountRouting:                "{}",
+		SettingKeyGeminiImageBillingRouting:                 "{}",
 		SettingKeyAuthSourceDefaultEmailBalance:             "0",
 		SettingKeyAuthSourceDefaultEmailConcurrency:         "5",
 		SettingKeyAuthSourceDefaultEmailSubscriptions:       "[]",

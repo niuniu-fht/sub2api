@@ -245,6 +245,11 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 
 	// 获取模型路由配置（anthropic 目标平台；composite 分组按目标平台判断）
 	var routingAccountIDs []int64
+	if platform == PlatformGemini {
+		if selection, handled, err := s.selectForcedGeminiImageBillingAccount(ctx, groupID, sessionHash, requestedModel, excludedIDs, accountByID, useMixed); handled {
+			return selection, err
+		}
+	}
 	if group != nil && requestedModel != "" && platform == PlatformAnthropic &&
 		(group.Platform == PlatformAnthropic || group.Platform == PlatformComposite) {
 		routingAccountIDs = group.GetRoutingAccountIDs(requestedModel)

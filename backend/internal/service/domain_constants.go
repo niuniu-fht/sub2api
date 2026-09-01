@@ -319,6 +319,7 @@ const (
 	SettingKeyImageBilling2KPixelThreshold = "image_billing_2k_pixel_threshold" // 图片计费 2K 档位：width*height 大于该值
 	SettingKeyImageBilling4KPixelThreshold = "image_billing_4k_pixel_threshold" // 图片计费 4K 档位：width*height 大于该值
 	SettingKeyImageBillingAccountRouting   = "image_billing_account_routing"    // 图片档位按分组强制账号调度配置（JSON）
+	SettingKeyGeminiImageBillingRouting    = "gemini_image_billing_routing"     // Gemini 图片按分组/档位/比例强制账号调度配置（JSON）
 
 	// 第三方认证来源默认授予配置
 	SettingKeyAuthSourceDefaultEmailBalance             = "auth_source_default_email_balance"

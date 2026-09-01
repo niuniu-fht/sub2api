@@ -16,6 +16,7 @@ const imageBillingAreaThresholdSettingsCacheTTL = 30 * time.Second
 
 var imageBillingAreaThresholdSettingsSF singleflight.Group
 var imageBillingAccountRoutingSettingsSF singleflight.Group
+var geminiImageBillingRoutingSettingsSF singleflight.Group
 
 type cachedImageBillingAreaThresholdSettings struct {
 	thresholds ImageBillingAreaThresholds
@@ -24,6 +25,11 @@ type cachedImageBillingAreaThresholdSettings struct {
 
 type cachedImageBillingAccountRoutingSettings struct {
 	settings  ImageBillingAccountRoutingSettings
+	expiresAt int64
+}
+
+type cachedGeminiImageBillingRoutingSettings struct {
+	settings  GeminiImageBillingRoutingSettings
 	expiresAt int64
 }
 
@@ -40,6 +46,22 @@ type ImageBillingGroupAccountRouting struct {
 
 type ImageBillingAccountRoutingSettings struct {
 	Groups map[int64]ImageBillingGroupAccountRouting `json:"groups"`
+}
+
+const GeminiImageBillingAspectRatioAny = "*"
+
+type GeminiImageBillingRoutingRule struct {
+	Tier        string  `json:"tier"`
+	AspectRatio string  `json:"aspect_ratio"`
+	AccountIDs  []int64 `json:"account_ids"`
+}
+
+type GeminiImageBillingGroupRouting struct {
+	Rules []GeminiImageBillingRoutingRule `json:"rules"`
+}
+
+type GeminiImageBillingRoutingSettings struct {
+	Groups map[int64]GeminiImageBillingGroupRouting `json:"groups"`
 }
 
 func NormalizeImageBillingAccountRoutingSettings(settings ImageBillingAccountRoutingSettings) ImageBillingAccountRoutingSettings {
@@ -109,6 +131,86 @@ func (s ImageBillingAccountRoutingSettings) AccountIDFor(groupID int64, tier str
 		return 0
 	}
 	return ids[0]
+}
+
+func NormalizeGeminiImageBillingAspectRatio(aspectRatio string) string {
+	aspectRatio = strings.ToLower(strings.TrimSpace(aspectRatio))
+	aspectRatio = strings.ReplaceAll(aspectRatio, " ", "")
+	switch aspectRatio {
+	case "", "auto":
+		return ""
+	case "*", "all", "any", "全部", "全部比例":
+		return GeminiImageBillingAspectRatioAny
+	case "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9":
+		return aspectRatio
+	default:
+		return aspectRatio
+	}
+}
+
+func NormalizeGeminiImageBillingRoutingSettings(settings GeminiImageBillingRoutingSettings) GeminiImageBillingRoutingSettings {
+	normalized := GeminiImageBillingRoutingSettings{Groups: map[int64]GeminiImageBillingGroupRouting{}}
+	for groupID, routing := range settings.Groups {
+		if groupID <= 0 {
+			continue
+		}
+		rules := make([]GeminiImageBillingRoutingRule, 0, len(routing.Rules))
+		seenRules := make(map[string]struct{}, len(routing.Rules))
+		for _, rule := range routing.Rules {
+			tier := NormalizeImageBillingTierOrDefault(rule.Tier)
+			aspectRatio := NormalizeGeminiImageBillingAspectRatio(rule.AspectRatio)
+			if aspectRatio == "" {
+				aspectRatio = GeminiImageBillingAspectRatioAny
+			}
+			accountIDs := normalizeImageBillingRoutingAccountIDs(rule.AccountIDs, 0)
+			if len(accountIDs) == 0 {
+				continue
+			}
+			key := tier + "|" + aspectRatio
+			if _, ok := seenRules[key]; ok {
+				for i := range rules {
+					if rules[i].Tier == tier && rules[i].AspectRatio == aspectRatio {
+						rules[i].AccountIDs = normalizeImageBillingRoutingAccountIDs(append(rules[i].AccountIDs, accountIDs...), 0)
+						break
+					}
+				}
+				continue
+			}
+			seenRules[key] = struct{}{}
+			rules = append(rules, GeminiImageBillingRoutingRule{
+				Tier:        tier,
+				AspectRatio: aspectRatio,
+				AccountIDs:  accountIDs,
+			})
+		}
+		if len(rules) > 0 {
+			normalized.Groups[groupID] = GeminiImageBillingGroupRouting{Rules: rules}
+		}
+	}
+	return normalized
+}
+
+func (s GeminiImageBillingRoutingSettings) AccountIDsFor(groupID int64, tier string, aspectRatio string) []int64 {
+	if groupID <= 0 {
+		return nil
+	}
+	routing, ok := s.Groups[groupID]
+	if !ok {
+		return nil
+	}
+	tier = NormalizeImageBillingTierOrDefault(tier)
+	aspectRatio = NormalizeGeminiImageBillingAspectRatio(aspectRatio)
+	for _, rule := range routing.Rules {
+		if rule.Tier == tier && rule.AspectRatio == aspectRatio && len(rule.AccountIDs) > 0 {
+			return append([]int64(nil), rule.AccountIDs...)
+		}
+	}
+	for _, rule := range routing.Rules {
+		if rule.Tier == tier && rule.AspectRatio == GeminiImageBillingAspectRatioAny && len(rule.AccountIDs) > 0 {
+			return append([]int64(nil), rule.AccountIDs...)
+		}
+	}
+	return nil
 }
 
 // GetImageBillingAreaThresholdSettings reads image billing thresholds from storage.
@@ -311,5 +413,105 @@ var imageBillingAccountRoutingSettingsCache atomic.Value
 
 func imageBillingAccountRoutingSettingsStoreLoad() (*cachedImageBillingAccountRoutingSettings, bool) {
 	cached, ok := imageBillingAccountRoutingSettingsCache.Load().(*cachedImageBillingAccountRoutingSettings)
+	return cached, ok && cached != nil
+}
+
+// GetGeminiImageBillingRoutingSettings reads Gemini per-group/tier/aspect account routing from storage.
+func (s *SettingService) GetGeminiImageBillingRoutingSettings(ctx context.Context) (GeminiImageBillingRoutingSettings, error) {
+	settings := GeminiImageBillingRoutingSettings{Groups: map[int64]GeminiImageBillingGroupRouting{}}
+	if s == nil || s.settingRepo == nil {
+		return settings, nil
+	}
+	setting, err := s.settingRepo.Get(ctx, SettingKeyGeminiImageBillingRouting)
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			return s.storeGeminiImageBillingRoutingSettingsCache(settings, imageBillingAreaThresholdSettingsCacheTTL), nil
+		}
+		return settings, err
+	}
+	raw := ""
+	if setting != nil {
+		raw = setting.Value
+	}
+	settings = geminiImageBillingRoutingSettingsFromString(raw)
+	return s.storeGeminiImageBillingRoutingSettingsCache(settings, imageBillingAreaThresholdSettingsCacheTTL), nil
+}
+
+// SetGeminiImageBillingRoutingSettings saves Gemini per-group/tier/aspect account routing.
+func (s *SettingService) SetGeminiImageBillingRoutingSettings(ctx context.Context, settings GeminiImageBillingRoutingSettings) (GeminiImageBillingRoutingSettings, error) {
+	settings = NormalizeGeminiImageBillingRoutingSettings(settings)
+	if s == nil || s.settingRepo == nil {
+		return settings, nil
+	}
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return settings, err
+	}
+	if err := s.settingRepo.Set(ctx, SettingKeyGeminiImageBillingRouting, string(raw)); err != nil {
+		return settings, err
+	}
+	settings = s.storeGeminiImageBillingRoutingSettingsCache(settings, imageBillingAreaThresholdSettingsCacheTTL)
+	if s.onUpdate != nil {
+		s.onUpdate()
+	}
+	return settings, nil
+}
+
+// GetGeminiImageBillingRoutingSettingsCached returns cached Gemini routing for scheduling hot paths.
+func (s *SettingService) GetGeminiImageBillingRoutingSettingsCached(ctx context.Context) GeminiImageBillingRoutingSettings {
+	empty := GeminiImageBillingRoutingSettings{Groups: map[int64]GeminiImageBillingGroupRouting{}}
+	if s == nil || s.settingRepo == nil {
+		return empty
+	}
+	now := time.Now()
+	if cached, ok := geminiImageBillingRoutingSettingsStoreLoad(); ok && now.UnixNano() < cached.expiresAt {
+		return cached.settings
+	}
+
+	result, err, _ := geminiImageBillingRoutingSettingsSF.Do("gemini_image_billing_routing", func() (any, error) {
+		if cached, ok := geminiImageBillingRoutingSettingsStoreLoad(); ok && time.Now().UnixNano() < cached.expiresAt {
+			return cached.settings, nil
+		}
+		return s.GetGeminiImageBillingRoutingSettings(ctx)
+	})
+	if err == nil {
+		if settings, ok := result.(GeminiImageBillingRoutingSettings); ok {
+			return settings
+		}
+	}
+	return empty
+}
+
+func geminiImageBillingRoutingSettingsFromString(raw string) GeminiImageBillingRoutingSettings {
+	settings := GeminiImageBillingRoutingSettings{Groups: map[int64]GeminiImageBillingGroupRouting{}}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return settings
+	}
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		var groups map[int64]GeminiImageBillingGroupRouting
+		if err2 := json.Unmarshal([]byte(raw), &groups); err2 == nil {
+			settings.Groups = groups
+		}
+	}
+	if settings.Groups == nil {
+		settings.Groups = map[int64]GeminiImageBillingGroupRouting{}
+	}
+	return NormalizeGeminiImageBillingRoutingSettings(settings)
+}
+
+func (s *SettingService) storeGeminiImageBillingRoutingSettingsCache(settings GeminiImageBillingRoutingSettings, ttl time.Duration) GeminiImageBillingRoutingSettings {
+	settings = NormalizeGeminiImageBillingRoutingSettings(settings)
+	geminiImageBillingRoutingSettingsCache.Store(&cachedGeminiImageBillingRoutingSettings{
+		settings:  settings,
+		expiresAt: time.Now().Add(ttl).UnixNano(),
+	})
+	return settings
+}
+
+var geminiImageBillingRoutingSettingsCache atomic.Value
+
+func geminiImageBillingRoutingSettingsStoreLoad() (*cachedGeminiImageBillingRoutingSettings, bool) {
+	cached, ok := geminiImageBillingRoutingSettingsCache.Load().(*cachedGeminiImageBillingRoutingSettings)
 	return cached, ok && cached != nil
 }

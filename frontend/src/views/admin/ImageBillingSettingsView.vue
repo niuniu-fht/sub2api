@@ -87,6 +87,19 @@
         </button>
       </div>
 
+      <div class="mt-5 flex flex-wrap gap-2 rounded-xl bg-gray-100 p-1 dark:bg-dark-900">
+        <button
+          v-for="tab in platformTabs"
+          :key="tab.key"
+          type="button"
+          class="rounded-lg px-4 py-2 text-sm font-medium transition"
+          :class="activePlatform === tab.key ? 'bg-white text-primary-700 shadow-sm dark:bg-dark-800 dark:text-primary-200' : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
+          @click="activePlatform = tab.key"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+
       <div class="mt-5 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
         <label class="block">
           <span class="text-sm font-medium text-gray-700 dark:text-gray-200">搜索分组</span>
@@ -118,7 +131,7 @@
             </div>
           </div>
 
-          <div class="mt-4 grid gap-3 xl:grid-cols-3">
+          <div v-if="activePlatform === 'openai'" class="mt-4 grid gap-3 xl:grid-cols-3">
             <div
               v-for="tier in routingTiers"
               :key="tier.key"
@@ -226,6 +239,119 @@
               </div>
             </div>
           </div>
+
+          <div v-else class="mt-4 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="text-sm font-semibold text-gray-900 dark:text-white">Gemini 规则列表</div>
+              <button
+                type="button"
+                class="rounded-lg border border-primary-200 bg-white px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-50 dark:border-primary-900/60 dark:bg-dark-800 dark:text-primary-200 dark:hover:bg-primary-900/20"
+                @click="addGeminiRule(group.id)"
+              >
+                添加规则
+              </button>
+            </div>
+
+            <div
+              v-for="(rule, ruleIndex) in geminiRulesForGroup(group.id)"
+              :key="geminiRuleKey(group.id, ruleIndex)"
+              class="rounded-xl border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800"
+            >
+              <div class="grid gap-4 lg:grid-cols-[1fr_1.5fr_auto] lg:items-start">
+                <div>
+                  <div class="text-xs font-medium text-gray-600 dark:text-gray-300">档位（可多选）</div>
+                  <div class="mt-2 flex flex-wrap gap-2">
+                    <button
+                      v-for="tier in geminiTierOptions"
+                      :key="tier"
+                      type="button"
+                      class="rounded-full border px-3 py-1.5 text-xs font-semibold transition"
+                      :class="rule.tiers.includes(tier) ? 'border-primary-500 bg-primary-50 text-primary-700 shadow-sm dark:border-primary-400 dark:bg-primary-900/30 dark:text-primary-100' : 'border-gray-200 bg-white text-gray-600 hover:border-primary-200 hover:text-primary-700 dark:border-dark-600 dark:bg-dark-900 dark:text-gray-300 dark:hover:border-primary-700'"
+                      @click="toggleGeminiRuleTier(rule, tier)"
+                    >
+                      {{ tier }}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <div class="text-xs font-medium text-gray-600 dark:text-gray-300">比例（可多选）</div>
+                  <div class="mt-2 flex flex-wrap gap-2">
+                    <button
+                      v-for="ratio in geminiAspectRatioOptions"
+                      :key="ratio.value"
+                      type="button"
+                      class="rounded-full border px-3 py-1.5 text-xs font-semibold transition"
+                      :class="rule.aspect_ratios.includes(ratio.value) ? 'border-emerald-500 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-400 dark:bg-emerald-900/30 dark:text-emerald-100' : 'border-gray-200 bg-white text-gray-600 hover:border-emerald-200 hover:text-emerald-700 dark:border-dark-600 dark:bg-dark-900 dark:text-gray-300 dark:hover:border-emerald-700'"
+                      @click="toggleGeminiRuleAspectRatio(rule, ratio.value)"
+                    >
+                      {{ ratio.label }}
+                    </button>
+                  </div>
+                </div>
+                <div class="text-xs text-gray-500 dark:text-gray-400 lg:pt-6">
+                  命中 {{ geminiTierLabel(rule) }} + {{ geminiAspectRatioRuleLabel(rule) }} 时使用下方账号；专属比例优先于全部比例。
+                </div>
+                <div class="lg:pt-5">
+                  <button
+                    type="button"
+                    class="rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20"
+                    @click="removeGeminiRule(group.id, ruleIndex)"
+                  >
+                    删除规则
+                  </button>
+                </div>
+              </div>
+
+              <div class="mt-3 grid gap-3 lg:grid-cols-2">
+                <div class="rounded-lg border border-primary-100 bg-primary-50/50 p-2 dark:border-primary-900/40 dark:bg-primary-900/10">
+                  <div class="mb-2 text-xs font-medium text-primary-700 dark:text-primary-200">已选优先级</div>
+                  <div class="max-h-44 space-y-1 overflow-y-auto pr-1">
+                    <div
+                      v-for="(account, index) in selectedAccountsForGeminiRule(group.id, ruleIndex)"
+                      :key="account.id"
+                      class="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs shadow-sm dark:bg-dark-900"
+                    >
+                      <span class="shrink-0 rounded-full bg-primary-600 px-2 py-0.5 font-semibold text-white">优先级 #{{ index + 1 }}</span>
+                      <span class="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-100">{{ accountLabel(account) }}</span>
+                      <button type="button" class="rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800" :disabled="index === 0" @click="moveGeminiRuleAccount(group.id, ruleIndex, index, -1)">上移</button>
+                      <button type="button" class="rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800" :disabled="index === selectedAccountsForGeminiRule(group.id, ruleIndex).length - 1" @click="moveGeminiRuleAccount(group.id, ruleIndex, index, 1)">下移</button>
+                      <button type="button" class="rounded border border-red-200 px-1.5 py-0.5 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20" @click="removeGeminiRuleAccount(group.id, ruleIndex, account.id)">移除</button>
+                    </div>
+                    <div v-if="selectedAccountsForGeminiRule(group.id, ruleIndex).length === 0" class="rounded-lg border border-dashed border-primary-200 px-3 py-4 text-center text-xs text-primary-700/70 dark:border-primary-900/60 dark:text-primary-200/70">未指定账号，保存时会忽略该规则</div>
+                  </div>
+                </div>
+
+                <div>
+                  <input
+                    v-model="accountSearches[geminiRuleSearchKey(group.id, ruleIndex)]"
+                    type="text"
+                    class="mb-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
+                    placeholder="搜索 Gemini 可选账号"
+                  />
+                  <div class="max-h-52 space-y-1 overflow-y-auto pr-1">
+                    <button
+                      v-for="account in availableAccountsForGeminiRule(group.id, ruleIndex)"
+                      :key="account.id"
+                      type="button"
+                      class="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-gray-50 dark:hover:bg-dark-900"
+                      @click="addGeminiRuleAccount(group.id, ruleIndex, account.id)"
+                    >
+                      <span class="mt-0.5 shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-500 dark:border-dark-600 dark:text-gray-300">添加</span>
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate font-medium text-gray-900 dark:text-white">{{ accountLabel(account) }}</span>
+                        <span class="block truncate text-gray-500 dark:text-gray-400">{{ String(account.platform || '').toUpperCase() }} · 并发 {{ account.concurrency ?? '-' }}</span>
+                      </span>
+                    </button>
+                    <div v-if="availableAccountsForGeminiRule(group.id, ruleIndex).length === 0" class="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">没有可添加账号</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="geminiRulesForGroup(group.id).length === 0" class="rounded-xl border border-dashed border-primary-200 bg-primary-50/40 px-4 py-8 text-center text-sm text-primary-700/80 dark:border-primary-900/60 dark:bg-primary-900/10 dark:text-primary-200/80">
+              还没有 Gemini 规则；未配置时继续走默认调度。
+            </div>
+          </div>
         </div>
 
         <div
@@ -292,8 +418,10 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { accountsAPI, groupsAPI } from '@/api/admin'
 import {
+  getGeminiImageBillingRoutingSettings,
   getImageBillingAccountRoutingSettings,
   getImageBillingThresholdSettings,
+  updateGeminiImageBillingRoutingSettings,
   updateImageBillingAccountRoutingSettings,
   updateImageBillingThresholdSettings
 } from '@/api/admin/settings'
@@ -313,6 +441,7 @@ const accounts = ref<Account[]>([])
 const groupSearch = ref('')
 const accountSearches = reactive<Record<string, string>>({})
 const lastAutoReloadAt = ref(0)
+const activePlatform = ref<'openai' | 'gemini'>('openai')
 
 const form = reactive({
   two_k_pixel_threshold: DEFAULT_2K_THRESHOLD,
@@ -337,11 +466,29 @@ type ImageBillingRoutingFormRow = {
 }
 
 type ImageBillingRoutingTier = 'one_k' | 'two_k' | 'four_k'
+type GeminiTier = '1K' | '2K' | '4K'
+type GeminiRuleForm = { tiers: GeminiTier[]; aspect_ratios: string[]; account_ids: number[] }
+type GeminiRulePayload = { tier: GeminiTier; aspect_ratio: string; account_ids: number[] }
+
+const platformTabs: Array<{ key: 'openai' | 'gemini'; label: string }> = [
+  { key: 'openai', label: 'OpenAI 图片' },
+  { key: 'gemini', label: 'Gemini 图片' },
+]
 
 const routingTiers: Array<{ key: ImageBillingRoutingTier; label: string }> = [
   { key: 'one_k', label: '1K' },
   { key: 'two_k', label: '2K' },
   { key: 'four_k', label: '4K' },
+]
+
+const geminiTierOptions: GeminiTier[] = ['1K', '2K', '4K']
+const geminiAspectRatioOptions = [
+  { value: '*', label: '全部比例' },
+  { value: '1:1', label: '1:1' },
+  { value: '16:9', label: '16:9' },
+  { value: '9:16', label: '9:16' },
+  { value: '4:3', label: '4:3' },
+  { value: '3:4', label: '3:4' },
 ]
 
 type ImageBillingRoutingSettingsInput = {
@@ -359,10 +506,24 @@ type ImageBillingRoutingPayload = {
   groups: Record<string, { one_k_account_ids: number[]; two_k_account_ids: number[]; four_k_account_ids: number[] }>
 }
 
+type GeminiRoutingSettingsInput = {
+  groups?: Record<string, { rules?: Array<{ tier?: string; aspect_ratio?: string; account_ids?: number[] }> }>
+}
+
+type GeminiRoutingPayload = {
+  groups: Record<string, { rules: GeminiRulePayload[] }>
+}
+
 const routingForm = reactive<Record<string, ImageBillingRoutingFormRow>>({})
+const geminiRoutingForm = reactive<Record<string, { rules: GeminiRuleForm[] }>>({})
 const schedulableGroups = computed(() =>
   groups.value
-    .filter((group) => ['openai', 'composite', 'grok'].includes(String(group.platform || '').toLowerCase()))
+    .filter((group) => {
+      const platform = String(group.platform || '').toLowerCase()
+      return activePlatform.value === 'gemini'
+        ? ['gemini', 'composite'].includes(platform)
+        : ['openai', 'composite', 'grok'].includes(platform)
+    })
     .sort((a, b) => a.id - b.id),
 )
 
@@ -414,10 +575,13 @@ function resetDefaults(): void {
 }
 
 function ensureRoutingRows(): void {
-  for (const group of schedulableGroups.value) {
+  for (const group of groups.value) {
     const key = String(group.id)
     if (!routingForm[key]) {
       routingForm[key] = { one_k_account_ids: [], two_k_account_ids: [], four_k_account_ids: [] }
+    }
+    if (!geminiRoutingForm[key]) {
+      geminiRoutingForm[key] = { rules: [] }
     }
   }
 }
@@ -436,16 +600,91 @@ function normalizeAccountIDs(ids?: number[], legacyID?: number): number[] {
   return result
 }
 
+function normalizeGeminiTier(value?: string): GeminiTier {
+  const tier = String(value || '').trim().toUpperCase()
+  if (tier === '2K' || tier === '4K') return tier
+  return '1K'
+}
+
+function normalizeGeminiRatio(value?: string): string {
+  const ratio = String(value || '').trim().toLowerCase().replace(/\s+/g, '')
+  if (!ratio || ratio === 'auto' || ratio === 'all' || ratio === 'any' || ratio === '全部比例') return '*'
+  return ratio
+}
+
+function normalizeGeminiTierList(values?: string[]): GeminiTier[] {
+  const seen = new Set<GeminiTier>()
+  const result: GeminiTier[] = []
+  ;(values || []).forEach((value) => {
+    const tier = normalizeGeminiTier(value)
+    if (!seen.has(tier)) {
+      seen.add(tier)
+      result.push(tier)
+    }
+  })
+  return result.length > 0 ? result : ['1K']
+}
+
+function normalizeGeminiRatioList(values?: string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  ;(values || []).forEach((value) => {
+    const ratio = normalizeGeminiRatio(value)
+    if (!seen.has(ratio)) {
+      seen.add(ratio)
+      result.push(ratio)
+    }
+  })
+  return result.length > 0 ? result : ['*']
+}
+
+function geminiAspectRatioLabel(value?: string): string {
+  const ratio = normalizeGeminiRatio(value)
+  return ratio === '*' ? '全部比例' : ratio
+}
+
+function geminiTierLabel(rule: GeminiRuleForm): string {
+  return rule.tiers.length > 0 ? rule.tiers.join(' / ') : '未选档位'
+}
+
+function geminiAspectRatioRuleLabel(rule: GeminiRuleForm): string {
+  return rule.aspect_ratios.length > 0 ? rule.aspect_ratios.map(geminiAspectRatioLabel).join(' / ') : '未选比例'
+}
+
+function toggleGeminiRuleTier(rule: GeminiRuleForm, tier: GeminiTier): void {
+  const index = rule.tiers.indexOf(tier)
+  if (index === -1) {
+    rule.tiers.push(tier)
+  } else if (rule.tiers.length > 1) {
+    rule.tiers.splice(index, 1)
+  }
+}
+
+function toggleGeminiRuleAspectRatio(rule: GeminiRuleForm, ratio: string): void {
+  ratio = normalizeGeminiRatio(ratio)
+  const index = rule.aspect_ratios.indexOf(ratio)
+  if (index === -1) {
+    rule.aspect_ratios.push(ratio)
+  } else if (rule.aspect_ratios.length > 1) {
+    rule.aspect_ratios.splice(index, 1)
+  }
+}
+
 function accountBelongsToGroup(account: Account, groupId: number): boolean {
   if (Array.isArray(account.group_ids) && account.group_ids.includes(groupId)) return true
   return Number((account as any).group_id || 0) === groupId
 }
 
 function accountOptionsForGroup(groupId: number): Account[] {
+  return accountOptionsForGroupPlatform(groupId, activePlatform.value)
+}
+
+function accountOptionsForGroupPlatform(groupId: number, platformTab: 'openai' | 'gemini'): Account[] {
+  const allowedPlatforms = platformTab === 'gemini' ? ['gemini'] : ['openai', 'grok']
   return accounts.value
     .filter((account) => {
       const platform = String(account.platform || '').toLowerCase()
-      if (!['openai', 'grok'].includes(platform)) return false
+      if (!allowedPlatforms.includes(platform)) return false
       if (account.status !== 'active' || account.schedulable !== true) return false
       return accountBelongsToGroup(account, groupId)
     })
@@ -480,18 +719,32 @@ function availableAccountsForTier(groupId: number, tier: ImageBillingRoutingTier
 }
 
 function enabledAccountIDSetForGroup(groupId: number): Set<number> {
-  return new Set(accountOptionsForGroup(groupId).map((account) => account.id))
+  return new Set(accountOptionsForGroupPlatform(groupId, 'openai').map((account) => account.id))
+}
+
+function enabledGeminiAccountIDSetForGroup(groupId: number): Set<number> {
+  return new Set(accountOptionsForGroupPlatform(groupId, 'gemini').map((account) => account.id))
 }
 
 function pruneRoutingRowsToEnabledAccounts(): void {
-  for (const group of schedulableGroups.value) {
+  for (const group of groups.value) {
     const key = String(group.id)
     const row = routingForm[key]
-    if (!row) continue
-    const enabledIDs = enabledAccountIDSetForGroup(group.id)
-    row.one_k_account_ids = normalizeAccountIDs(row.one_k_account_ids).filter((id) => enabledIDs.has(id))
-    row.two_k_account_ids = normalizeAccountIDs(row.two_k_account_ids).filter((id) => enabledIDs.has(id))
-    row.four_k_account_ids = normalizeAccountIDs(row.four_k_account_ids).filter((id) => enabledIDs.has(id))
+    if (row) {
+      const enabledIDs = enabledAccountIDSetForGroup(group.id)
+      row.one_k_account_ids = normalizeAccountIDs(row.one_k_account_ids).filter((id) => enabledIDs.has(id))
+      row.two_k_account_ids = normalizeAccountIDs(row.two_k_account_ids).filter((id) => enabledIDs.has(id))
+      row.four_k_account_ids = normalizeAccountIDs(row.four_k_account_ids).filter((id) => enabledIDs.has(id))
+    }
+    const gemini = geminiRoutingForm[key]
+    if (gemini) {
+      const enabledIDs = enabledGeminiAccountIDSetForGroup(group.id)
+      gemini.rules = gemini.rules.map((rule) => ({
+        tiers: normalizeGeminiTierList(rule.tiers),
+        aspect_ratios: normalizeGeminiRatioList(rule.aspect_ratios),
+        account_ids: normalizeAccountIDs(rule.account_ids).filter((id) => enabledIDs.has(id)),
+      }))
+    }
   }
 }
 
@@ -551,6 +804,75 @@ function clearRoutingAccounts(groupId: number, tier: ImageBillingRoutingTier): v
   }
 }
 
+function geminiRulesForGroup(groupId: number): GeminiRuleForm[] {
+  const key = String(groupId)
+  if (!geminiRoutingForm[key]) {
+    geminiRoutingForm[key] = { rules: [] }
+  }
+  return geminiRoutingForm[key].rules
+}
+
+function addGeminiRule(groupId: number): void {
+  geminiRulesForGroup(groupId).push({ tiers: ['1K'], aspect_ratios: ['*'], account_ids: [] })
+}
+
+function removeGeminiRule(groupId: number, index: number): void {
+  geminiRulesForGroup(groupId).splice(index, 1)
+}
+
+function geminiRuleKey(groupId: number, index: number): string {
+  const rule = geminiRulesForGroup(groupId)[index]
+  return `${groupId}:${index}:${rule?.tiers?.join(',') || ''}:${rule?.aspect_ratios?.join(',') || ''}`
+}
+
+function geminiRuleSearchKey(groupId: number, index: number): string {
+  return `gemini:${groupId}:${index}`
+}
+
+function selectedAccountsForGeminiRule(groupId: number, index: number): Account[] {
+  const rule = geminiRulesForGroup(groupId)[index]
+  if (!rule) return []
+  const options = new Map(accountOptionsForGroupPlatform(groupId, 'gemini').map((account) => [account.id, account]))
+  return rule.account_ids.map((id) => options.get(id)).filter((account): account is Account => Boolean(account))
+}
+
+function availableAccountsForGeminiRule(groupId: number, index: number): Account[] {
+  const rule = geminiRulesForGroup(groupId)[index]
+  if (!rule) return []
+  const selected = new Set(rule.account_ids)
+  const keyword = (accountSearches[geminiRuleSearchKey(groupId, index)] || '').trim().toLowerCase()
+  return accountOptionsForGroupPlatform(groupId, 'gemini')
+    .filter((account) => !selected.has(account.id))
+    .filter((account) => {
+      if (!keyword) return true
+      return [account.id, account.name, account.platform]
+        .some((value) => String(value ?? '').toLowerCase().includes(keyword))
+    })
+}
+
+function addGeminiRuleAccount(groupId: number, index: number, accountId: number): void {
+  const rule = geminiRulesForGroup(groupId)[index]
+  const id = Math.trunc(Number(accountId) || 0)
+  if (!rule || id <= 0 || rule.account_ids.includes(id)) return
+  rule.account_ids.push(id)
+}
+
+function removeGeminiRuleAccount(groupId: number, index: number, accountId: number): void {
+  const rule = geminiRulesForGroup(groupId)[index]
+  if (!rule) return
+  const pos = rule.account_ids.indexOf(accountId)
+  if (pos !== -1) rule.account_ids.splice(pos, 1)
+}
+
+function moveGeminiRuleAccount(groupId: number, index: number, accountIndex: number, direction: -1 | 1): void {
+  const rule = geminiRulesForGroup(groupId)[index]
+  if (!rule) return
+  const target = accountIndex + direction
+  if (accountIndex < 0 || target < 0 || accountIndex >= rule.account_ids.length || target >= rule.account_ids.length) return
+  const [item] = rule.account_ids.splice(accountIndex, 1)
+  rule.account_ids.splice(target, 0, item)
+}
+
 function applyRoutingSettings(settings: ImageBillingRoutingSettingsInput): void {
   Object.keys(routingForm).forEach((key) => delete routingForm[key])
   const rows = settings.groups || {}
@@ -559,6 +881,22 @@ function applyRoutingSettings(settings: ImageBillingRoutingSettingsInput): void 
       one_k_account_ids: normalizeAccountIDs(routing.one_k_account_ids, routing.one_k_account_id),
       two_k_account_ids: normalizeAccountIDs(routing.two_k_account_ids, routing.two_k_account_id),
       four_k_account_ids: normalizeAccountIDs(routing.four_k_account_ids, routing.four_k_account_id),
+    }
+  }
+  ensureRoutingRows()
+  pruneRoutingRowsToEnabledAccounts()
+}
+
+function applyGeminiRoutingSettings(settings: GeminiRoutingSettingsInput): void {
+  Object.keys(geminiRoutingForm).forEach((key) => delete geminiRoutingForm[key])
+  const rows = settings.groups || {}
+  for (const [groupId, routing] of Object.entries(rows)) {
+    geminiRoutingForm[groupId] = {
+      rules: (routing.rules || []).map((rule) => ({
+        tiers: [normalizeGeminiTier(rule.tier)],
+        aspect_ratios: [normalizeGeminiRatio(rule.aspect_ratio)],
+        account_ids: normalizeAccountIDs(rule.account_ids),
+      })),
     }
   }
   ensureRoutingRows()
@@ -575,6 +913,37 @@ function buildRoutingPayload(): ImageBillingRoutingPayload {
     const fourK = normalizeAccountIDs(routing.four_k_account_ids).filter((id) => enabledIDs.has(id))
     if (oneK.length > 0 || twoK.length > 0 || fourK.length > 0) {
       payload[groupId] = { one_k_account_ids: oneK, two_k_account_ids: twoK, four_k_account_ids: fourK }
+    }
+  }
+  return { groups: payload }
+}
+
+function buildGeminiRoutingPayload(): GeminiRoutingPayload {
+  const payload: GeminiRoutingPayload['groups'] = {}
+  for (const [groupId, routing] of Object.entries(geminiRoutingForm)) {
+    const groupIDNumber = Math.trunc(Number(groupId) || 0)
+    const enabledIDs = enabledGeminiAccountIDSetForGroup(groupIDNumber)
+    const merged = new Map<string, GeminiRulePayload>()
+    for (const rule of routing.rules) {
+      const tiers = normalizeGeminiTierList(rule.tiers)
+      const aspectRatios = normalizeGeminiRatioList(rule.aspect_ratios)
+      const accountIDs = normalizeAccountIDs(rule.account_ids).filter((id) => enabledIDs.has(id))
+      if (accountIDs.length === 0) continue
+      for (const tier of tiers) {
+        for (const aspectRatio of aspectRatios) {
+          const key = `${tier}:${aspectRatio}`
+          const existing = merged.get(key)
+          if (existing) {
+            existing.account_ids = normalizeAccountIDs([...existing.account_ids, ...accountIDs])
+          } else {
+            merged.set(key, { tier, aspect_ratio: aspectRatio, account_ids: accountIDs })
+          }
+        }
+      }
+    }
+    const rules = Array.from(merged.values())
+    if (rules.length > 0) {
+      payload[groupId] = { rules }
     }
   }
   return { groups: payload }
@@ -599,17 +968,19 @@ async function loadAllSettings(): Promise<void> {
   if (loading.value) return
   loading.value = true
   try {
-    const [thresholds, groupItems, accountItems, routing] = await Promise.all([
+    const [thresholds, groupItems, accountItems, routing, geminiRouting] = await Promise.all([
       getImageBillingThresholdSettings(),
       groupsAPI.getAllIncludingInactive(),
       loadRoutingAccounts(),
       getImageBillingAccountRoutingSettings(),
+      getGeminiImageBillingRoutingSettings(),
     ])
     form.two_k_pixel_threshold = thresholds.two_k_pixel_threshold || DEFAULT_2K_THRESHOLD
     form.four_k_pixel_threshold = thresholds.four_k_pixel_threshold || DEFAULT_4K_THRESHOLD
     groups.value = groupItems || []
     accounts.value = accountItems || []
     applyRoutingSettings(routing)
+    applyGeminiRoutingSettings(geminiRouting)
   } catch (error: any) {
     appStore.showError(error?.message || '加载图片计费配置失败')
   } finally {
@@ -638,8 +1009,12 @@ function handleVisibilityChange(): void {
 async function saveRoutingSettings(): Promise<void> {
   savingRouting.value = true
   try {
-    const settings = await updateImageBillingAccountRoutingSettings(buildRoutingPayload())
+    const [settings, geminiSettings] = await Promise.all([
+      updateImageBillingAccountRoutingSettings(buildRoutingPayload()),
+      updateGeminiImageBillingRoutingSettings(buildGeminiRoutingPayload()),
+    ])
     applyRoutingSettings(settings)
+    applyGeminiRoutingSettings(geminiSettings)
     appStore.showSuccess('图片档位账号调度配置已保存')
   } catch (error: any) {
     appStore.showError(error?.message || '保存图片档位账号调度配置失败')

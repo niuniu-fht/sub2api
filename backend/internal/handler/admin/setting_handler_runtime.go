@@ -310,6 +310,39 @@ func (h *SettingHandler) UpdateImageBillingAccountRoutingSettings(c *gin.Context
 	response.Success(c, settings)
 }
 
+// GetGeminiImageBillingRoutingSettings 获取 Gemini 图片档位/比例账号调度配置
+// GET /api/v1/admin/settings/gemini-image-billing-routing
+func (h *SettingHandler) GetGeminiImageBillingRoutingSettings(c *gin.Context) {
+	settings, err := h.settingService.GetGeminiImageBillingRoutingSettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, settings)
+}
+
+type UpdateGeminiImageBillingRoutingSettingsRequest struct {
+	Groups map[int64]service.GeminiImageBillingGroupRouting `json:"groups"`
+}
+
+// UpdateGeminiImageBillingRoutingSettings 更新 Gemini 图片档位/比例账号调度配置
+// PUT /api/v1/admin/settings/gemini-image-billing-routing
+func (h *SettingHandler) UpdateGeminiImageBillingRoutingSettings(c *gin.Context) {
+	var req UpdateGeminiImageBillingRoutingSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	settings, err := h.settingService.SetGeminiImageBillingRoutingSettings(c.Request.Context(), service.GeminiImageBillingRoutingSettings{
+		Groups: req.Groups,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, settings)
+}
+
 // GetRectifierSettings 获取请求整流器配置
 // GET /api/v1/admin/settings/rectifier
 func (h *SettingHandler) GetRectifierSettings(c *gin.Context) {

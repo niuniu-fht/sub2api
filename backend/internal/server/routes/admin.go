@@ -565,6 +565,8 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// 图片档位账号调度配置
 		adminSettings.GET("/image-billing-account-routing", h.Admin.Setting.GetImageBillingAccountRoutingSettings)
 		adminSettings.PUT("/image-billing-account-routing", h.Admin.Setting.UpdateImageBillingAccountRoutingSettings)
+		adminSettings.GET("/gemini-image-billing-routing", h.Admin.Setting.GetGeminiImageBillingRoutingSettings)
+		adminSettings.PUT("/gemini-image-billing-routing", h.Admin.Setting.UpdateGeminiImageBillingRoutingSettings)
 		// 请求整流器配置
 		adminSettings.GET("/rectifier", h.Admin.Setting.GetRectifierSettings)
 		adminSettings.PUT("/rectifier", h.Admin.Setting.UpdateRectifierSettings)

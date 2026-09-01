@@ -92,6 +92,7 @@ type BatchImagePublicService struct {
 	BillingRepo       UsageBillingRepository
 	AuthCache         APIKeyAuthCacheInvalidator
 	Config            *config.Config
+	SettingService    *SettingService
 }
 
 type BatchImagePricingSnapshot struct {
@@ -182,7 +183,7 @@ type BatchImageItemsQuery struct {
 	Cursor string
 }
 
-func NewBatchImagePublicService(repo BatchImageRepository, accountRepo AccountRepository, groupRepo GroupRepository, userGroupRateRepo UserGroupRateRepository, queue BatchImageQueue, pricing *BatchImageModelPricingResolver, billingRepo UsageBillingRepository, authCache APIKeyAuthCacheInvalidator, cfg *config.Config) *BatchImagePublicService {
+func NewBatchImagePublicService(repo BatchImageRepository, accountRepo AccountRepository, groupRepo GroupRepository, userGroupRateRepo UserGroupRateRepository, queue BatchImageQueue, pricing *BatchImageModelPricingResolver, billingRepo UsageBillingRepository, authCache APIKeyAuthCacheInvalidator, cfg *config.Config, settingService *SettingService) *BatchImagePublicService {
 	return &BatchImagePublicService{
 		Repo:              repo,
 		AccountRepo:       accountRepo,
@@ -194,6 +195,7 @@ func NewBatchImagePublicService(repo BatchImageRepository, accountRepo AccountRe
 		BillingRepo:       billingRepo,
 		AuthCache:         authCache,
 		Config:            cfg,
+		SettingService:    settingService,
 	}
 }
 
@@ -231,7 +233,7 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		}
 	}
 
-	provider, account, err := s.selectProviderAndAccount(ctx, owner, normalized.Provider, normalized.Model)
+	provider, account, err := s.selectProviderAndAccount(ctx, owner, normalized.Provider, normalized.Model, normalized.ImageSize, normalized.AspectRatio)
 	if err != nil {
 		return nil, err
 	}
@@ -933,7 +935,7 @@ func maxBatchImageReferenceImagesForModel(model string) int {
 	return 0
 }
 
-func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, owner BatchImageOwner, requestedProvider, model string) (BatchImageProvider, *Account, error) {
+func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, owner BatchImageOwner, requestedProvider, model string, imageSize string, aspectRatio string) (BatchImageProvider, *Account, error) {
 	providers := batchImageProviderSelectionOrder(requestedProvider)
 	for _, providerName := range providers {
 		provider, ok := s.ProviderRegistry.Get(providerName)
@@ -943,6 +945,22 @@ func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, 
 		accounts, err := s.listCandidateAccounts(ctx, owner.GroupID, batchImageProviderPlatform(providerName))
 		if err != nil {
 			return nil, nil, err
+		}
+		if routedIDs := s.geminiBatchImageRoutingAccountIDs(ctx, owner.GroupID, providerName, imageSize, aspectRatio); len(routedIDs) > 0 {
+			accountByID := make(map[int64]*Account, len(accounts))
+			for i := range accounts {
+				accountByID[accounts[i].ID] = &accounts[i]
+			}
+			for _, accountID := range routedIDs {
+				account := accountByID[accountID]
+				if account == nil || !account.IsSchedulable() || !account.IsModelSupported(model) {
+					continue
+				}
+				if provider.SupportsAccount(account) {
+					return provider, account, nil
+				}
+			}
+			return nil, nil, ErrBatchImageNoAccountAvailable
 		}
 		sort.SliceStable(accounts, func(i, j int) bool {
 			if accounts[i].Priority != accounts[j].Priority {
@@ -964,6 +982,14 @@ func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, 
 		return nil, nil, ErrBatchImageNoAccountAvailable
 	}
 	return nil, nil, ErrBatchImageNoAccountAvailable
+}
+
+func (s *BatchImagePublicService) geminiBatchImageRoutingAccountIDs(ctx context.Context, groupID *int64, providerName string, imageSize string, aspectRatio string) []int64 {
+	if s == nil || s.SettingService == nil || groupID == nil || *groupID <= 0 || providerName != BatchImageProviderGeminiAPI {
+		return nil
+	}
+	settings := s.SettingService.GetGeminiImageBillingRoutingSettingsCached(ctx)
+	return settings.AccountIDsFor(*groupID, NormalizeImageBillingTierOrDefault(imageSize), aspectRatio)
 }
 
 func (s *BatchImagePublicService) listCandidateAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {

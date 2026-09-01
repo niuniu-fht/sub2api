@@ -6,6 +6,7 @@ import (
 )
 
 type imageBillingSchedulingTierContextKey struct{}
+type imageBillingSchedulingAspectRatioContextKey struct{}
 
 func WithImageBillingSchedulingTier(ctx context.Context, tier string) context.Context {
 	if ctx == nil {
@@ -35,4 +36,23 @@ func ImageBillingSchedulingTierFromContext(ctx context.Context) string {
 	default:
 		return ""
 	}
+}
+
+func WithImageBillingSchedulingAspectRatio(ctx context.Context, aspectRatio string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	aspectRatio = NormalizeGeminiImageBillingAspectRatio(aspectRatio)
+	if aspectRatio == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, imageBillingSchedulingAspectRatioContextKey{}, aspectRatio)
+}
+
+func ImageBillingSchedulingAspectRatioFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	aspectRatio, _ := ctx.Value(imageBillingSchedulingAspectRatioContextKey{}).(string)
+	return NormalizeGeminiImageBillingAspectRatio(aspectRatio)
 }
