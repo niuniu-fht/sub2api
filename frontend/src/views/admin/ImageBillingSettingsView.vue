@@ -87,9 +87,24 @@
         </button>
       </div>
 
-      <div class="mt-5 space-y-4">
+      <div class="mt-5 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+        <label class="block">
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-200">搜索分组</span>
+          <input
+            v-model="groupSearch"
+            type="text"
+            class="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
+            placeholder="输入分组名、ID 或平台"
+          />
+        </label>
+        <div class="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500 dark:bg-dark-900 dark:text-gray-400">
+          显示 {{ filteredSchedulableGroups.length }} / {{ schedulableGroups.length }} 个分组
+        </div>
+      </div>
+
+      <div class="mt-4 max-h-[70vh] space-y-4 overflow-y-auto pr-2">
         <div
-          v-for="group in schedulableGroups"
+          v-for="group in filteredSchedulableGroups"
           :key="group.id"
           class="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/60"
         >
@@ -109,10 +124,12 @@
               :key="tier.key"
               class="min-w-0 rounded-xl border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800"
             >
-              <div class="mb-2 flex items-center justify-between gap-2">
+              <div class="mb-3 flex items-start justify-between gap-2">
                 <div>
                   <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ tier.label }} 指定账号</div>
-                  <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ selectedRoutingLabel(group.id, tier.key) }}</div>
+                  <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ selectedRoutingLabel(group.id, tier.key) }}；按上到下优先
+                  </div>
                 </div>
                 <button
                   v-if="routingAccountIDsFor(group.id, tier.key).length > 0"
@@ -124,31 +141,87 @@
                 </button>
               </div>
 
-              <div class="max-h-44 space-y-1 overflow-y-auto pr-1">
-                <label
-                  v-for="account in accountOptionsForGroup(group.id)"
-                  :key="account.id"
-                  class="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 transition hover:bg-gray-50 dark:hover:bg-dark-900"
-                >
+              <div class="space-y-3">
+                <label class="block">
+                  <span class="sr-only">搜索{{ tier.label }}账号</span>
                   <input
-                    type="checkbox"
-                    class="mt-1 h-3.5 w-3.5 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-600 dark:bg-dark-900"
-                    :checked="routingAccountIDsFor(group.id, tier.key).includes(account.id)"
-                    :aria-label="`${accountLabel(account)} ${tier.label}指定账号`"
-                    @change="toggleRoutingAccount(group.id, tier.key, account.id, ($event.target as HTMLInputElement).checked)"
+                    v-model="accountSearches[tierSearchKey(group.id, tier.key)]"
+                    type="text"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
+                    :placeholder="`搜索 ${tier.label} 可选账号`"
                   />
-                  <span class="min-w-0 flex-1">
-                    <span class="block truncate font-medium text-gray-900 dark:text-white">{{ accountLabel(account) }}</span>
-                    <span class="block truncate text-xs text-gray-500 dark:text-gray-400">
-                      {{ String(account.platform || '').toUpperCase() }} · 并发 {{ account.concurrency ?? '-' }}
-                    </span>
-                  </span>
                 </label>
-                <div
-                  v-if="accountOptionsForGroup(group.id).length === 0"
-                  class="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400"
-                >
-                  无已启用账号
+
+                <div class="rounded-lg border border-primary-100 bg-primary-50/50 p-2 dark:border-primary-900/40 dark:bg-primary-900/10">
+                  <div class="mb-2 text-xs font-medium text-primary-700 dark:text-primary-200">已选优先级</div>
+                  <div class="max-h-44 space-y-1 overflow-y-auto pr-1">
+                    <div
+                      v-for="(account, index) in selectedAccountsForTier(group.id, tier.key)"
+                      :key="account.id"
+                      class="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5 text-xs shadow-sm dark:bg-dark-900"
+                    >
+                      <span class="shrink-0 rounded-full bg-primary-600 px-2 py-0.5 font-semibold text-white">
+                        优先级 {{ index + 1 }}
+                      </span>
+                      <span class="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-100">{{ accountLabel(account) }}</span>
+                      <button
+                        type="button"
+                        class="rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800"
+                        :disabled="index === 0"
+                        @click="moveRoutingAccount(group.id, tier.key, index, -1)"
+                      >
+                        上移
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded border border-gray-200 px-1.5 py-0.5 text-gray-500 hover:bg-gray-50 disabled:opacity-40 dark:border-dark-600 dark:text-gray-300 dark:hover:bg-dark-800"
+                        :disabled="index === selectedAccountsForTier(group.id, tier.key).length - 1"
+                        @click="moveRoutingAccount(group.id, tier.key, index, 1)"
+                      >
+                        下移
+                      </button>
+                      <button
+                        type="button"
+                        class="rounded border border-red-200 px-1.5 py-0.5 text-red-600 hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-900/20"
+                        @click="removeRoutingAccount(group.id, tier.key, account.id)"
+                      >
+                        移除
+                      </button>
+                    </div>
+                    <div
+                      v-if="selectedAccountsForTier(group.id, tier.key).length === 0"
+                      class="rounded-lg border border-dashed border-primary-200 px-3 py-4 text-center text-xs text-primary-700/70 dark:border-primary-900/60 dark:text-primary-200/70"
+                    >
+                      未指定，使用默认调度
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="mb-2 text-xs font-medium text-gray-600 dark:text-gray-300">可添加账号</div>
+                  <div class="max-h-52 space-y-1 overflow-y-auto pr-1">
+                    <button
+                      v-for="account in availableAccountsForTier(group.id, tier.key)"
+                      :key="account.id"
+                      type="button"
+                      class="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-gray-50 dark:hover:bg-dark-900"
+                      @click="addRoutingAccount(group.id, tier.key, account.id)"
+                    >
+                      <span class="mt-0.5 shrink-0 rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-500 dark:border-dark-600 dark:text-gray-300">添加</span>
+                      <span class="min-w-0 flex-1">
+                        <span class="block truncate font-medium text-gray-900 dark:text-white">{{ accountLabel(account) }}</span>
+                        <span class="block truncate text-gray-500 dark:text-gray-400">
+                          {{ String(account.platform || '').toUpperCase() }} · 并发 {{ account.concurrency ?? '-' }}
+                        </span>
+                      </span>
+                    </button>
+                    <div
+                      v-if="availableAccountsForTier(group.id, tier.key).length === 0"
+                      class="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400"
+                    >
+                      没有可添加账号
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -156,10 +229,10 @@
         </div>
 
         <div
-          v-if="!loading && schedulableGroups.length === 0"
+          v-if="!loading && filteredSchedulableGroups.length === 0"
           class="rounded-xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400"
         >
-          暂无可配置分组
+          没有匹配的分组
         </div>
       </div>
       <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
@@ -237,6 +310,8 @@ const saving = ref(false)
 const savingRouting = ref(false)
 const groups = ref<AdminGroup[]>([])
 const accounts = ref<Account[]>([])
+const groupSearch = ref('')
+const accountSearches = reactive<Record<string, string>>({})
 const lastAutoReloadAt = ref(0)
 
 const form = reactive({
@@ -290,6 +365,15 @@ const schedulableGroups = computed(() =>
     .filter((group) => ['openai', 'composite', 'grok'].includes(String(group.platform || '').toLowerCase()))
     .sort((a, b) => a.id - b.id),
 )
+
+const filteredSchedulableGroups = computed(() => {
+  const keyword = groupSearch.value.trim().toLowerCase()
+  if (!keyword) return schedulableGroups.value
+  return schedulableGroups.value.filter((group) => {
+    return [group.name, group.platform, group.id]
+      .some((value) => String(value ?? '').toLowerCase().includes(keyword))
+  })
+})
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('zh-CN').format(Math.trunc(Number(value) || 0))
@@ -372,6 +456,29 @@ function accountLabel(account: Account): string {
   return `#${account.id} ${account.name || '-'}`
 }
 
+function tierSearchKey(groupId: number, tier: ImageBillingRoutingTier): string {
+  return `${groupId}:${tier}`
+}
+
+function selectedAccountsForTier(groupId: number, tier: ImageBillingRoutingTier): Account[] {
+  const options = new Map(accountOptionsForGroup(groupId).map((account) => [account.id, account]))
+  return routingAccountIDsFor(groupId, tier)
+    .map((id) => options.get(id))
+    .filter((account): account is Account => Boolean(account))
+}
+
+function availableAccountsForTier(groupId: number, tier: ImageBillingRoutingTier): Account[] {
+  const selected = new Set(routingAccountIDsFor(groupId, tier))
+  const keyword = (accountSearches[tierSearchKey(groupId, tier)] || '').trim().toLowerCase()
+  return accountOptionsForGroup(groupId)
+    .filter((account) => !selected.has(account.id))
+    .filter((account) => {
+      if (!keyword) return true
+      return [account.id, account.name, account.platform]
+        .some((value) => String(value ?? '').toLowerCase().includes(keyword))
+    })
+}
+
 function enabledAccountIDSetForGroup(groupId: number): Set<number> {
   return new Set(accountOptionsForGroup(groupId).map((account) => account.id))
 }
@@ -414,6 +521,22 @@ function toggleRoutingAccount(groupId: number, tier: ImageBillingRoutingTier, ac
   } else if (!checked && index !== -1) {
     list.splice(index, 1)
   }
+}
+
+function addRoutingAccount(groupId: number, tier: ImageBillingRoutingTier, accountId: number): void {
+  toggleRoutingAccount(groupId, tier, accountId, true)
+}
+
+function removeRoutingAccount(groupId: number, tier: ImageBillingRoutingTier, accountId: number): void {
+  toggleRoutingAccount(groupId, tier, accountId, false)
+}
+
+function moveRoutingAccount(groupId: number, tier: ImageBillingRoutingTier, index: number, direction: -1 | 1): void {
+  const list = routingAccountIDsFor(groupId, tier)
+  const target = index + direction
+  if (index < 0 || target < 0 || index >= list.length || target >= list.length) return
+  const [item] = list.splice(index, 1)
+  list.splice(target, 0, item)
 }
 
 function clearRoutingAccounts(groupId: number, tier: ImageBillingRoutingTier): void {
@@ -536,3 +659,4 @@ onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
+
