@@ -4,14 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
-	"sync"
-	"sync/atomic"
 )
 
 const openAIAccountScheduleLayerImageBillingRouting = "image_billing_routing"
-
-var openAIImageBillingRoutingCounters sync.Map
 
 func (s *OpenAIGatewayService) imageBillingForcedAccountIDs(ctx context.Context, groupID *int64) (accountIDs []int64, tier string, ok bool) {
 	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 {
@@ -22,26 +17,8 @@ func (s *OpenAIGatewayService) imageBillingForcedAccountIDs(ctx context.Context,
 		return nil, "", false
 	}
 	settings := s.settingService.GetImageBillingAccountRoutingSettingsCached(ctx)
-	accountIDs = rotateOpenAIImageBillingRoutingAccountIDs(*groupID, tier, settings.AccountIDsFor(*groupID, tier))
+	accountIDs = settings.AccountIDsFor(*groupID, tier)
 	return accountIDs, tier, len(accountIDs) > 0
-}
-
-func rotateOpenAIImageBillingRoutingAccountIDs(groupID int64, tier string, accountIDs []int64) []int64 {
-	if len(accountIDs) <= 1 {
-		return append([]int64(nil), accountIDs...)
-	}
-	keyBuilder := strings.Builder{}
-	_, _ = fmt.Fprintf(&keyBuilder, "%d:%s:", groupID, strings.ToUpper(strings.TrimSpace(tier)))
-	for _, id := range accountIDs {
-		_, _ = fmt.Fprintf(&keyBuilder, "%d,", id)
-	}
-	counterValue, _ := openAIImageBillingRoutingCounters.LoadOrStore(keyBuilder.String(), &atomic.Uint64{})
-	counter := counterValue.(*atomic.Uint64)
-	start := int((counter.Add(1) - 1) % uint64(len(accountIDs)))
-	rotated := make([]int64, 0, len(accountIDs))
-	rotated = append(rotated, accountIDs[start:]...)
-	rotated = append(rotated, accountIDs[:start]...)
-	return rotated
 }
 
 func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
@@ -111,7 +88,7 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 				"group_id", derefGroupID(req.GroupID),
 				"tier", tier,
 				"account_id", account.ID,
-				"rotated_account_ids", accountIDs,
+				"configured_account_ids", accountIDs,
 				"acquired", true,
 			)
 			selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
@@ -129,7 +106,7 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 			"group_id", derefGroupID(req.GroupID),
 			"tier", tier,
 			"account_id", waitAccount.ID,
-			"rotated_account_ids", accountIDs,
+			"configured_account_ids", accountIDs,
 		)
 		selection, selectErr := s.newSelectionResult(ctx, waitAccount, false, nil, &AccountWaitPlan{
 			AccountID:      waitAccount.ID,

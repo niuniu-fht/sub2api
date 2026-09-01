@@ -1,7 +1,6 @@
 package service
 
 import (
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -37,17 +36,14 @@ func TestImageBillingSchedulingTierContextSupportsOneK(t *testing.T) {
 	require.Equal(t, ImageBillingSize1K, ImageBillingSchedulingTierFromContext(ctx))
 }
 
-func TestRotateOpenAIImageBillingRoutingAccountIDs(t *testing.T) {
-	openAIImageBillingRoutingCounters = sync.Map{}
-	ids := []int64{10, 20, 30}
+func TestImageBillingAccountRoutingSettingsKeepsConfiguredPriority(t *testing.T) {
+	settings := ImageBillingAccountRoutingSettings{Groups: map[int64]ImageBillingGroupAccountRouting{
+		1: {TwoKAccountIDs: []int64{10, 20, 30}},
+	}}
 
-	require.Equal(t, []int64{10, 20, 30}, rotateOpenAIImageBillingRoutingAccountIDs(1, ImageBillingSize2K, ids))
-	require.Equal(t, []int64{20, 30, 10}, rotateOpenAIImageBillingRoutingAccountIDs(1, ImageBillingSize2K, ids))
-	require.Equal(t, []int64{30, 10, 20}, rotateOpenAIImageBillingRoutingAccountIDs(1, ImageBillingSize2K, ids))
-	require.Equal(t, []int64{10, 20, 30}, rotateOpenAIImageBillingRoutingAccountIDs(1, ImageBillingSize2K, ids))
-
-	require.Equal(t, []int64{10, 20, 30}, rotateOpenAIImageBillingRoutingAccountIDs(2, ImageBillingSize2K, ids))
-	require.Equal(t, []int64{10, 20, 30}, ids, "rotation must not mutate configured order")
+	for i := 0; i < 3; i++ {
+		require.Equal(t, []int64{10, 20, 30}, settings.AccountIDsFor(1, ImageBillingSize2K))
+	}
 }
 
 func TestClassifyImageBillingTier(t *testing.T) {
