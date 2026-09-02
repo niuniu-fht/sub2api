@@ -266,7 +266,13 @@ type geminiFileData struct {
 }
 
 type geminiGenerationConfig struct {
-	ResponseModalities []string `json:"responseModalities"`
+	ResponseModalities []string           `json:"responseModalities"`
+	ImageConfig        *geminiImageConfig `json:"imageConfig,omitempty"`
+}
+
+type geminiImageConfig struct {
+	AspectRatio string `json:"aspectRatio,omitempty"`
+	ImageSize   string `json:"imageSize,omitempty"`
 }
 
 func BuildGeminiBatchJSONL(input BatchImageInput) ([]byte, error) {
@@ -299,8 +305,7 @@ func BuildGeminiBatchJSONL(input BatchImageInput) ([]byte, error) {
 			return nil, err
 		}
 
-		// TODO(batch-image): add response_mime_type/aspect_ratio/image_size once the
-		// Gemini batch image REST shape is stabilized for those options.
+		imageConfig := buildGeminiBatchImageConfig(input.ImageSize, input.AspectRatio)
 		line := geminiJSONLLine{
 			Key: customID,
 			Request: geminiGenerateRequest{
@@ -309,6 +314,7 @@ func BuildGeminiBatchJSONL(input BatchImageInput) ([]byte, error) {
 				}},
 				GenerationConfig: geminiGenerationConfig{
 					ResponseModalities: []string{"TEXT", "IMAGE"},
+					ImageConfig:        imageConfig,
 				},
 			},
 		}
@@ -317,6 +323,21 @@ func BuildGeminiBatchJSONL(input BatchImageInput) ([]byte, error) {
 		}
 	}
 	return buf.Bytes(), nil
+}
+
+func buildGeminiBatchImageConfig(imageSize, aspectRatio string) *geminiImageConfig {
+	imageSize = NormalizeImageBillingTierOrDefault(imageSize)
+	aspectRatio = NormalizeGeminiImageBillingAspectRatio(aspectRatio)
+	if aspectRatio == GeminiImageBillingAspectRatioAny {
+		aspectRatio = ""
+	}
+	if imageSize == "" && aspectRatio == "" {
+		return nil
+	}
+	return &geminiImageConfig{
+		ImageSize:   imageSize,
+		AspectRatio: aspectRatio,
+	}
 }
 
 func batchImageGeminiParts(prompt string, refs []BatchImageReference) ([]geminiPart, error) {

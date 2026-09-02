@@ -804,10 +804,15 @@ func (s *BatchImagePublicService) validateSubmitRequest(req BatchImageSubmitRequ
 	if req.ImageSize == "" {
 		req.ImageSize = s.defaultImageSize()
 	}
-	if !strings.EqualFold(req.ImageSize, defaultBatchImageImageSize) {
+	imageSize, ok := ClassifyImageBillingTier(req.ImageSize)
+	if !ok || (imageSize != ImageBillingSize1K && imageSize != ImageBillingSize2K && imageSize != ImageBillingSize4K) {
 		return req, ErrBatchImageInvalidItems
 	}
-	req.ImageSize = defaultBatchImageImageSize
+	if req.Provider == BatchImageProviderVertex && imageSize != ImageBillingSize1K {
+		return req, ErrBatchImageInvalidItems
+	}
+	req.ImageSize = imageSize
+	req.AspectRatio = NormalizeGeminiImageBillingAspectRatio(req.AspectRatio)
 	req.Metadata = sanitizeBatchImageMetadata(req.Metadata)
 
 	seen := make(map[string]struct{}, len(req.Items))
@@ -938,6 +943,9 @@ func maxBatchImageReferenceImagesForModel(model string) int {
 func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, owner BatchImageOwner, requestedProvider, model string, imageSize string, aspectRatio string) (BatchImageProvider, *Account, error) {
 	providers := batchImageProviderSelectionOrder(requestedProvider)
 	for _, providerName := range providers {
+		if providerName == BatchImageProviderVertex && NormalizeImageBillingTierOrDefault(imageSize) != ImageBillingSize1K {
+			continue
+		}
 		provider, ok := s.ProviderRegistry.Get(providerName)
 		if !ok || provider == nil {
 			continue

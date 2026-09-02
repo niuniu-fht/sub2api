@@ -497,6 +497,21 @@ func BuildVertexBatchJSONL(input BatchImageInput) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		generationConfig := map[string]any{
+			"responseModalities": []string{"TEXT", "IMAGE"},
+		}
+		if imageConfig := buildGeminiBatchImageConfig(input.ImageSize, input.AspectRatio); imageConfig != nil {
+			config := map[string]any{}
+			if imageConfig.ImageSize != "" {
+				config["imageSize"] = imageConfig.ImageSize
+			}
+			if imageConfig.AspectRatio != "" {
+				config["aspectRatio"] = imageConfig.AspectRatio
+			}
+			if len(config) > 0 {
+				generationConfig["imageConfig"] = config
+			}
+		}
 		line := map[string]any{
 			"key": customID,
 			"request": map[string]any{
@@ -504,9 +519,7 @@ func BuildVertexBatchJSONL(input BatchImageInput) ([]byte, error) {
 					"role":  "user",
 					"parts": parts,
 				}},
-				"generationConfig": map[string]any{
-					"responseModalities": []string{"TEXT", "IMAGE"},
-				},
+				"generationConfig": generationConfig,
 			},
 		}
 		if err := enc.Encode(line); err != nil {

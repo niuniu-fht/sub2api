@@ -68,6 +68,10 @@ func TestParseGeminiImageBillingRequestInfo(t *testing.T) {
 	require.Equal(t, ImageBillingSize2K, info.Tier)
 	require.Equal(t, "16:9", info.AspectRatio)
 
+	info = ParseGeminiImageBillingRequestInfo([]byte(`{"generationConfig":{"imageConfig":{"imageSize":"4k","aspectRatio":"9:16"}}}`))
+	require.Equal(t, ImageBillingSize4K, info.Tier)
+	require.Equal(t, "9:16", info.AspectRatio)
+
 	info = ParseGeminiImageBillingRequestInfo([]byte(`{"generationConfig":{"imageConfig":{}}}`))
 	require.Equal(t, ImageBillingSize1K, info.Tier)
 	require.Empty(t, info.AspectRatio)

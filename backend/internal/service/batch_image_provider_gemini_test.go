@@ -58,6 +58,25 @@ func TestBuildGeminiBatchJSONL_WritesValidLinesAndPreservesCustomID(t *testing.T
 	requireJSONLLine(t, lines[1], "cover_002", "Second prompt")
 }
 
+func TestBuildGeminiBatchJSONL_WritesImageConfig(t *testing.T) {
+	input := validGeminiBatchInput()
+	input.ImageSize = "4K"
+	input.AspectRatio = "9:16"
+
+	jsonl, err := BuildGeminiBatchJSONL(input)
+	require.NoError(t, err)
+
+	lines := strings.Split(strings.TrimSpace(string(jsonl)), "\n")
+	require.Len(t, lines, 1)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &got))
+	request := got["request"].(map[string]any)
+	config := request["generationConfig"].(map[string]any)
+	imageConfig := config["imageConfig"].(map[string]any)
+	require.Equal(t, "4K", imageConfig["imageSize"])
+	require.Equal(t, "9:16", imageConfig["aspectRatio"])
+}
+
 func TestBuildGeminiBatchJSONL_RejectsDuplicateCustomIDs(t *testing.T) {
 	input := validGeminiBatchInput()
 	input.Items = append(input.Items, BatchImageInputItem{CustomID: "cover_001", Prompt: "Duplicate"})
