@@ -30,7 +30,7 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 		return nil, false, nil
 	}
 
-	platform := normalizeOpenAICompatiblePlatform(req.Platform)
+	platform := NormalizeOpenAICompatiblePlatform(req.Platform)
 	var waitAccount *Account
 	reasons := make([]string, 0, len(accountIDs))
 
