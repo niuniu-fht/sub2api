@@ -38,6 +38,19 @@
           <span class="hidden sm:inline">{{ t('nav.docs') }}</span>
         </a>
 
+        <!-- Contact QQ Group -->
+        <button
+          v-if="contactInfo"
+          type="button"
+          class="hidden items-center gap-1.5 rounded-lg border border-primary-100 bg-primary-50 px-2.5 py-1.5 text-sm font-medium text-primary-700 transition-colors hover:border-primary-200 hover:bg-primary-100 dark:border-primary-900/50 dark:bg-primary-900/20 dark:text-primary-300 dark:hover:bg-primary-900/35 sm:flex"
+          :title="t('common.copyContactGroup')"
+          @click="copyContactInfo"
+        >
+          <Icon name="chatBubble" size="sm" />
+          <span class="hidden md:inline">{{ t('common.contactGroup') }}</span>
+          <span class="max-w-[9rem] truncate">{{ contactInfo }}</span>
+        </button>
+
         <!-- Model Plaza Entry -->
         <router-link
           v-if="user && modelPlazaEnabled"
@@ -364,6 +377,17 @@ function handleReplayGuide() {
 function formatHeaderMoney(value: number) {
   if (!Number.isFinite(value)) return '$0.00'
   return `$${value.toFixed(2)}`
+}
+
+async function copyContactInfo() {
+  const value = contactInfo.value.trim()
+  if (!value) return
+  try {
+    await navigator.clipboard.writeText(value)
+    appStore.showSuccess(t('common.contactGroupCopied'))
+  } catch {
+    appStore.showError(t('common.copyFailed'))
+  }
 }
 
 function handleClickOutside(event: MouseEvent) {
