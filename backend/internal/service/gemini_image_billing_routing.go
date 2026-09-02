@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 )
 
 func (s *GatewayService) geminiImageBillingForcedAccountIDs(ctx context.Context, groupID *int64, requestedModel string) (accountIDs []int64, tier string, aspectRatio string, ok bool) {
@@ -51,18 +52,40 @@ func (s *GatewayService) selectForcedGeminiImageBillingAccount(
 			continue
 		}
 		account, ok := accountByID[accountID]
-		if !ok || !s.isAccountSchedulableForSelection(account) {
-			reasons = append(reasons, fmt.Sprintf("missing_or_unschedulable=%d", accountID))
+		if !ok {
+			reasons = append(reasons, fmt.Sprintf("missing=%d", accountID))
 			continue
 		}
-		if !s.isGatewayAccountProfitEligible(ctx, account) ||
-			!s.isAccountAllowedForPlatform(account, PlatformGemini, useMixed) ||
-			(requestedModel != "" && !s.isModelSupportedByAccountWithContext(ctx, account, requestedModel)) ||
-			!s.isAccountSchedulableForModelSelection(ctx, account, requestedModel) ||
-			!s.isAccountSchedulableForQuota(account) ||
-			!s.isAccountSchedulableForWindowCost(ctx, account, false) ||
-			!s.isAccountSchedulableForRPM(ctx, account, false) {
-			reasons = append(reasons, fmt.Sprintf("incompatible=%d", accountID))
+		if !s.isAccountSchedulableForSelection(account) {
+			reasons = append(reasons, fmt.Sprintf("schedulable_false=%d", accountID))
+			continue
+		}
+		if !s.isGatewayAccountProfitEligible(ctx, account) {
+			reasons = append(reasons, fmt.Sprintf("profit_gate=%d", accountID))
+			continue
+		}
+		if !s.isAccountAllowedForPlatform(account, PlatformGemini, useMixed) {
+			reasons = append(reasons, fmt.Sprintf("platform_mismatch=%d:%s", accountID, strings.TrimSpace(account.Platform)))
+			continue
+		}
+		if requestedModel != "" && !s.isModelSupportedByAccountWithContext(ctx, account, requestedModel) {
+			reasons = append(reasons, fmt.Sprintf("model_not_supported=%d:%s", accountID, requestedModel))
+			continue
+		}
+		if !s.isAccountSchedulableForModelSelection(ctx, account, requestedModel) {
+			reasons = append(reasons, fmt.Sprintf("model_temporarily_limited=%d:%s", accountID, requestedModel))
+			continue
+		}
+		if !s.isAccountSchedulableForQuota(account) {
+			reasons = append(reasons, fmt.Sprintf("quota_limited=%d", accountID))
+			continue
+		}
+		if !s.isAccountSchedulableForWindowCost(ctx, account, false) {
+			reasons = append(reasons, fmt.Sprintf("window_cost_limited=%d", accountID))
+			continue
+		}
+		if !s.isAccountSchedulableForRPM(ctx, account, false) {
+			reasons = append(reasons, fmt.Sprintf("rpm_limited=%d", accountID))
 			continue
 		}
 		result, err := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
@@ -89,5 +112,12 @@ func (s *GatewayService) selectForcedGeminiImageBillingAccount(
 		return selection, true, selectErr
 	}
 
-	return nil, true, fmt.Errorf("%w: gemini_image_billing_forced_%s_%s_accounts_unavailable=%v reasons=%v", ErrNoAvailableAccounts, tier, aspectRatio, accountIDs, reasons)
+	slog.Info("gemini image billing forced accounts exhausted; fallback to default scheduling",
+		"group_id", derefGroupID(groupID),
+		"tier", tier,
+		"aspect_ratio", aspectRatio,
+		"configured_account_ids", accountIDs,
+		"reasons", reasons,
+	)
+	return nil, false, nil
 }

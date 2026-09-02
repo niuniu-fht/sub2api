@@ -3023,6 +3023,63 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.Equal(t, int64(2), result.Account.ID)
 	})
 
+	t.Run("Gemini图片指定账号失败后回落默认调度", func(t *testing.T) {
+		groupID := int64(31)
+
+		repo := &mockAccountRepoForPlatform{
+			accounts: []Account{
+				{
+					ID:          169,
+					Platform:    PlatformGemini,
+					Priority:    10,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Credentials: map[string]any{"model_mapping": map[string]any{"gemini-3.1-flash-image": "gemini-3.1-flash-image"}},
+				},
+				{
+					ID:          168,
+					Platform:    PlatformGemini,
+					Priority:    1,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Credentials: map[string]any{"model_mapping": map[string]any{"gemini-3.1-flash-image": "gemini-3.1-flash-image"}},
+				},
+			},
+			accountsByID: map[int64]*Account{},
+		}
+		for i := range repo.accounts {
+			repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+		}
+
+		groupRepo := &mockGroupRepoForGateway{
+			groups: map[int64]*Group{
+				groupID: {ID: groupID, Platform: PlatformGemini, Status: StatusActive, Hydrated: true},
+			},
+		}
+		settingRepo := newMockSettingRepo()
+		settingRepo.data[SettingKeyGeminiImageBillingRouting] = `{"groups":{"31":{"rules":[{"tier":"2K","aspect_ratio":"3:4","account_ids":[169]}]}}}`
+
+		svc := &GatewayService{
+			accountRepo:        repo,
+			groupRepo:          groupRepo,
+			cache:              &mockGatewayCacheForPlatform{},
+			cfg:                testConfig(),
+			concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
+			settingService:     NewSettingService(settingRepo, testConfig()),
+		}
+		routingCtx := WithImageBillingSchedulingTier(context.Background(), ImageBillingSize2K)
+		routingCtx = WithImageBillingSchedulingAspectRatio(routingCtx, "3:4")
+		excluded := map[int64]struct{}{169: {}}
+
+		result, err := svc.SelectAccountWithLoadAwareness(routingCtx, &groupID, "", "gemini-3.1-flash-image", excluded, "", int64(0))
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.Account)
+		require.Equal(t, int64(168), result.Account.ID)
+	})
+
 	t.Run("模型路由-过滤路径覆盖", func(t *testing.T) {
 		groupID := int64(70)
 		now := time.Now().Add(10 * time.Minute)
