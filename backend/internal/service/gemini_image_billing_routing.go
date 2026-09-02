@@ -121,3 +121,47 @@ func (s *GatewayService) selectForcedGeminiImageBillingAccount(
 	)
 	return nil, false, nil
 }
+
+func (s *GatewayService) filterGeminiImageBillingDefaultAccounts(ctx context.Context, groupID *int64, requestedModel string, accounts []Account) []Account {
+	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 || len(accounts) == 0 || !isImageGenerationModel(requestedModel) {
+		return accounts
+	}
+	tier := ImageBillingSchedulingTierFromContext(ctx)
+	if tier == "" {
+		tier = ImageBillingSize1K
+	}
+	aspectRatio := ImageBillingSchedulingAspectRatioFromContext(ctx)
+	settings := s.settingService.GetGeminiImageBillingRoutingSettingsCached(ctx)
+
+	filtered := accounts[:0]
+	skippedIDs := make([]int64, 0)
+	for _, account := range accounts {
+		if settings.AccountAllowedFor(*groupID, account.ID, tier, aspectRatio) {
+			filtered = append(filtered, account)
+			continue
+		}
+		skippedIDs = append(skippedIDs, account.ID)
+	}
+	if len(skippedIDs) > 0 {
+		slog.Info("gemini image billing constrained accounts skipped in default scheduling",
+			"group_id", derefGroupID(groupID),
+			"tier", tier,
+			"aspect_ratio", aspectRatio,
+			"skipped_account_ids", skippedIDs,
+		)
+	}
+	return filtered
+}
+
+func (s *GatewayService) geminiImageBillingDefaultExclusions(ctx context.Context, groupID *int64, requestedModel string) []int64 {
+	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 || !isImageGenerationModel(requestedModel) {
+		return nil
+	}
+	tier := ImageBillingSchedulingTierFromContext(ctx)
+	if tier == "" {
+		tier = ImageBillingSize1K
+	}
+	aspectRatio := ImageBillingSchedulingAspectRatioFromContext(ctx)
+	settings := s.settingService.GetGeminiImageBillingRoutingSettingsCached(ctx)
+	return settings.ConstrainedButNotAllowedAccountIDsFor(*groupID, tier, aspectRatio)
+}

@@ -3061,11 +3061,13 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		settingRepo := newMockSettingRepo()
 		settingRepo.data[SettingKeyGeminiImageBillingRouting] = `{"groups":{"31":{"rules":[{"tier":"2K","aspect_ratio":"3:4","account_ids":[169]}]}}}`
 
+		cfg := testConfig()
+		cfg.Gateway.Scheduling.LoadBatchEnabled = true
 		svc := &GatewayService{
 			accountRepo:        repo,
 			groupRepo:          groupRepo,
 			cache:              &mockGatewayCacheForPlatform{},
-			cfg:                testConfig(),
+			cfg:                cfg,
 			concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
 			settingService:     NewSettingService(settingRepo, testConfig()),
 		}
@@ -3078,6 +3080,85 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.NotNil(t, result)
 		require.NotNil(t, result.Account)
 		require.Equal(t, int64(168), result.Account.ID)
+	})
+
+	t.Run("Gemini图片受限账号不会处理未配置档位和比例", func(t *testing.T) {
+		groupID := int64(32)
+
+		repo := &mockAccountRepoForPlatform{
+			accounts: []Account{
+				{
+					ID:          169,
+					Platform:    PlatformGemini,
+					Priority:    10,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Credentials: map[string]any{"model_mapping": map[string]any{"gemini-3.1-flash-image": "gemini-3.1-flash-image"}},
+				},
+				{
+					ID:          168,
+					Platform:    PlatformGemini,
+					Priority:    1,
+					Status:      StatusActive,
+					Schedulable: true,
+					Concurrency: 1,
+					Credentials: map[string]any{"model_mapping": map[string]any{"gemini-3.1-flash-image": "gemini-3.1-flash-image"}},
+				},
+			},
+			accountsByID: map[int64]*Account{},
+		}
+		for i := range repo.accounts {
+			repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+		}
+
+		groupRepo := &mockGroupRepoForGateway{
+			groups: map[int64]*Group{
+				groupID: {ID: groupID, Platform: PlatformGemini, Status: StatusActive, Hydrated: true},
+			},
+		}
+		settingRepo := newMockSettingRepo()
+		settingRepo.data[SettingKeyGeminiImageBillingRouting] = `{"groups":{"32":{"rules":[
+			{"tier":"1K","aspect_ratio":"1:1","account_ids":[169]},
+			{"tier":"2K","aspect_ratio":"3:4","account_ids":[169]},
+			{"tier":"2K","aspect_ratio":"16:9","account_ids":[169]}
+		]}}}`
+		settingSvc := NewSettingService(settingRepo, testConfig())
+		_, err := settingSvc.SetGeminiImageBillingRoutingSettings(context.Background(), GeminiImageBillingRoutingSettings{Groups: map[int64]GeminiImageBillingGroupRouting{
+			groupID: {Rules: []GeminiImageBillingRoutingRule{
+				{Tier: ImageBillingSize1K, AspectRatio: "1:1", AccountIDs: []int64{169}},
+				{Tier: ImageBillingSize2K, AspectRatio: "3:4", AccountIDs: []int64{169}},
+				{Tier: ImageBillingSize2K, AspectRatio: "16:9", AccountIDs: []int64{169}},
+			}},
+		}})
+		require.NoError(t, err)
+
+		cfg := testConfig()
+		cfg.Gateway.Scheduling.LoadBatchEnabled = true
+		svc := &GatewayService{
+			accountRepo:        repo,
+			groupRepo:          groupRepo,
+			cache:              &mockGatewayCacheForPlatform{},
+			cfg:                cfg,
+			concurrencyService: NewConcurrencyService(&mockConcurrencyCache{}),
+			settingService:     settingSvc,
+		}
+
+		unconfiguredCtx := WithImageBillingSchedulingTier(context.Background(), ImageBillingSize4K)
+		unconfiguredCtx = WithImageBillingSchedulingAspectRatio(unconfiguredCtx, "9:16")
+		result, err := svc.SelectAccountWithLoadAwareness(unconfiguredCtx, &groupID, "", "gemini-3.1-flash-image", nil, "", int64(0))
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.Account)
+		require.Equal(t, int64(168), result.Account.ID)
+
+		configuredCtx := WithImageBillingSchedulingTier(context.Background(), ImageBillingSize2K)
+		configuredCtx = WithImageBillingSchedulingAspectRatio(configuredCtx, "3:4")
+		result, err = svc.SelectAccountWithLoadAwareness(configuredCtx, &groupID, "", "gemini-3.1-flash-image", nil, "", int64(0))
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.Account)
+		require.Equal(t, int64(169), result.Account.ID)
 	})
 
 	t.Run("模型路由-过滤路径覆盖", func(t *testing.T) {

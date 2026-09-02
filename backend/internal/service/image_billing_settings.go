@@ -213,6 +213,66 @@ func (s GeminiImageBillingRoutingSettings) AccountIDsFor(groupID int64, tier str
 	return nil
 }
 
+func (s GeminiImageBillingRoutingSettings) AccountAllowedFor(groupID int64, accountID int64, tier string, aspectRatio string) bool {
+	if groupID <= 0 || accountID <= 0 {
+		return true
+	}
+	routing, ok := s.Groups[groupID]
+	if !ok {
+		return true
+	}
+	tier = NormalizeImageBillingTierOrDefault(tier)
+	aspectRatio = NormalizeGeminiImageBillingAspectRatio(aspectRatio)
+
+	constrained := false
+	for _, rule := range routing.Rules {
+		if !geminiImageBillingRuleContainsAccount(rule, accountID) {
+			continue
+		}
+		constrained = true
+		if rule.Tier == tier && (rule.AspectRatio == aspectRatio || rule.AspectRatio == GeminiImageBillingAspectRatioAny) {
+			return true
+		}
+	}
+	return !constrained
+}
+
+func (s GeminiImageBillingRoutingSettings) ConstrainedButNotAllowedAccountIDsFor(groupID int64, tier string, aspectRatio string) []int64 {
+	if groupID <= 0 {
+		return nil
+	}
+	routing, ok := s.Groups[groupID]
+	if !ok {
+		return nil
+	}
+	seen := make(map[int64]struct{})
+	ids := make([]int64, 0)
+	for _, rule := range routing.Rules {
+		for _, accountID := range rule.AccountIDs {
+			if accountID <= 0 {
+				continue
+			}
+			if _, exists := seen[accountID]; exists {
+				continue
+			}
+			seen[accountID] = struct{}{}
+			if !s.AccountAllowedFor(groupID, accountID, tier, aspectRatio) {
+				ids = append(ids, accountID)
+			}
+		}
+	}
+	return ids
+}
+
+func geminiImageBillingRuleContainsAccount(rule GeminiImageBillingRoutingRule, accountID int64) bool {
+	for _, id := range rule.AccountIDs {
+		if id == accountID {
+			return true
+		}
+	}
+	return false
+}
+
 // GetImageBillingAreaThresholdSettings reads image billing thresholds from storage.
 // Missing or invalid values fall back to the built-in defaults.
 func (s *SettingService) GetImageBillingAreaThresholdSettings(ctx context.Context) (ImageBillingAreaThresholds, error) {

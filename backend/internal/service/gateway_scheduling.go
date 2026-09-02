@@ -167,6 +167,15 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		for k, v := range excludedIDs {
 			localExcluded[k] = v
 		}
+		platform, _, err := s.resolvePlatform(ctx, groupID, group, requestedModel)
+		if err != nil {
+			return nil, err
+		}
+		if platform == PlatformGemini {
+			for _, accountID := range s.geminiImageBillingDefaultExclusions(ctx, groupID, requestedModel) {
+				localExcluded[accountID] = struct{}{}
+			}
+		}
 
 		for {
 			account, err := s.SelectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, localExcluded)
@@ -248,6 +257,14 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	if platform == PlatformGemini {
 		if selection, handled, err := s.selectForcedGeminiImageBillingAccount(ctx, groupID, sessionHash, requestedModel, excludedIDs, accountByID, useMixed); handled {
 			return selection, err
+		}
+		accounts = s.filterGeminiImageBillingDefaultAccounts(ctx, groupID, requestedModel, accounts)
+		if len(accounts) == 0 {
+			return nil, ErrNoAvailableAccounts
+		}
+		accountByID = make(map[int64]*Account, len(accounts))
+		for i := range accounts {
+			accountByID[accounts[i].ID] = &accounts[i]
 		}
 	}
 	if group != nil && requestedModel != "" && platform == PlatformAnthropic &&
