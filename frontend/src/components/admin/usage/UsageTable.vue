@@ -153,6 +153,10 @@
             </svg>
             <span class="font-medium text-gray-900 dark:text-white">{{ row.image_count }}{{ t('usage.imageUnit') }}</span>
             <span class="text-gray-400">({{ formatImageBillingSize(row, t) }})</span>
+            <span
+              v-if="formatImageQuality(row)"
+              class="rounded bg-indigo-50 px-1.5 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200"
+            >{{ formatImageQuality(row) }}</span>
           </div>
           <!-- Token 请求 -->
           <div v-else class="flex items-center gap-1.5">
@@ -434,6 +438,10 @@
                 <span class="text-gray-400">{{ t('usage.imageBillingSize') }}</span>
                 <span class="font-medium text-white">{{ formatImageBillingSize(tooltipData, t) }}</span>
               </div>
+              <div v-if="formatImageQuality(tooltipData)" class="flex items-center justify-between gap-4">
+                <span class="text-gray-400">{{ t('usage.imageQuality') }}</span>
+                <span class="font-medium text-white">{{ formatImageQuality(tooltipData) }}</span>
+              </div>
               <div class="flex items-center justify-between gap-4">
                 <span class="text-gray-400">{{ t('usage.imageSizeSource') }}</span>
                 <span class="font-medium text-white">{{ formatImageSizeSource(tooltipData, t) }}</span>
@@ -544,6 +552,7 @@ import {
   formatImageOutputSize,
   formatImageSizeBreakdown,
   formatImageSizeSource,
+  formatImageQuality,
   hasImageOutputTokens,
   textOutputTokens,
   hasImageOutputCost,

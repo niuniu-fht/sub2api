@@ -376,6 +376,7 @@ export default {
     imageTotalPrice: 'Image total price',
     imageCount: 'Image count',
     imageBillingSize: 'Billing size',
+    imageQuality: 'Image quality',
     imageInputSize: 'Input size',
     imageOutputSize: 'Output size',
     imageInputTokens: 'Image Input Tokens',

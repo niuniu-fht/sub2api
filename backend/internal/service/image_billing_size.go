@@ -15,6 +15,12 @@ const (
 	ImageBillingSize2K = "2K"
 	ImageBillingSize4K = "4K"
 
+	ImageQualityLow    = "low"
+	ImageQualityMedium = "medium"
+	ImageQualityHigh   = "high"
+	ImageQualityXHigh  = "xhigh"
+	ImageQualityMax    = "max"
+
 	ImageSizeSourceOutput  = "output"
 	ImageSizeSourceInput   = "input"
 	ImageSizeSourceDefault = "default"
@@ -119,6 +125,26 @@ func NormalizeImageBillingTierOrDefault(size string) string {
 		return tier
 	}
 	return ImageBillingSize1K
+}
+
+// NormalizeOpenAIImageQuality normalizes OpenAI image quality values for
+// quality-aware billing and routing. auto/empty/unknown return "" so callers
+// can fall back to legacy size-only behavior.
+func NormalizeOpenAIImageQuality(quality string) string {
+	switch strings.ToLower(strings.TrimSpace(quality)) {
+	case ImageQualityLow:
+		return ImageQualityLow
+	case ImageQualityMedium:
+		return ImageQualityMedium
+	case ImageQualityHigh:
+		return ImageQualityHigh
+	case ImageQualityXHigh:
+		return ImageQualityXHigh
+	case ImageQualityMax:
+		return ImageQualityMax
+	default:
+		return ""
+	}
 }
 
 func ResolveImageBillingSize(inputSize string, outputSizes []string) ImageBillingSizeResolution {

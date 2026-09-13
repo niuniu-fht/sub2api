@@ -649,7 +649,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			Kind:               "request_error",
 			Message:            safeErr,
 		})
-		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+		return nil, s.handleOpenAIUpstreamTransportError(upstreamCtx, c, account, err, false)
 	}
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
@@ -658,7 +658,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
-		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
+		if shouldFailoverOpenAIImagesStatus(resp.StatusCode) || s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
 				AccountID:          account.ID,
@@ -701,6 +701,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 					FirstTokenMs:     ttft,
 					ImageCount:       streamCount,
 					ImageSize:        parsed.SizeTier,
+					ImageQuality:     parsed.Quality,
 					ImageInputSize:   parsed.Size,
 					ImageOutputSizes: streamSizes,
 				}, err
@@ -722,6 +723,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			FirstTokenMs:     firstTokenMs,
 			ImageCount:       imageCount,
 			ImageSize:        parsed.SizeTier,
+			ImageQuality:     parsed.Quality,
 			ImageInputSize:   parsed.Size,
 			ImageOutputSizes: imageOutputSizes,
 		}, nil
@@ -745,10 +747,15 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			FirstTokenMs:     firstTokenMs,
 			ImageCount:       imageCount,
 			ImageSize:        parsed.SizeTier,
+			ImageQuality:     parsed.Quality,
 			ImageInputSize:   parsed.Size,
 			ImageOutputSizes: nonStreamSizes,
 		}, nil
 	}
+}
+
+func shouldFailoverOpenAIImagesStatus(statusCode int) bool {
+	return statusCode >= 400 && statusCode != http.StatusBadRequest
 }
 
 func (s *OpenAIGatewayService) buildOpenAIImagesRequest(

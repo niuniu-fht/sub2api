@@ -1525,6 +1525,16 @@ func ImagePrice4kNotNil() predicate.Group {
 	return predicate.Group(sql.FieldNotNull(FieldImagePrice4k))
 }
 
+// ImageQualityPricesIsNil applies the IsNil predicate on the "image_quality_prices" field.
+func ImageQualityPricesIsNil() predicate.Group {
+	return predicate.Group(sql.FieldIsNull(FieldImageQualityPrices))
+}
+
+// ImageQualityPricesNotNil applies the NotNil predicate on the "image_quality_prices" field.
+func ImageQualityPricesNotNil() predicate.Group {
+	return predicate.Group(sql.FieldNotNull(FieldImageQualityPrices))
+}
+
 // BatchImageDiscountMultiplierEQ applies the EQ predicate on the "batch_image_discount_multiplier" field.
 func BatchImageDiscountMultiplierEQ(v float64) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldBatchImageDiscountMultiplier, v))

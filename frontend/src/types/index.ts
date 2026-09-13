@@ -534,6 +534,7 @@ export interface PaginationConfig {
 export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'composite'
 
 export type VideoModelPrices = Record<string, Record<string, number>>
+export type ImageQualityPrices = Record<'low' | 'medium' | 'high' | 'xhigh' | 'max', Partial<Record<'1K' | '2K' | '4K', number>>>
 
 export type SubscriptionType = 'standard' | 'subscription'
 
@@ -580,6 +581,7 @@ export interface Group {
   image_price_1k: number | null
   image_price_2k: number | null
   image_price_4k: number | null
+  image_quality_prices?: ImageQualityPrices
   video_rate_independent: boolean
   video_rate_multiplier: number
   video_price_480p: number | null
@@ -794,6 +796,7 @@ export interface CreateGroupRequest {
   image_price_1k?: number | null
   image_price_2k?: number | null
   image_price_4k?: number | null
+  image_quality_prices?: ImageQualityPrices
   video_rate_independent?: boolean
   video_rate_multiplier?: number
   video_price_480p?: number | null
@@ -859,6 +862,7 @@ export interface UpdateGroupRequest {
   image_price_1k?: number | null
   image_price_2k?: number | null
   image_price_4k?: number | null
+  image_quality_prices?: ImageQualityPrices
   video_rate_independent?: boolean
   video_rate_multiplier?: number
   video_price_480p?: number | null
@@ -1704,6 +1708,8 @@ export interface UsageLog {
   image_output_size: string | null
   image_size_source: ImageSizeSource | null
   image_size_breakdown: ImageSizeBreakdown | null
+  // OpenAI 生图质量参数(low/medium/high/xhigh/max),复用 billing_tier 列
+  billing_tier?: string | null
   image_input_tokens: number
   image_input_cost: number
   image_output_tokens: number

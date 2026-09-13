@@ -48,6 +48,10 @@ type Group struct {
 	ImagePrice1K                 *float64
 	ImagePrice2K                 *float64
 	ImagePrice4K                 *float64
+	// ImageQualityPrices stores OpenAI image quality × size per-image prices.
+	// Shape: {"low":{"1K":0.05,"2K":0.07,"4K":0.10}, ...}.
+	// Empty or missing quality keys fall back to the legacy ImagePrice* columns.
+	ImageQualityPrices map[string]map[string]float64
 	BatchImageDiscountMultiplier float64
 	BatchImageHoldMultiplier     float64
 	VideoRateIndependent         bool
@@ -172,6 +176,28 @@ func (g *Group) GetImagePrice(imageSize string) *float64 {
 		// 未知尺寸默认按 1K 计费
 		return g.ImagePrice1K
 	}
+}
+
+// GetImageQualityPrice returns the configured price for an OpenAI image quality
+// and size tier. It returns nil when no explicit quality price is configured.
+func (g *Group) GetImageQualityPrice(quality string, imageSize string) *float64 {
+	if g == nil || g.ImageQualityPrices == nil {
+		return nil
+	}
+	quality = NormalizeOpenAIImageQuality(quality)
+	if quality == "" {
+		return nil
+	}
+	tier := NormalizeImageBillingTierOrDefault(imageSize)
+	prices, ok := g.ImageQualityPrices[quality]
+	if !ok {
+		return nil
+	}
+	price, ok := prices[tier]
+	if !ok || price < 0 {
+		return nil
+	}
+	return &price
 }
 
 // GetVideoPrice 根据 resolution 返回对应的视频生成价格。

@@ -123,6 +123,10 @@ func (Group) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
+		field.JSON("image_quality_prices", map[string]map[string]float64{}).
+			Optional().
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
+			Comment("OpenAI 图片按 quality×size 的按次单价（USD）；key 为 low/medium/high，value 为 1K/2K/4K→价格"),
 		field.Float("batch_image_discount_multiplier").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
 			Default(0.5).

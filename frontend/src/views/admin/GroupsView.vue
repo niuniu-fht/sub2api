@@ -960,6 +960,64 @@
               />
             </div>
           </div>
+          <div
+            v-if="createForm.platform === 'openai'"
+            class="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/60"
+          >
+            <div class="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-200">Quality × Size 价格</div>
+            <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <div
+                v-for="quality in imageQualityOptions"
+                :key="quality.key"
+                class="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800"
+              >
+                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ quality.label }}</div>
+                <div class="space-y-2">
+                  <div v-for="tier in imagePricingTiers" :key="tier.key">
+                    <label class="input-label">{{ tier.label }} ($)</label>
+                    <input
+                      v-model.number="createForm.image_quality_prices[quality.key][tier.label]"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      :placeholder="imageQualityPricePlaceholders[quality.key][tier.label]"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">留空时使用上方旧 size 价格。</p>
+          </div>
+          <div
+            v-if="editForm.platform === 'openai'"
+            class="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/60"
+          >
+            <div class="mb-2 text-sm font-semibold text-gray-800 dark:text-gray-200">Quality × Size 价格</div>
+            <div class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <div
+                v-for="quality in imageQualityOptions"
+                :key="quality.key"
+                class="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-800"
+              >
+                <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ quality.label }}</div>
+                <div class="space-y-2">
+                  <div v-for="tier in imagePricingTiers" :key="tier.key">
+                    <label class="input-label">{{ tier.label }} ($)</label>
+                    <input
+                      v-model.number="editForm.image_quality_prices[quality.key][tier.label]"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      class="input"
+                      :placeholder="imageQualityPricePlaceholders[quality.key][tier.label]"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">留空时使用上方旧 size 价格。</p>
+          </div>
           <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
             {{ t(imagePricingI18nKey(createForm.platform, "modeHint")) }}
           </p>
@@ -4649,9 +4707,13 @@ import {
   getDefaultVideoPreviewPrice,
   getImagePricePlaceholder,
   getVideoPricePlaceholder,
+  imageQualityOptions,
+  imageQualityPricePlaceholders,
   imagePricingI18nKey,
   supportsImagePricingPlatform,
   supportsVideoPricingPlatform,
+  type ImageQuality,
+  type ImageQualityPricingTierKey,
   videoPricingI18nKey,
 } from "./groupsImagePricing";
 import {
@@ -4660,6 +4722,50 @@ import {
   serializeVideoModelPrices,
   videoModelPriceFamilyRows,
 } from "./groupsVideoModelPricing";
+
+const createImageQualityPricesForm = (): Record<ImageQuality, Record<ImageQualityPricingTierKey, number | string | null>> => ({
+  low: { "1K": null, "2K": null, "4K": null },
+  medium: { "1K": null, "2K": null, "4K": null },
+  high: { "1K": null, "2K": null, "4K": null },
+  xhigh: { "1K": null, "2K": null, "4K": null },
+  max: { "1K": null, "2K": null, "4K": null },
+});
+
+const serializeImageQualityPrices = (
+  value: Record<ImageQuality, Record<ImageQualityPricingTierKey, number | string | null>>,
+) => {
+  const out: Record<string, Record<string, number>> = {};
+  for (const quality of imageQualityOptions) {
+    const row: Record<string, number> = {};
+    for (const tier of imagePricingTiers) {
+      const raw = value[quality.key][tier.label as ImageQualityPricingTierKey];
+      const parsed = Number(raw);
+      if (raw !== null && raw !== "" && Number.isFinite(parsed) && parsed >= 0) {
+        row[tier.label] = parsed;
+      }
+    }
+    if (Object.keys(row).length > 0) {
+      out[quality.key] = row;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
+};
+
+const parseImageQualityPrices = (
+  value?: import('@/types').ImageQualityPrices,
+) => {
+  const form = createImageQualityPricesForm();
+  if (!value) return form;
+  for (const quality of imageQualityOptions) {
+    const prices = value[quality.key];
+    if (!prices) continue;
+    for (const tier of imagePricingTiers) {
+      const raw = prices[tier.label as ImageQualityPricingTierKey];
+      if (raw !== undefined) form[quality.key][tier.label] = raw;
+    }
+  }
+  return form;
+};
 
 const supportsLivePlatform = (platform: string): boolean =>
   platform === "openai" || platform === "composite";
@@ -5207,6 +5313,7 @@ const createForm = reactive({
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
+  image_quality_prices: createImageQualityPricesForm(),
   // 视频生成计费配置（仅 Grok 平台）
   video_rate_independent: false,
   video_rate_multiplier: 1,
@@ -5571,6 +5678,7 @@ const editForm = reactive({
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
+  image_quality_prices: createImageQualityPricesForm(),
   // 视频生成计费配置（仅 Grok 平台）
   video_rate_independent: false,
   video_rate_multiplier: 1,
@@ -5635,6 +5743,7 @@ type ImagePricingFormState = {
   image_price_1k: number | string | null;
   image_price_2k: number | string | null;
   image_price_4k: number | string | null;
+  image_quality_prices: Record<ImageQuality, Record<ImageQualityPricingTierKey, number | string | null>>;
   peak_rate_enabled: boolean;
   peak_start: string;
   peak_end: string;
@@ -6028,6 +6137,7 @@ const closeCreateModal = () => {
   createForm.image_price_1k = null;
   createForm.image_price_2k = null;
   createForm.image_price_4k = null;
+  createForm.image_quality_prices = createImageQualityPricesForm();
   createForm.video_rate_independent = false;
   createForm.video_rate_multiplier = 1;
   createForm.video_price_480p = null;
@@ -6217,6 +6327,9 @@ const handleCreateGroup = async () => {
     requestData.image_price_1k = emptyToNull(requestData.image_price_1k);
     requestData.image_price_2k = emptyToNull(requestData.image_price_2k);
     requestData.image_price_4k = emptyToNull(requestData.image_price_4k);
+    (requestData as any).image_quality_prices = serializeImageQualityPrices(
+      createForm.image_quality_prices,
+    );
     requestData.video_price_480p = emptyToNull(requestData.video_price_480p);
     requestData.video_price_720p = emptyToNull(requestData.video_price_720p);
     requestData.video_price_1080p = emptyToNull(requestData.video_price_1080p);
@@ -6241,7 +6354,7 @@ const handleCreateGroup = async () => {
     requestData.peak_rate_multiplier = normalizeRateMultiplier(
       createForm.peak_rate_multiplier,
     );
-    await adminAPI.groups.create(requestData);
+    await adminAPI.groups.create(requestData as any);
     appStore.showSuccess(t("admin.groups.groupCreated"));
     closeCreateModal();
     loadGroups();
@@ -6288,6 +6401,9 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.image_price_1k = group.image_price_1k;
   editForm.image_price_2k = group.image_price_2k;
   editForm.image_price_4k = group.image_price_4k;
+  editForm.image_quality_prices = parseImageQualityPrices(
+    group.image_quality_prices,
+  );
   editForm.video_rate_independent = group.video_rate_independent ?? false;
   editForm.video_rate_multiplier = group.video_rate_multiplier ?? 1;
   editForm.video_price_480p = group.video_price_480p;
@@ -6508,6 +6624,9 @@ const handleUpdateGroup = async () => {
     payload.image_price_1k = emptyPriceToClear(payload.image_price_1k);
     payload.image_price_2k = emptyPriceToClear(payload.image_price_2k);
     payload.image_price_4k = emptyPriceToClear(payload.image_price_4k);
+    (payload as any).image_quality_prices = serializeImageQualityPrices(
+      editForm.image_quality_prices,
+    );
     payload.video_price_480p = emptyPriceToClear(payload.video_price_480p);
     payload.video_price_720p = emptyPriceToClear(payload.video_price_720p);
     payload.video_price_1080p = emptyPriceToClear(payload.video_price_1080p);
@@ -6532,7 +6651,7 @@ const handleUpdateGroup = async () => {
     payload.peak_rate_multiplier = normalizeRateMultiplier(
       editForm.peak_rate_multiplier,
     );
-    await adminAPI.groups.update(editingGroup.value.id, payload);
+    await adminAPI.groups.update(editingGroup.value.id, payload as any);
     appStore.showSuccess(t("admin.groups.groupUpdated"));
     closeEditModal();
     loadGroups();

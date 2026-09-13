@@ -7,6 +7,7 @@ import (
 
 type imageBillingSchedulingTierContextKey struct{}
 type imageBillingSchedulingAspectRatioContextKey struct{}
+type imageBillingSchedulingQualityContextKey struct{}
 
 func WithImageBillingSchedulingTier(ctx context.Context, tier string) context.Context {
 	if ctx == nil {
@@ -55,4 +56,23 @@ func ImageBillingSchedulingAspectRatioFromContext(ctx context.Context) string {
 	}
 	aspectRatio, _ := ctx.Value(imageBillingSchedulingAspectRatioContextKey{}).(string)
 	return NormalizeGeminiImageBillingAspectRatio(aspectRatio)
+}
+
+func WithImageBillingSchedulingQuality(ctx context.Context, quality string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	quality = NormalizeOpenAIImageQuality(quality)
+	if quality == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, imageBillingSchedulingQualityContextKey{}, quality)
+}
+
+func ImageBillingSchedulingQualityFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	quality, _ := ctx.Value(imageBillingSchedulingQualityContextKey{}).(string)
+	return NormalizeOpenAIImageQuality(quality)
 }

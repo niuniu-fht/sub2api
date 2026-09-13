@@ -122,6 +122,7 @@ type Group struct {
 	ImagePrice1K       *float64 `json:"image_price_1k"`
 	ImagePrice2K       *float64 `json:"image_price_2k"`
 	ImagePrice4K       *float64 `json:"image_price_4k"`
+	ImageQualityPrices map[string]map[string]float64 `json:"image_quality_prices,omitempty"`
 	VideoPrice480P     *float64 `json:"video_price_480p"`
 	VideoPrice720P     *float64 `json:"video_price_720p"`
 	VideoPrice1080P    *float64 `json:"video_price_1080p"`
@@ -545,7 +546,9 @@ type UsageLog struct {
 	ImageOutputCost    float64        `json:"image_output_cost"`
 	ImageSizeSource    *string        `json:"image_size_source"`
 	ImageSizeBreakdown map[string]int `json:"image_size_breakdown"`
-	MediaType          *string        `json:"media_type"`
+	// BillingTier 复用列：OpenAI 生图质量参数（low/medium/high/xhigh/max），随使用记录展示给用户
+	BillingTier *string `json:"billing_tier,omitempty"`
+	MediaType   *string `json:"media_type"`
 
 	// User-Agent
 	UserAgent *string `json:"user_agent"`
@@ -588,8 +591,6 @@ type AdminUsageLog struct {
 	ChannelID *int64 `json:"channel_id,omitempty"`
 	// ModelMappingChain 模型映射链，如 "a→b→c"
 	ModelMappingChain *string `json:"model_mapping_chain,omitempty"`
-	// BillingTier 计费层级标签（per_request/image 模式）
-	BillingTier *string `json:"billing_tier,omitempty"`
 
 	// AccountRateMultiplier 账号计费倍率快照（nil 表示按 1.0 处理）
 	AccountRateMultiplier *float64 `json:"account_rate_multiplier"`

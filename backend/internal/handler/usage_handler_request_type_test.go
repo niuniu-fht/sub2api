@@ -254,7 +254,8 @@ func TestUserUsageListKeepsUserBillingAndIPWithoutAdminCostFields(t *testing.T) 
 	require.NotContains(t, body, "upstream_model")
 	require.NotContains(t, body, "upstream_response_model")
 	require.NotContains(t, body, "upstream_model_mismatch")
-	require.NotContains(t, body, "billing_tier")
+	// billing_tier 现在承载 OpenAI 生图质量参数，属于用户可见的计费元数据。
+	require.Contains(t, body, `"billing_tier":"internal-tier"`)
 	require.NotContains(t, body, "channel_id")
 	require.NotContains(t, body, `"account":`)
 }

@@ -126,6 +126,7 @@ type CreateGroupRequest struct {
 	ImagePrice1K                    *float64                      `json:"image_price_1k"`
 	ImagePrice2K                    *float64                      `json:"image_price_2k"`
 	ImagePrice4K                    *float64                      `json:"image_price_4k"`
+	ImageQualityPrices              map[string]map[string]float64 `json:"image_quality_prices,omitempty"`
 	VideoPrice480P                  *float64                      `json:"video_price_480p"`
 	VideoPrice720P                  *float64                      `json:"video_price_720p"`
 	VideoPrice1080P                 *float64                      `json:"video_price_1080p"`
@@ -199,6 +200,7 @@ type UpdateGroupRequest struct {
 	ImagePrice1K                    *float64                      `json:"image_price_1k"`
 	ImagePrice2K                    *float64                      `json:"image_price_2k"`
 	ImagePrice4K                    *float64                      `json:"image_price_4k"`
+	ImageQualityPrices              map[string]map[string]float64 `json:"image_quality_prices,omitempty"`
 	VideoPrice480P                  *float64                      `json:"video_price_480p"`
 	VideoPrice720P                  *float64                      `json:"video_price_720p"`
 	VideoPrice1080P                 *float64                      `json:"video_price_1080p"`
@@ -540,6 +542,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		ImagePrice1K:                    req.ImagePrice1K,
 		ImagePrice2K:                    req.ImagePrice2K,
 		ImagePrice4K:                    req.ImagePrice4K,
+		ImageQualityPrices:              req.ImageQualityPrices,
 		VideoPrice480P:                  req.VideoPrice480P,
 		VideoPrice720P:                  req.VideoPrice720P,
 		VideoPrice1080P:                 req.VideoPrice1080P,
@@ -672,6 +675,7 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		ImagePrice1K:                    req.ImagePrice1K,
 		ImagePrice2K:                    req.ImagePrice2K,
 		ImagePrice4K:                    req.ImagePrice4K,
+		ImageQualityPrices:              req.ImageQualityPrices,
 		VideoPrice480P:                  req.VideoPrice480P,
 		VideoPrice720P:                  req.VideoPrice720P,
 		VideoPrice1080P:                 req.VideoPrice1080P,

@@ -381,6 +381,7 @@ export default {
     imageTotalPrice: '图片总价',
     imageCount: '图片张数',
     imageBillingSize: '计费尺寸',
+    imageQuality: '图片质量',
     imageInputSize: '输入尺寸',
     imageOutputSize: '输出尺寸',
     imageInputTokens: '图片输入 Token',

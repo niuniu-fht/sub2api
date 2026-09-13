@@ -398,6 +398,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ImageSizeBreakdown:       result.ImageSizeBreakdown,
 		NativeCompactionV2:       input.NativeCompactionV2,
 	}
+	// 复用一直未启用的 billing_tier 列记录图片质量(low/medium/high/xhigh/max),供使用记录展示。
+	if quality := NormalizeOpenAIImageQuality(result.ImageQuality); quality != "" && result.ImageCount > 0 {
+		usageLog.BillingTier = &quality
+	}
 	isVideoUsage := isGrokVideoUsageResult(result, billingModels)
 	if isVideoUsage {
 		usageLog.VideoCount = result.VideoCount
@@ -734,6 +738,14 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 	multiplier float64,
 ) *CostBreakdown {
 	sizeTier := NormalizeImageBillingTierOrDefault(result.ImageSize)
+	quality := NormalizeOpenAIImageQuality(result.ImageQuality)
+	groupConfig := imagePriceConfigFromAPIKey(apiKey)
+
+	// Quality×size 的显式矩阵价优先于所有旧 size 价和渠道/分组统一价。
+	if quality != "" && apiKeyHasConfiguredImageQualityPrice(apiKey, quality, sizeTier) {
+		return s.billingService.CalculateImageCostWithQuality(billingModel, sizeTier, quality, result.ImageCount, groupConfig, multiplier)
+	}
+
 	resolved := s.resolveOpenAIChannelPricing(ctx, billingModel, apiKey)
 	if resolved != nil && resolved.Source == PricingSourceGroup &&
 		(resolved.Mode == BillingModePerRequest || resolved.Mode == BillingModeImage) {
@@ -747,7 +759,6 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 			return cost
 		}
 	}
-	groupConfig := imagePriceConfigFromAPIKey(apiKey)
 	if apiKeyHasConfiguredImagePrice(apiKey, sizeTier) {
 		return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
 	}
@@ -886,6 +897,9 @@ func groupMediaPricingLooksIncomplete(group *Group) bool {
 	}
 	// Any first-class pricing field present means the projection is not a blank shell.
 	if len(group.VideoModelPrices) > 0 {
+		return false
+	}
+	if len(group.ImageQualityPrices) > 0 {
 		return false
 	}
 	if len(group.ModelPricing) > 0 || group.LongContextPricingEnabled {

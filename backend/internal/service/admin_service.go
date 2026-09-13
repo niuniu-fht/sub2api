@@ -240,6 +240,8 @@ type CreateGroupInput struct {
 	ImagePrice1K       *float64
 	ImagePrice2K       *float64
 	ImagePrice4K       *float64
+	// ImageQualityPrices 是 OpenAI 图片按 quality×size 的按次单价。
+	ImageQualityPrices map[string]map[string]float64
 	VideoPrice480P     *float64
 	VideoPrice720P     *float64
 	VideoPrice1080P    *float64
@@ -319,6 +321,8 @@ type UpdateGroupInput struct {
 	ImagePrice1K       *float64
 	ImagePrice2K       *float64
 	ImagePrice4K       *float64
+	// ImageQualityPrices 为 nil 表示不修改，空 map 表示清除。
+	ImageQualityPrices map[string]map[string]float64
 	VideoPrice480P     *float64
 	VideoPrice720P     *float64
 	VideoPrice1080P    *float64

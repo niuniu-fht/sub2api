@@ -1772,6 +1772,9 @@ type ImagePriceConfig struct {
 	Price1K *float64 // 1K 尺寸价格（nil 表示使用默认值）
 	Price2K *float64 // 2K 尺寸价格（nil 表示使用默认值）
 	Price4K *float64 // 4K 尺寸价格（nil 表示使用默认值）
+	// QualityPrices stores quality → size → per-image price. It is optional and
+	// used before the flat Price* columns for OpenAI image requests.
+	QualityPrices map[string]map[string]float64
 }
 
 // VideoPriceConfig 视频生成计费配置。所有价格均为**每秒**单价（USD/s），与 xAI 官方计费口径一致。
@@ -1920,13 +1923,21 @@ func (s *BillingService) CalculateAudioCost(mode string, durationOrUnits float64
 // groupConfig: 分组配置的价格（可能为 nil，表示使用默认值）
 // rateMultiplier: 费率倍数
 func (s *BillingService) CalculateImageCost(model string, imageSize string, imageCount int, groupConfig *ImagePriceConfig, rateMultiplier float64) *CostBreakdown {
+	return s.CalculateImageCostWithQuality(model, imageSize, "", imageCount, groupConfig, rateMultiplier)
+}
+
+// CalculateImageCostWithQuality calculates image cost with an optional quality.
+// When quality is normalized to low/medium/high and a quality-specific price
+// exists, it wins over the flat ImagePrice* columns; otherwise legacy size
+// pricing is preserved.
+func (s *BillingService) CalculateImageCostWithQuality(model string, imageSize string, quality string, imageCount int, groupConfig *ImagePriceConfig, rateMultiplier float64) *CostBreakdown {
 	if imageCount <= 0 {
 		return &CostBreakdown{}
 	}
 	imageSize = NormalizeImageBillingTierOrDefault(imageSize)
 
 	// 获取单价
-	unitPrice := s.getImageUnitPrice(model, imageSize, groupConfig)
+	unitPrice := s.getImageUnitPriceWithQuality(model, imageSize, quality, groupConfig)
 
 	// 计算总费用
 	totalCost := unitPrice * float64(imageCount)
@@ -1942,6 +1953,13 @@ func (s *BillingService) CalculateImageCost(model string, imageSize string, imag
 		ActualCost:  actualCost,
 		BillingMode: string(BillingModeImage),
 	}
+}
+
+func (s *BillingService) getImageUnitPriceWithQuality(model string, imageSize string, quality string, groupConfig *ImagePriceConfig) float64 {
+	if price := LookupImageQualityPrice(groupConfig, quality, imageSize); price != nil {
+		return *price
+	}
+	return s.getImageUnitPrice(model, imageSize, groupConfig)
 }
 
 // CalculateVideoCost 计算视频生成费用（按秒计费，与 xAI 口径一致）。

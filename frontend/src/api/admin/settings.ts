@@ -1479,6 +1479,14 @@ export interface ImageBillingGroupAccountRouting {
   one_k_account_id?: number;
   two_k_account_id?: number;
   four_k_account_id?: number;
+  rules?: ImageBillingRoutingRule[];
+}
+
+export interface ImageBillingRoutingRule {
+  quality: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+  tier: '1K' | '2K' | '4K';
+  mode?: 'priority' | 'round_robin';
+  account_ids: number[];
 }
 
 export interface ImageBillingAccountRoutingSettings {
@@ -1679,4 +1687,3 @@ export const settingsAPI = {
 };
 
 export default settingsAPI;
-

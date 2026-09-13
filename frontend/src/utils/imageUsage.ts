@@ -49,10 +49,13 @@ const knownImageBillingSizes = new Set(['1K', '2K', '4K', 'mixed'])
 
 type ImageUsageRow = Pick<
   UsageLog,
-  'image_size' | 'image_input_size' | 'image_output_size' | 'image_size_source' | 'image_size_breakdown'
+  'image_size' | 'image_input_size' | 'image_output_size' | 'image_size_source' | 'image_size_breakdown' | 'billing_tier'
 >
 
 const trimmed = (value: string | null | undefined): string => value?.trim() ?? ''
+
+/** OpenAI 生图质量参数(low/medium/high/xhigh/max);未记录时返回空串。 */
+export const formatImageQuality = (row: ImageUsageRow | null | undefined): string => trimmed(row?.billing_tier)
 
 export const formatImageBillingSize = (row: ImageUsageRow | null | undefined, t: Translate): string => {
   const size = trimmed(row?.image_size)

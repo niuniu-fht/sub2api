@@ -3,32 +3,37 @@ package service
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
+	"strings"
 )
 
 const openAIAccountScheduleLayerImageBillingRouting = "image_billing_routing"
 
-func (s *OpenAIGatewayService) imageBillingForcedAccountIDs(ctx context.Context, groupID *int64) (accountIDs []int64, tier string, ok bool) {
+func (s *OpenAIGatewayService) imageBillingForcedAccountIDs(ctx context.Context, groupID *int64) (accountIDs []int64, tier string, quality string, mode string, ok bool) {
 	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 {
-		return nil, "", false
+		return nil, "", "", "", false
 	}
 	tier = ImageBillingSchedulingTierFromContext(ctx)
 	if tier == "" {
-		return nil, "", false
+		return nil, "", "", "", false
 	}
+	quality = ImageBillingSchedulingQualityFromContext(ctx)
 	settings := s.settingService.GetImageBillingAccountRoutingSettingsCached(ctx)
-	accountIDs = settings.AccountIDsFor(*groupID, tier)
-	return accountIDs, tier, len(accountIDs) > 0
+	accountIDs = settings.AccountIDsForQuality(*groupID, quality, tier)
+	mode = settings.RoutingModeForQuality(*groupID, quality, tier)
+	return accountIDs, tier, quality, mode, len(accountIDs) > 0
 }
 
 func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
 ) (*AccountSelectionResult, bool, error) {
-	accountIDs, tier, configured := s.imageBillingForcedAccountIDs(ctx, req.GroupID)
+	accountIDs, tier, quality, mode, configured := s.imageBillingForcedAccountIDs(ctx, req.GroupID)
 	if !configured {
 		return nil, false, nil
 	}
+	accountIDs = orderedOpenAIImageBillingAccountIDs(accountIDs, mode, req.SessionHash)
 
 	platform := NormalizeOpenAICompatiblePlatform(req.Platform)
 	var waitAccount *Account
@@ -87,6 +92,8 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 			slog.Debug("openai image billing forced account selected",
 				"group_id", derefGroupID(req.GroupID),
 				"tier", tier,
+				"quality", quality,
+				"mode", mode,
 				"account_id", account.ID,
 				"configured_account_ids", accountIDs,
 				"acquired", true,
@@ -105,6 +112,8 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 		slog.Debug("openai image billing forced account selected with wait plan",
 			"group_id", derefGroupID(req.GroupID),
 			"tier", tier,
+			"quality", quality,
+			"mode", mode,
 			"account_id", waitAccount.ID,
 			"configured_account_ids", accountIDs,
 		)
@@ -117,5 +126,18 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 		return selection, true, selectErr
 	}
 
-	return nil, true, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact, fmt.Sprintf("image_billing_forced_%s_accounts_unavailable=%v reasons=%v", tier, accountIDs, reasons))
+	return nil, true, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact, fmt.Sprintf("image_billing_forced_%s_%s_accounts_unavailable=%v reasons=%v", quality, tier, accountIDs, reasons))
+}
+
+func orderedOpenAIImageBillingAccountIDs(ids []int64, mode string, sessionHash string) []int64 {
+	if len(ids) < 2 || normalizeImageBillingRoutingMode(mode) != ImageBillingRoutingModeRoundRobin || strings.TrimSpace(sessionHash) == "" {
+		return ids
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(sessionHash))
+	offset := int(h.Sum32()) % len(ids)
+	out := make([]int64, 0, len(ids))
+	out = append(out, ids[offset:]...)
+	out = append(out, ids[:offset]...)
+	return out
 }

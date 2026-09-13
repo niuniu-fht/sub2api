@@ -275,6 +275,7 @@ type OpenAIForwardResult struct {
 	ClientDisconnect      bool
 	ImageCount            int
 	ImageSize             string
+	ImageQuality          string
 	ImageInputSize        string
 	ImageOutputSize       string
 	ImageOutputSizes      []string
