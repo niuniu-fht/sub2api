@@ -1869,7 +1869,7 @@
           <div>
             <label class="input-label mb-0">OpenAI Images 请求默认参数</label>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              仅在此账号被调度时补齐缺失参数；请求里已有同名参数时保持原值。
+              仅在此账号被调度时补齐缺失参数；请求里已有同名参数时保持原值。勾选「覆盖」后,该参数将强制覆盖请求里的同名参数。
             </p>
           </div>
           <button type="button" class="btn btn-secondary whitespace-nowrap px-3 py-1.5 text-xs" @click="addOpenAIImageRequestDefaultRow()">
@@ -1880,7 +1880,7 @@
           <div
             v-for="(row, index) in openAIImageRequestDefaultRows"
             :key="getOpenAIImageRequestDefaultRowKey(row)"
-            class="grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_auto] gap-2"
+            class="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto_auto] items-center gap-2"
           >
             <input
               v-model="row.key"
@@ -1894,6 +1894,10 @@
               class="input font-mono text-sm"
               placeholder="value，如 url / high / true / 1"
             />
+            <label class="flex shrink-0 items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300" title="勾选后,此参数将覆盖请求里的同名参数;不勾选则仅补齐缺失参数">
+              <input v-model="row.override" type="checkbox" class="h-4 w-4 shrink-0 cursor-pointer accent-primary-600" />
+              覆盖
+            </label>
             <button type="button" class="btn btn-secondary px-3 text-sm" @click="removeOpenAIImageRequestDefaultRow(index)">
               删除
             </button>
@@ -3575,7 +3579,7 @@ type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
 const codexFingerprintMode = ref<CodexFingerprintMode>('off')
 type CodexImageToolMode = 'inherit' | 'enabled' | 'disabled' | 'block'
 const codexImageToolMode = ref<CodexImageToolMode>('inherit')
-interface OpenAIImageRequestDefaultRow { key: string; value: string }
+interface OpenAIImageRequestDefaultRow { key: string; value: string; override: boolean }
 const openAIImageRequestDefaultRows = ref<OpenAIImageRequestDefaultRow[]>([])
 const getOpenAIImageRequestDefaultRowKey = createStableObjectKeyResolver<OpenAIImageRequestDefaultRow>('edit-openai-image-request-default-row')
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
@@ -3926,7 +3930,7 @@ const statusOptions = computed(() => {
 })
 
 const addOpenAIImageRequestDefaultRow = (preset?: OpenAIImageRequestDefaultRow) => {
-  openAIImageRequestDefaultRows.value.push(preset ? { ...preset } : { key: '', value: '' })
+  openAIImageRequestDefaultRows.value.push(preset ? { ...preset, override: preset.override ?? false } : { key: '', value: '', override: false })
 }
 
 const removeOpenAIImageRequestDefaultRow = (index: number) => {
@@ -3943,14 +3947,23 @@ const formatOpenAIImageDefaultValue = (value: unknown): string => {
   }
 }
 
-const loadOpenAIImageRequestDefaultRows = (raw: unknown) => {
+const loadOpenAIImageRequestDefaultRows = (raw: unknown, overrideRaw?: unknown) => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     openAIImageRequestDefaultRows.value = []
     return
   }
+  const overridden = new Set<string>()
+  if (Array.isArray(overrideRaw)) {
+    for (const item of overrideRaw) overridden.add(String(item))
+  } else if (overrideRaw && typeof overrideRaw === 'object') {
+    for (const [key, flag] of Object.entries(overrideRaw as Record<string, unknown>)) {
+      if (flag === true || flag === 'true') overridden.add(key)
+    }
+  }
   openAIImageRequestDefaultRows.value = Object.entries(raw as Record<string, unknown>).map(([key, value]) => ({
     key,
-    value: formatOpenAIImageDefaultValue(value)
+    value: formatOpenAIImageDefaultValue(value),
+    override: overridden.has(key)
   }))
 }
 
@@ -3965,6 +3978,15 @@ const parseOpenAIImageDefaultValue = (rawValue: string): unknown => {
     return JSON.parse(value)
   }
   return value
+}
+
+const parseOpenAIImageRequestDefaultOverrides = (): string[] => {
+  const overridden: string[] = []
+  for (const row of openAIImageRequestDefaultRows.value) {
+    const key = row.key.trim()
+    if (key && row.override) overridden.push(key)
+  }
+  return overridden
 }
 
 const parseOpenAIImageRequestDefaults = (): Record<string, unknown> | null | undefined => {
@@ -4137,7 +4159,10 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   webSearchEmulationMode.value = 'default'
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
-    loadOpenAIImageRequestDefaultRows(extra?.openai_image_request_defaults || extra?.openai_images_request_defaults)
+    loadOpenAIImageRequestDefaultRows(
+      extra?.openai_image_request_defaults || extra?.openai_images_request_defaults,
+      extra?.openai_image_request_defaults_override
+    )
     openaiFlattenNamespacesEnabled.value =
       newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
     const longContextBillingValue = extra?.openai_long_context_billing_enabled
@@ -5705,9 +5730,16 @@ const handleSubmit = async () => {
       }
       if (imageDefaults && Object.keys(imageDefaults).length > 0) {
         newExtra.openai_image_request_defaults = imageDefaults
+        const imageOverrides = parseOpenAIImageRequestDefaultOverrides()
+        if (imageOverrides.length > 0) {
+          newExtra.openai_image_request_defaults_override = imageOverrides
+        } else {
+          delete newExtra.openai_image_request_defaults_override
+        }
       } else {
         delete newExtra.openai_image_request_defaults
         delete newExtra.openai_images_request_defaults
+        delete newExtra.openai_image_request_defaults_override
       }
 
       if (props.account.type === 'oauth' || props.account.type === 'setup-token') {

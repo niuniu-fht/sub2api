@@ -851,14 +851,57 @@ func getOpenAIImagesAccountRequestDefaults(account *Account) map[string]any {
 	return nil
 }
 
+// getOpenAIImagesAccountRequestDefaultOverrides 返回开启了"覆盖同名参数"的默认参数键集合。
+// 存储:account.Extra["openai_image_request_defaults_override"] = ["quality", "size", ...]。
+func getOpenAIImagesAccountRequestDefaultOverrides(account *Account) map[string]bool {
+	if account == nil || !account.IsOpenAI() || len(account.Extra) == 0 {
+		return nil
+	}
+	for _, key := range []string{"openai_image_request_defaults_override", "openai_images_request_defaults_override"} {
+		raw, ok := account.Extra[key]
+		if !ok || raw == nil {
+			continue
+		}
+		switch v := raw.(type) {
+		case []any:
+			out := make(map[string]bool, len(v))
+			for _, item := range v {
+				if name := strings.TrimSpace(fmt.Sprint(item)); name != "" {
+					out[name] = true
+				}
+			}
+			return out
+		case []string:
+			out := make(map[string]bool, len(v))
+			for _, item := range v {
+				if name := strings.TrimSpace(item); name != "" {
+					out[name] = true
+				}
+			}
+			return out
+		case map[string]any:
+			out := make(map[string]bool, len(v))
+			for name, flag := range v {
+				name = strings.TrimSpace(name)
+				if name != "" && strings.EqualFold(strings.TrimSpace(fmt.Sprint(flag)), "true") {
+					out[name] = true
+				}
+			}
+			return out
+		}
+	}
+	return nil
+}
+
 func applyOpenAIImagesAccountRequestDefaults(account *Account, body []byte, contentType string, parsed *OpenAIImagesRequest) ([]byte, string, error) {
 	defaults := getOpenAIImagesAccountRequestDefaults(account)
 	if len(defaults) == 0 || parsed == nil {
 		return body, contentType, nil
 	}
+	overrides := getOpenAIImagesAccountRequestDefaultOverrides(account)
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err == nil && strings.EqualFold(mediaType, "multipart/form-data") {
-		return applyOpenAIImagesMultipartAccountRequestDefaults(body, contentType, defaults, parsed)
+		return applyOpenAIImagesMultipartAccountRequestDefaults(body, contentType, defaults, overrides, parsed)
 	}
 	if !gjson.ValidBytes(body) {
 		return body, contentType, nil
@@ -866,7 +909,8 @@ func applyOpenAIImagesAccountRequestDefaults(account *Account, body []byte, cont
 	updated := body
 	for key, value := range defaults {
 		key = strings.TrimSpace(key)
-		if key == "" || gjson.GetBytes(updated, key).Exists() {
+		force := overrides[key]
+		if key == "" || (!force && gjson.GetBytes(updated, key).Exists()) {
 			continue
 		}
 		var setErr error
@@ -874,12 +918,12 @@ func applyOpenAIImagesAccountRequestDefaults(account *Account, body []byte, cont
 		if setErr != nil {
 			return nil, "", fmt.Errorf("apply OpenAI image request default %q: %w", key, setErr)
 		}
-		applyOpenAIImageParsedDefault(parsed, key, value)
+		applyOpenAIImageParsedDefault(parsed, key, value, force)
 	}
 	return updated, contentType, nil
 }
 
-func applyOpenAIImagesMultipartAccountRequestDefaults(body []byte, contentType string, defaults map[string]any, parsed *OpenAIImagesRequest) ([]byte, string, error) {
+func applyOpenAIImagesMultipartAccountRequestDefaults(body []byte, contentType string, defaults map[string]any, overrides map[string]bool, parsed *OpenAIImagesRequest) ([]byte, string, error) {
 	_, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		return body, contentType, nil
@@ -893,6 +937,7 @@ func applyOpenAIImagesMultipartAccountRequestDefaults(body []byte, contentType s
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
 	seen := make(map[string]struct{})
+	replaced := make(map[string]struct{})
 
 	for {
 		part, err := reader.NextPart()
@@ -905,6 +950,22 @@ func applyOpenAIImagesMultipartAccountRequestDefaults(body []byte, contentType s
 		formName := strings.TrimSpace(part.FormName())
 		if formName != "" {
 			seen[formName] = struct{}{}
+		}
+		// 覆盖模式:文本字段用账号默认值替换原值(文件字段不替换,避免破坏上传内容)。
+		if formName != "" && overrides[formName] && part.FileName() == "" {
+			if defaultValue, ok := defaults[formName]; ok {
+				_, _ = io.Copy(io.Discard, part)
+				_ = part.Close()
+				if _, err := writer.CreatePart(cloneMultipartHeader(part.Header)); err != nil {
+					return nil, "", fmt.Errorf("create multipart part: %w", err)
+				}
+				if err := writer.WriteField(formName, formatOpenAIImageRequestDefaultValue(defaultValue)); err != nil {
+					return nil, "", fmt.Errorf("override multipart default field %q: %w", formName, err)
+				}
+				replaced[formName] = struct{}{}
+				applyOpenAIImageParsedDefault(parsed, formName, defaultValue, true)
+				continue
+			}
 		}
 		partHeader := cloneMultipartHeader(part.Header)
 		target, err := writer.CreatePart(partHeader)
@@ -920,16 +981,14 @@ func applyOpenAIImagesMultipartAccountRequestDefaults(body []byte, contentType s
 	}
 	for key, value := range defaults {
 		key = strings.TrimSpace(key)
-		if key == "" {
-			continue
-		}
+		// 已存在的字段:原位覆盖的已写入新值;未覆盖的保持原值——都只跳过追加。
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		if err := writer.WriteField(key, formatOpenAIImageRequestDefaultValue(value)); err != nil {
 			return nil, "", fmt.Errorf("append multipart default field %q: %w", key, err)
 		}
-		applyOpenAIImageParsedDefault(parsed, key, value)
+		applyOpenAIImageParsedDefault(parsed, key, value, false)
 	}
 	if err := writer.Close(); err != nil {
 		return nil, "", fmt.Errorf("finalize multipart body: %w", err)
@@ -952,39 +1011,46 @@ func formatOpenAIImageRequestDefaultValue(value any) string {
 	}
 }
 
-func applyOpenAIImageParsedDefault(parsed *OpenAIImagesRequest, key string, value any) {
+func applyOpenAIImageParsedDefault(parsed *OpenAIImagesRequest, key string, value any, force bool) {
 	if parsed == nil {
 		return
 	}
 	valueString := strings.TrimSpace(fmt.Sprint(value))
 	switch strings.ToLower(strings.TrimSpace(key)) {
 	case "response_format":
-		if parsed.ResponseFormat == "" {
+		if force || parsed.ResponseFormat == "" {
 			parsed.ResponseFormat = strings.ToLower(valueString)
 		}
 	case "quality":
-		if parsed.Quality == "" {
+		if force || parsed.Quality == "" {
 			parsed.Quality = valueString
 		}
 	case "background":
-		if parsed.Background == "" {
+		if force || parsed.Background == "" {
 			parsed.Background = valueString
 		}
 	case "output_format":
-		if parsed.OutputFormat == "" {
+		if force || parsed.OutputFormat == "" {
 			parsed.OutputFormat = valueString
 		}
 	case "moderation":
-		if parsed.Moderation == "" {
+		if force || parsed.Moderation == "" {
 			parsed.Moderation = valueString
 		}
 	case "input_fidelity":
-		if parsed.InputFidelity == "" {
+		if force || parsed.InputFidelity == "" {
 			parsed.InputFidelity = valueString
 		}
 	case "style":
-		if parsed.Style == "" {
+		if force || parsed.Style == "" {
 			parsed.Style = valueString
+		}
+	case "size":
+		// 覆盖 size 时同步刷新解析结果,计费档位与路由按覆盖后的尺寸计算。
+		if force || parsed.Size == "" {
+			parsed.Size = valueString
+			parsed.ExplicitSize = true
+			parsed.SizeTier = normalizeOpenAIImageSizeTier(parsed.Size)
 		}
 	}
 }
