@@ -852,7 +852,7 @@ function normalizeAccountIDs(ids?: (number | string)[], legacyID?: number | stri
 
 function normalizeQuality(value?: string): ImageQuality | null {
   const quality = String(value || '').trim().toLowerCase()
-  return quality === 'low' || quality === 'medium' || quality === 'high' ? quality : null
+  return (imageQualities as string[]).includes(quality) ? (quality as ImageQuality) : null
 }
 
 function normalizeTier(value?: string): BillingTier | null {
