@@ -1908,6 +1908,42 @@
         </div>
       </div>
 
+      <!-- 异步任务上游适配（账号级，通用 create-task/轮询 协议） -->
+      <div
+        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <label class="input-label mb-0">异步任务上游适配</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              启用后,该账号的 OpenAI 生图请求会转换为「创建任务 → 轮询 → 取结果」的异步接口调用,并转回标准 OpenAI 响应。适配不同上游只需修改下方 JSON,无需改代码。
+            </p>
+          </div>
+          <label class="flex shrink-0 items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+            <input v-model="asyncTaskEnabled" type="checkbox" class="h-4 w-4 cursor-pointer accent-primary-600" />
+            启用
+          </label>
+        </div>
+        <div v-if="asyncTaskEnabled" class="mt-3 space-y-2">
+          <textarea
+            v-model="asyncTaskConfigText"
+            rows="14"
+            class="input w-full font-mono text-xs"
+            spellcheck="false"
+            placeholder='{"base_url": "https://...", ...}'
+          ></textarea>
+          <div class="flex items-center justify-between gap-2">
+            <button type="button" class="btn btn-secondary px-3 py-1.5 text-xs" @click="applyFastStableAsyncTaskPreset">
+              填入 FastStable 模板
+            </button>
+            <p class="text-xs text-gray-400">
+              {{ asyncTaskTemplateVarsHint }}
+            </p>
+          </div>
+        </div>
+      </div>
+
       <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
       <div
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
@@ -3581,6 +3617,8 @@ type CodexImageToolMode = 'inherit' | 'enabled' | 'disabled' | 'block'
 const codexImageToolMode = ref<CodexImageToolMode>('inherit')
 interface OpenAIImageRequestDefaultRow { key: string; value: string; override: boolean }
 const openAIImageRequestDefaultRows = ref<OpenAIImageRequestDefaultRow[]>([])
+const asyncTaskEnabled = ref(false)
+const asyncTaskConfigText = ref('')
 const getOpenAIImageRequestDefaultRowKey = createStableObjectKeyResolver<OpenAIImageRequestDefaultRow>('edit-openai-image-request-default-row')
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
 const anthropicPassthroughEnabled = ref(false)
@@ -3948,6 +3986,40 @@ const formatOpenAIImageDefaultValue = (value: unknown): string => {
   }
 }
 
+const asyncTaskTemplateVarsHint =
+  '模板变量:{{prompt}} {{n}} {{size}} {{size_tier}} {{quality}} {{output_format}} {{background}} {{moderation}} {{input_fidelity}} {{style}} {{model}} {{task_id}}'
+
+const FASTSTABLE_ASYNC_TASK_PRESET = {
+  base_url: 'https://www.faststable.cc',
+  api_key: '粘贴 FastStable 的 API Key',
+  headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+  create_path: '/v2/images/tasks',
+  create_body: {
+    model: 'gpt-image-2',
+    channelId: 'gpt-image-default',
+    params: {
+      prompt: '{{prompt}}',
+      count: '{{n}}',
+      size: '{{size}}',
+      quality: '{{quality}}',
+      output_format: '{{output_format}}'
+    }
+  },
+  task_id_path: 'task_id',
+  status_path: '/v2/images/tasks/{{task_id}}',
+  status_path_value: 'status',
+  success_value: 'succeeded',
+  failure_value: 'failed',
+  image_urls_path: 'output.images.#.url',
+  error_message_path: 'error.message',
+  poll_interval_seconds: 5,
+  timeout_seconds: 300
+}
+
+const applyFastStableAsyncTaskPreset = () => {
+  asyncTaskConfigText.value = JSON.stringify(FASTSTABLE_ASYNC_TASK_PRESET, null, 2)
+}
+
 const loadOpenAIImageRequestDefaultRows = (raw: unknown, overrideRaw?: unknown) => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     openAIImageRequestDefaultRows.value = []
@@ -4155,6 +4227,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   codexFingerprintMode.value = 'off'
   codexImageToolMode.value = 'inherit'
   openAIImageRequestDefaultRows.value = []
+  asyncTaskEnabled.value = false
+  asyncTaskConfigText.value = ''
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
@@ -4164,6 +4238,17 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       extra?.openai_image_request_defaults || extra?.openai_images_request_defaults,
       extra?.openai_image_request_defaults_override
     )
+    if (extra?.openai_image_async_task && typeof extra.openai_image_async_task === 'object') {
+      asyncTaskEnabled.value = true
+      try {
+        asyncTaskConfigText.value = JSON.stringify(extra.openai_image_async_task, null, 2)
+      } catch {
+        asyncTaskConfigText.value = ''
+      }
+    } else {
+      asyncTaskEnabled.value = false
+      asyncTaskConfigText.value = ''
+    }
     openaiFlattenNamespacesEnabled.value =
       newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
     const longContextBillingValue = extra?.openai_long_context_billing_enabled
@@ -5741,6 +5826,35 @@ const handleSubmit = async () => {
         delete newExtra.openai_image_request_defaults
         delete newExtra.openai_images_request_defaults
         delete newExtra.openai_image_request_defaults_override
+      }
+
+      if (asyncTaskEnabled.value) {
+        const trimmed = asyncTaskConfigText.value.trim()
+        if (!trimmed) {
+          appStore.showError('异步任务上游适配已启用,但配置为空')
+          return
+        }
+        let parsedAsync: unknown
+        try {
+          parsedAsync = JSON.parse(trimmed)
+        } catch (e) {
+          appStore.showError(`异步任务上游适配配置不是合法 JSON:${e instanceof Error ? e.message : String(e)}`)
+          return
+        }
+        if (!parsedAsync || typeof parsedAsync !== 'object' || Array.isArray(parsedAsync)) {
+          appStore.showError('异步任务上游适配配置必须是 JSON 对象')
+          return
+        }
+        const asyncCfg = parsedAsync as Record<string, unknown>
+        for (const required of ['base_url', 'create_path', 'create_body', 'task_id_path', 'status_path', 'status_path_value', 'success_value', 'image_urls_path']) {
+          if (!asyncCfg[required]) {
+            appStore.showError(`异步任务上游适配缺少必填字段:${required}`)
+            return
+          }
+        }
+        newExtra.openai_image_async_task = parsedAsync
+      } else {
+        delete newExtra.openai_image_async_task
       }
 
       if (props.account.type === 'oauth' || props.account.type === 'setup-token') {

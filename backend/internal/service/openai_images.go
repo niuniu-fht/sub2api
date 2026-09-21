@@ -581,6 +581,13 @@ func (s *OpenAIGatewayService) ForwardImages(
 	if err != nil {
 		return nil, err
 	}
+	// 异步任务上游适配器:配置了 openai_image_async_task 的账号走
+	// 创建任务/轮询/取结果的通用转换,其余账号保持直连逻辑不变。
+	if asyncCfg, asyncCfgErr := getAsyncTaskUpstreamConfig(account); asyncCfgErr != nil {
+		return nil, &OpenAIImagesUpstreamError{StatusCode: http.StatusInternalServerError, Message: asyncCfgErr.Error()}
+	} else if asyncCfg != nil {
+		return s.forwardOpenAIImagesViaAsyncTask(ctx, c, account, body, parsed, channelMappedModel, asyncCfg)
+	}
 	switch account.Type {
 	case AccountTypeAPIKey:
 		return s.forwardOpenAIImagesAPIKey(ctx, c, account, body, parsed, channelMappedModel)
