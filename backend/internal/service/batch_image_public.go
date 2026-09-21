@@ -954,6 +954,7 @@ func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, 
 		if err != nil {
 			return nil, nil, err
 		}
+		// Gemini 批量生图路由:命中档位/比例规则时,只在规则指定的账号内选择。
 		if routedIDs := s.geminiBatchImageRoutingAccountIDs(ctx, owner.GroupID, providerName, imageSize, aspectRatio); len(routedIDs) > 0 {
 			accountByID := make(map[int64]*Account, len(accounts))
 			for i := range accounts {
@@ -970,9 +971,10 @@ func (s *BatchImagePublicService) selectProviderAndAccount(ctx context.Context, 
 			}
 			return nil, nil, ErrBatchImageNoAccountAvailable
 		}
+		// 与普通账号调度一致：priority 数值越小越优先，同优先级按 ID 排序。
 		sort.SliceStable(accounts, func(i, j int) bool {
 			if accounts[i].Priority != accounts[j].Priority {
-				return accounts[i].Priority > accounts[j].Priority
+				return accounts[i].Priority < accounts[j].Priority
 			}
 			return accounts[i].ID < accounts[j].ID
 		})
