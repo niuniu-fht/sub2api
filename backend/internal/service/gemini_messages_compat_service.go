@@ -971,6 +971,10 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 
 	if resp.StatusCode >= 400 {
 		respBody := s.readUpstreamErrorBody(resp)
+		// 错误透传规则：管理员配置的匹配规则优先于账号错误策略，命中即按规则透传。
+		if ptStatus, ptErrType, ptErrMsg, ptMatched := applyErrorPassthroughRule(c, PlatformGemini, resp.StatusCode, respBody, resp.StatusCode, "api_error", geminiCustomCodeSkippedClientMessage); ptMatched {
+			return nil, s.writeClaudeError(c, ptStatus, ptErrType, ptErrMsg)
+		}
 		// 统一错误策略：自定义错误码 + 临时不可调度
 		if s.rateLimitService != nil {
 			policy := s.rateLimitService.CheckErrorPolicy(ctx, account, resp.StatusCode, respBody, mappedModel)
@@ -1506,6 +1510,10 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			}, nil
 		}
 
+		// 错误透传规则：管理员配置的匹配规则优先于账号错误策略，命中即按规则透传。
+		if ptStatus, _, ptErrMsg, ptMatched := applyErrorPassthroughRule(c, PlatformGemini, resp.StatusCode, respBody, resp.StatusCode, "INTERNAL", geminiCustomCodeSkippedClientMessage); ptMatched {
+			return nil, s.writeGoogleError(c, ptStatus, ptErrMsg)
+		}
 		// 统一错误策略：自定义错误码 + 临时不可调度
 		if s.rateLimitService != nil {
 			policy := s.rateLimitService.CheckErrorPolicy(ctx, account, resp.StatusCode, respBody, mappedModel)

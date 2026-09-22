@@ -678,6 +678,12 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+		// 错误透传规则：命中即按规则原样返回，不再切换账号。
+		if ptStatus, _, ptErrMsg, ptMatched := applyErrorPassthroughRule(c, PlatformOpenAI, resp.StatusCode, respBody, resp.StatusCode, "upstream_error", upstreamMsg); ptMatched {
+			upErr := &OpenAIImagesUpstreamError{StatusCode: ptStatus, ErrorType: "upstream_error", Message: ptErrMsg}
+			writeOpenAIImagesUpstreamErrorResponse(c, upErr)
+			return nil, upErr
+		}
 		if s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				ProxyID:            opsUpstreamProxyID(account),
