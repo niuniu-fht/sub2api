@@ -3,9 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"log/slog"
-	"strings"
+	"sync/atomic"
 )
 
 const openAIAccountScheduleLayerImageBillingRouting = "image_billing_routing"
@@ -129,13 +128,18 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 	return nil, true, noAvailableOpenAISelectionError(req.RequestedModel, req.RequireCompact, fmt.Sprintf("image_billing_forced_%s_%s_accounts_unavailable=%v reasons=%v", quality, tier, accountIDs, reasons))
 }
 
+// imageBillingRoundRobinCounter 全局轮询计数器:每个请求递增,按取模结果
+// 轮转账号链起点,保证请求在链上逐个轮转,而不是按会话哈希固定起点。
+var imageBillingRoundRobinCounter atomic.Uint64
+
+// orderedOpenAIImageBillingAccountIDs 按调度方式整理账号链顺序。
+// priority 模式保持配置顺序;round_robin 模式按全局计数器逐请求轮转起点
+// (会话哈希不再参与:单一大会话长期占用同一账号会使其余账号闲置)。
 func orderedOpenAIImageBillingAccountIDs(ids []int64, mode string, sessionHash string) []int64 {
-	if len(ids) < 2 || normalizeImageBillingRoutingMode(mode) != ImageBillingRoutingModeRoundRobin || strings.TrimSpace(sessionHash) == "" {
+	if len(ids) < 2 || normalizeImageBillingRoutingMode(mode) != ImageBillingRoutingModeRoundRobin {
 		return ids
 	}
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(sessionHash))
-	offset := int(h.Sum32()) % len(ids)
+	offset := int((imageBillingRoundRobinCounter.Add(1) - 1) % uint64(len(ids)))
 	out := make([]int64, 0, len(ids))
 	out = append(out, ids[offset:]...)
 	out = append(out, ids[:offset]...)
