@@ -76,3 +76,22 @@ func ImageBillingSchedulingQualityFromContext(ctx context.Context) string {
 	quality, _ := ctx.Value(imageBillingSchedulingQualityContextKey{}).(string)
 	return NormalizeOpenAIImageQuality(quality)
 }
+
+type imageBillingSchedulingImageCountContextKey struct{}
+
+// WithImageBillingSchedulingImageCount 记录请求携带的参考图数量(edits 请求),
+// 供图片计费路由按数量选择账号。0 表示无参考图。
+func WithImageBillingSchedulingImageCount(ctx context.Context, count int) context.Context {
+	if ctx == nil || count <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, imageBillingSchedulingImageCountContextKey{}, count)
+}
+
+func ImageBillingSchedulingImageCountFromContext(ctx context.Context) int {
+	if ctx == nil {
+		return 0
+	}
+	count, _ := ctx.Value(imageBillingSchedulingImageCountContextKey{}).(int)
+	return count
+}

@@ -158,6 +158,12 @@
                         >
                           {{ tier }}
                         </span>
+                        <template v-if="activePlatform === 'openai' && (rule as OpenAIRule).image_counts?.length">
+                          <span class="text-gray-400">×</span>
+                          <span class="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-200">
+                            {{ t('admin.imageBilling.routing.editor.imageCountShort') }} {{ (rule as OpenAIRule).image_counts.join('/') }}
+                          </span>
+                        </template>
                         <template v-if="activePlatform === 'gemini'">
                           <span class="text-gray-400">×</span>
                           <span
@@ -514,6 +520,36 @@
           <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.routing.editor.tierHint') }}</p>
         </div>
 
+        <!-- 参考图数量(edits 生效) -->
+        <div>
+          <div class="text-sm font-medium text-gray-700 dark:text-gray-200">{{ t('admin.imageBilling.routing.editor.imageCount') }}</div>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="rounded-full border px-3.5 py-1.5 text-sm font-semibold transition"
+              :class="editorDraft.image_counts.length === 0
+                ? 'border-rose-500 bg-rose-50 text-rose-700 shadow-sm dark:border-rose-400 dark:bg-rose-900/30 dark:text-rose-100'
+                : 'border-gray-200 bg-white text-gray-600 hover:border-rose-300 hover:text-rose-700 dark:border-dark-600 dark:bg-dark-900 dark:text-gray-300 dark:hover:border-rose-700'"
+              @click="editorDraft.image_counts = []"
+            >
+              {{ t('admin.imageBilling.routing.editor.imageCountAny') }}
+            </button>
+            <button
+              v-for="count in [1, 2, 3, 4]"
+              :key="count"
+              type="button"
+              class="rounded-full border px-3.5 py-1.5 text-sm font-semibold transition"
+              :class="editorDraft.image_counts.includes(count)
+                ? 'border-rose-500 bg-rose-50 text-rose-700 shadow-sm dark:border-rose-400 dark:bg-rose-900/30 dark:text-rose-100'
+                : 'border-gray-200 bg-white text-gray-600 hover:border-rose-300 hover:text-rose-700 dark:border-dark-600 dark:bg-dark-900 dark:text-gray-300 dark:hover:border-rose-700'"
+              @click="toggleEditorImageCount(count)"
+            >
+              {{ count }}
+            </button>
+          </div>
+          <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.routing.editor.imageCountHint') }}</p>
+        </div>
+
         <!-- 比例(仅 Gemini) -->
         <div v-if="editorPlatform === 'gemini'">
           <div class="text-sm font-medium text-gray-700 dark:text-gray-200">{{ t('admin.imageBilling.groups.platformGemini') }}</div>
@@ -693,6 +729,7 @@ type RoutingMode = 'priority' | 'round_robin'
 type OpenAIRule = {
   qualities: ImageQuality[]
   tiers: BillingTier[]
+  image_counts: number[]
   mode: RoutingMode
   account_ids: number[]
 }
@@ -780,12 +817,14 @@ const editorSearch = ref('')
 const editorDraft = reactive<{
   qualities: ImageQuality[]
   tiers: BillingTier[]
+  image_counts: number[]
   aspect_ratios: string[]
   mode: RoutingMode
   account_ids: number[]
 }>({
   qualities: [],
   tiers: [],
+  image_counts: [],
   aspect_ratios: [],
   mode: 'priority',
   account_ids: [],
@@ -952,7 +991,7 @@ type ImageBillingRoutingSettingsInput = {
     two_k_account_id?: number
     four_k_account_id?: number
     tier_modes?: Record<string, string>
-    rules?: Array<{ quality?: string; tier?: string; mode?: string; account_ids?: number[] }>
+    rules?: Array<{ quality?: string; tier?: string; image_counts?: number[]; mode?: string; account_ids?: number[] }>
   }>
 }
 
@@ -987,10 +1026,12 @@ function applyOpenAIRouting(settings: ImageBillingRoutingSettingsInput): void {
       const mode: RoutingMode = rule.mode === 'round_robin' ? 'round_robin' : 'priority'
       const accountIDs = normalizeAccountIDs(rule.account_ids)
       if (accountIDs.length === 0) continue
-      const key = `${mode}:${accountIDs.join(',')}`
+      const counts = normalizeImageCounts(rule.image_counts)
+      const countKey = counts.length > 0 ? counts.join(',') : 'any'
+      const key = `${mode}:${countKey}:${accountIDs.join(',')}`
       let target = index.get(key)
       if (!target) {
-        target = { qualities: [], tiers: [], mode, account_ids: accountIDs }
+        target = { qualities: [], tiers: [], image_counts: counts, mode, account_ids: accountIDs }
         index.set(key, target)
         merged.push(target)
       }
@@ -1063,7 +1104,7 @@ type ImageBillingRoutingPayload = {
     two_k_account_ids: number[]
     four_k_account_ids: number[]
     tier_modes?: Record<string, string>
-    rules: Array<{ quality: ImageQuality; tier: BillingTier; mode: RoutingMode; account_ids: number[] }>
+    rules: Array<{ quality: ImageQuality; tier: BillingTier; image_counts?: number[]; mode: RoutingMode; account_ids: number[] }>
   }>
 }
 
@@ -1096,7 +1137,7 @@ function buildOpenAIRoutingPayload(): ImageBillingRoutingPayload {
           const key = `${quality}:${tier}`
           if (seen.has(key)) continue
           seen.add(key)
-          rules.push({ quality, tier, mode: rule.mode, account_ids: accountIDs })
+          rules.push({ quality, tier, image_counts: normalizeImageCounts(rule.image_counts), mode: rule.mode, account_ids: accountIDs })
         }
       }
     }
@@ -1227,6 +1268,7 @@ function openRuleEditor(ruleIndex?: number): void {
     if (editorPlatform.value === 'openai') {
       const rule = source as OpenAIRule
       editorDraft.qualities = [...rule.qualities]
+      editorDraft.image_counts = [...(rule.image_counts || [])]
       editorDraft.mode = rule.mode
     } else {
       const rule = source as GeminiRule
@@ -1237,6 +1279,7 @@ function openRuleEditor(ruleIndex?: number): void {
   } else {
     editorDraft.qualities = ['high']
     editorDraft.tiers = ['1K']
+    editorDraft.image_counts = []
     editorDraft.aspect_ratios = ['*']
     editorDraft.mode = 'priority'
     editorDraft.account_ids = []
@@ -1253,6 +1296,27 @@ function toggleEditorQuality(quality: ImageQuality): void {
   const index = editorDraft.qualities.indexOf(quality)
   if (index === -1) editorDraft.qualities.push(quality)
   else if (editorDraft.qualities.length > 1) editorDraft.qualities.splice(index, 1)
+}
+
+
+function normalizeImageCounts(counts: unknown): number[] {
+  if (!Array.isArray(counts)) return []
+  const out: number[] = []
+  for (const c of counts) {
+    const n = Math.trunc(Number(c))
+    if (Number.isFinite(n) && n >= 1 && n <= 32 && !out.includes(n)) out.push(n)
+  }
+  return out.sort((x, y) => x - y)
+}
+
+function toggleEditorImageCount(count: number): void {
+  const idx = editorDraft.image_counts.indexOf(count)
+  if (idx === -1) {
+    editorDraft.image_counts.push(count)
+    editorDraft.image_counts.sort((x, y) => x - y)
+  } else {
+    editorDraft.image_counts.splice(idx, 1)
+  }
 }
 
 function toggleEditorTier(tier: BillingTier): void {
@@ -1310,6 +1374,7 @@ function confirmRuleEditor(): void {
     const rule: OpenAIRule = {
       qualities: [...editorDraft.qualities],
       tiers: [...editorDraft.tiers],
+      image_counts: [...editorDraft.image_counts],
       mode: editorDraft.mode,
       account_ids: [...editorDraft.account_ids],
     }

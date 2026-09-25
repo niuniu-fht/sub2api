@@ -21,8 +21,9 @@ func (s *OpenAIGatewayService) imageBillingForcedAccountIDs(ctx context.Context,
 		return nil, "", "", "", false
 	}
 	quality = ImageBillingSchedulingQualityFromContext(ctx)
+	imageCount := ImageBillingSchedulingImageCountFromContext(ctx)
 	settings := s.settingService.GetImageBillingAccountRoutingSettingsCached(ctx)
-	accountIDs, mode = settings.AccountIDsAndModeFor(*groupID, quality, tier)
+	accountIDs, mode = settings.AccountIDsAndModeFor(*groupID, quality, tier, imageCount)
 	return accountIDs, tier, quality, mode, len(accountIDs) > 0
 }
 

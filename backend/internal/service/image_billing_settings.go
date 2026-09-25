@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -62,6 +63,9 @@ type OpenAIImageBillingRoutingRule struct {
 	Tier       string  `json:"tier"`
 	Mode       string  `json:"mode,omitempty"`
 	AccountIDs []int64 `json:"account_ids"`
+	// ImageCounts 参考图数量约束(空=不限)。请求携带的参考图张数在列表内才命中,
+	// 用于把请求路由到只支持特定参考图数量的号池。
+	ImageCounts []int `json:"image_counts,omitempty"`
 }
 
 const GeminiImageBillingAspectRatioAny = "*"
@@ -116,8 +120,17 @@ func normalizeOpenAIImageBillingRoutingRules(rules []OpenAIImageBillingRoutingRu
 		if quality == "" || tier == "" || len(ids) == 0 {
 			continue
 		}
+		counts := normalizeImageBillingRuleImageCounts(rule.ImageCounts)
 		mode := normalizeImageBillingRoutingMode(rule.Mode)
-		key := quality + "|" + tier
+		countKey := "any"
+		if len(counts) > 0 {
+			parts := make([]string, 0, len(counts))
+			for _, c := range counts {
+				parts = append(parts, fmt.Sprintf("%d", c))
+			}
+			countKey = strings.Join(parts, "+")
+		}
+		key := quality + "|" + tier + "|" + countKey
 		if existing, ok := merged[key]; ok {
 			existing.AccountIDs = normalizeImageBillingRoutingAccountIDs(append(existing.AccountIDs, ids...), 0)
 			if existing.Mode == "" && mode != "" {
@@ -199,7 +212,31 @@ func (s ImageBillingAccountRoutingSettings) AccountIDFor(groupID int64, tier str
 	return ids[0]
 }
 
-func (s ImageBillingAccountRoutingSettings) qualityRoutingRule(groupID int64, quality string, tier string) *OpenAIImageBillingRoutingRule {
+func normalizeImageBillingRuleImageCounts(counts []int) []int {
+	if len(counts) == 0 {
+		return nil
+	}
+	seen := make(map[int]struct{}, len(counts))
+	out := make([]int, 0, len(counts))
+	for _, c := range counts {
+		if c < 1 || c > 32 {
+			continue
+		}
+		if _, ok := seen[c]; ok {
+			continue
+		}
+		seen[c] = struct{}{}
+		out = append(out, c)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// qualityRoutingRule 按 quality+tier 查找规则;参考图数量感知:
+// 优先命中声明了参考图数量且包含请求数量的规则(更具体),否则回退到不限数量的规则。
+func (s ImageBillingAccountRoutingSettings) qualityRoutingRule(groupID int64, quality string, tier string, imageCount int) *OpenAIImageBillingRoutingRule {
 	if groupID <= 0 {
 		return nil
 	}
@@ -212,24 +249,45 @@ func (s ImageBillingAccountRoutingSettings) qualityRoutingRule(groupID int64, qu
 	if quality == "" || tier == "" {
 		return nil
 	}
+	var generic *OpenAIImageBillingRoutingRule
 	for i := range routing.Rules {
-		if routing.Rules[i].Quality == quality && routing.Rules[i].Tier == tier && len(routing.Rules[i].AccountIDs) > 0 {
-			return &routing.Rules[i]
+		rule := &routing.Rules[i]
+		if rule.Quality != quality || rule.Tier != tier || len(rule.AccountIDs) == 0 {
+			continue
+		}
+		if len(rule.ImageCounts) > 0 {
+			for _, c := range rule.ImageCounts {
+				if c == imageCount {
+					return rule
+				}
+			}
+			continue
+		}
+		if generic == nil {
+			generic = rule
 		}
 	}
-	return nil
+	return generic
 }
 
-func (s ImageBillingAccountRoutingSettings) AccountIDsForQuality(groupID int64, quality string, tier string) []int64 {
-	if rule := s.qualityRoutingRule(groupID, quality, tier); rule != nil {
+func (s ImageBillingAccountRoutingSettings) AccountIDsForQuality(groupID int64, quality string, tier string, imageCount int) []int64 {
+	if rule := s.qualityRoutingRule(groupID, quality, tier, imageCount); rule != nil {
 		return append([]int64(nil), rule.AccountIDs...)
 	}
 	// 未配置 quality×size 时回退到旧 size-only 路由。
 	return s.AccountIDsFor(groupID, tier)
 }
 
-func (s ImageBillingAccountRoutingSettings) RoutingModeForQuality(groupID int64, quality string, tier string) string {
-	if rule := s.qualityRoutingRule(groupID, quality, tier); rule != nil {
+// AccountIDsAndModeFor 返回命中(quality 规则或兜底链)的账号列表与调度方式。
+func (s ImageBillingAccountRoutingSettings) AccountIDsAndModeFor(groupID int64, quality string, tier string, imageCount int) ([]int64, string) {
+	if rule := s.qualityRoutingRule(groupID, quality, tier, imageCount); rule != nil {
+		return append([]int64(nil), rule.AccountIDs...), normalizeImageBillingRoutingMode(rule.Mode)
+	}
+	return s.AccountIDsFor(groupID, tier), s.RoutingModeForTier(groupID, tier)
+}
+
+func (s ImageBillingAccountRoutingSettings) RoutingModeForQuality(groupID int64, quality string, tier string, imageCount int) string {
+	if rule := s.qualityRoutingRule(groupID, quality, tier, imageCount); rule != nil {
 		return normalizeImageBillingRoutingMode(rule.Mode)
 	}
 	return s.RoutingModeForTier(groupID, tier)
@@ -245,14 +303,6 @@ func (s ImageBillingAccountRoutingSettings) RoutingModeForTier(groupID int64, ti
 		return ImageBillingRoutingModePriority
 	}
 	return normalizeImageBillingRoutingMode(routing.TierModes[strings.ToUpper(strings.TrimSpace(tier))])
-}
-
-// AccountIDsAndModeFor 返回命中(quality 规则或兜底链)的账号列表与调度方式。
-func (s ImageBillingAccountRoutingSettings) AccountIDsAndModeFor(groupID int64, quality string, tier string) ([]int64, string) {
-	if rule := s.qualityRoutingRule(groupID, quality, tier); rule != nil {
-		return append([]int64(nil), rule.AccountIDs...), normalizeImageBillingRoutingMode(rule.Mode)
-	}
-	return s.AccountIDsFor(groupID, tier), s.RoutingModeForTier(groupID, tier)
 }
 
 func normalizeImageBillingTierModes(modes map[string]string) map[string]string {

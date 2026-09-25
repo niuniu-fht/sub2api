@@ -1499,6 +1499,7 @@ export interface ImageBillingGroupAccountRouting {
 export interface ImageBillingRoutingRule {
   quality: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   tier: '1K' | '2K' | '4K';
+  image_counts?: number[];
   mode?: 'priority' | 'round_robin';
   account_ids: number[];
 }

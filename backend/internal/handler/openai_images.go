@@ -144,9 +144,14 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	}
 
 	sessionHash := h.gatewayService.GenerateExplicitSessionHash(c, body)
+	// 参考图数量(edits 的 image 字段/多文件上传),供图片计费路由按数量选择号池。
+	referenceImageCount := len(parsed.Uploads) + len(parsed.InputImageURLs)
 	requestCtx := service.WithImageBillingSchedulingQuality(
 		service.WithImageBillingSchedulingTier(
-			service.WithOpenAIImagesEndpoint(service.WithOpenAIImageGenerationIntent(c.Request.Context())),
+			service.WithImageBillingSchedulingImageCount(
+				service.WithOpenAIImagesEndpoint(service.WithOpenAIImageGenerationIntent(c.Request.Context())),
+				referenceImageCount,
+			),
 			parsed.SizeTier,
 		),
 		parsed.Quality,
