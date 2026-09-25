@@ -1906,6 +1906,16 @@
             暂未添加参数。常用示例：response_format=url，quality=high。
           </p>
         </div>
+
+        <div class="mt-4 flex items-start gap-3">
+          <label class="flex shrink-0 items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+            <input v-model="editsMultipartUpload" type="checkbox" class="h-4 w-4 cursor-pointer accent-primary-600" />
+            edits 参考图转 Multipart 上传
+          </label>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            该号池仅收文件上传时勾选:用户以 JSON + 参考图 URL 调用,网关自动下载参考图并转成 multipart 文件字段转发(单张上限 25MB,防内网地址)。
+          </p>
+        </div>
       </div>
 
       <!-- 异步任务上游适配（账号级，通用 create-task/轮询 协议） -->
@@ -3618,6 +3628,7 @@ const codexImageToolMode = ref<CodexImageToolMode>('inherit')
 interface OpenAIImageRequestDefaultRow { key: string; value: string; override: boolean }
 const openAIImageRequestDefaultRows = ref<OpenAIImageRequestDefaultRow[]>([])
 const asyncTaskEnabled = ref(false)
+const editsMultipartUpload = ref(false)
 const asyncTaskConfigText = ref('')
 const getOpenAIImageRequestDefaultRowKey = createStableObjectKeyResolver<OpenAIImageRequestDefaultRow>('edit-openai-image-request-default-row')
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
@@ -4229,6 +4240,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   openAIImageRequestDefaultRows.value = []
   asyncTaskEnabled.value = false
   asyncTaskConfigText.value = ''
+  editsMultipartUpload.value = false
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
@@ -4249,6 +4261,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       asyncTaskEnabled.value = false
       asyncTaskConfigText.value = ''
     }
+    editsMultipartUpload.value = extra?.openai_images_edits_multipart_upload === true
     openaiFlattenNamespacesEnabled.value =
       newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
     const longContextBillingValue = extra?.openai_long_context_billing_enabled
@@ -5855,6 +5868,12 @@ const handleSubmit = async () => {
         newExtra.openai_image_async_task = parsedAsync
       } else {
         delete newExtra.openai_image_async_task
+      }
+
+      if (editsMultipartUpload.value) {
+        newExtra.openai_images_edits_multipart_upload = true
+      } else {
+        delete newExtra.openai_images_edits_multipart_upload
       }
 
       if (props.account.type === 'oauth' || props.account.type === 'setup-token') {

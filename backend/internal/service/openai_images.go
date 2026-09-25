@@ -581,6 +581,22 @@ func (s *OpenAIGatewayService) ForwardImages(
 	if err != nil {
 		return nil, err
 	}
+	// 仅收 Multipart 文件上传的号池:用户以 JSON+参考图 URL 调用时,
+	// 网关把参考图下载后转成文件字段转发(账号 Extra 开关控制)。
+	if parsed.IsEdits() && !parsed.Multipart && accountWantsEditsMultipartUpload(account) && len(parsed.InputImageURLs) > 0 {
+		convertCtx, cancelConvert := context.WithTimeout(ctx, editsImageFetchTimeout*time.Duration(len(parsed.InputImageURLs)+1))
+		defer cancelConvert()
+		var convertErr error
+		body, parsed.ContentType, convertErr = convertOpenAIImagesJSONEditsToMultipart(convertCtx, body, parsed)
+		if convertErr != nil {
+			return nil, &OpenAIImagesUpstreamError{
+				StatusCode: http.StatusBadRequest,
+				ErrorType:  "invalid_request_error",
+				Message:    convertErr.Error(),
+			}
+		}
+		parsed.Multipart = true
+	}
 	// 异步任务上游适配器:配置了 openai_image_async_task 的账号走
 	// 创建任务/轮询/取结果的通用转换,其余账号保持直连逻辑不变。
 	if asyncCfg, asyncCfgErr := getAsyncTaskUpstreamConfig(account); asyncCfgErr != nil {
