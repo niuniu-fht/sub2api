@@ -224,57 +224,6 @@
 
             <!-- 档位兜底(仅 OpenAI) -->
             <div v-if="activePlatform === 'openai'" class="mt-5 border-t border-gray-200 pt-4 dark:border-dark-700">
-              <div>
-                <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.imageBilling.routing.fallbackTitle') }}</div>
-                <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.routing.fallbackHint') }}</div>
-                <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.routing.fallbackModeHint') }}</div>
-              </div>
-              <div class="mt-3 space-y-3">
-                <div
-                  v-for="tier in billingTiers"
-                  :key="tier"
-                  class="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/60"
-                >
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="w-10 shrink-0 rounded-md bg-emerald-600 px-2 py-1 text-center text-xs font-bold text-white">{{ tier }}</span>
-                    <select
-                      :value="fallbackModeFor(selectedGroupId, tier)"
-                      class="shrink-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-900 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
-                      :title="fallbackModeFor(selectedGroupId, tier) === 'round_robin' ? t('admin.imageBilling.routing.roundRobinHint') : t('admin.imageBilling.routing.priorityHint')"
-                      @change="setFallbackMode(selectedGroupId, tier, ($event.target as HTMLSelectElement).value)"
-                    >
-                      <option value="priority">{{ t('admin.imageBilling.routing.priorityMode') }}</option>
-                      <option value="round_robin">{{ t('admin.imageBilling.routing.roundRobinMode') }}</option>
-                    </select>
-                    <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                      <template v-if="fallbackAccountIDs(selectedGroupId, tier).length > 0">
-                        <span
-                          v-for="(accountId, accountIndex) in fallbackAccountIDs(selectedGroupId, tier)"
-                          :key="accountId"
-                          class="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 shadow-sm dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200"
-                        >
-                          <span class="font-semibold text-primary-600 dark:text-primary-300">{{ accountIndex + 1 }}</span>
-                          {{ accountName(accountId) }}
-                          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" :disabled="accountIndex === 0" @click="moveFallbackAccount(tier, accountIndex, -1)">↑</button>
-                          <button type="button" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" :disabled="accountIndex === fallbackAccountIDs(selectedGroupId, tier).length - 1" @click="moveFallbackAccount(tier, accountIndex, 1)">↓</button>
-                          <button type="button" class="text-red-400 hover:text-red-600" @click="removeFallbackAccount(tier, accountId)">×</button>
-                        </span>
-                      </template>
-                      <span v-else class="text-xs text-gray-400">{{ t('admin.imageBilling.routing.fallbackEmpty') }}</span>
-                    </div>
-                    <select
-                      class="shrink-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-900 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
-                      value=""
-                      @change="addFallbackAccount(tier, ($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''"
-                    >
-                      <option value="" disabled>+ {{ t('admin.imageBilling.routing.addAccount') }}</option>
-                      <option v-for="account in availableFallbackAccounts(tier)" :key="account.id" :value="account.id">
-                        {{ accountLabel(account) }}
-                      </option>
-                    </select>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <p class="mt-4 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.routing.note') }}</p>
@@ -629,7 +578,6 @@
                   v-if="editorDraft.account_ids.length === 0"
                   class="rounded-lg border border-dashed border-primary-200 px-3 py-4 text-center text-xs text-primary-700/70 dark:border-primary-900/60 dark:text-primary-200/70"
                 >
-                  {{ t('admin.imageBilling.routing.fallbackEmpty') }}
                 </div>
               </div>
             </div>
@@ -723,7 +671,7 @@ const DEFAULT_2K_THRESHOLD = 3000000
 const DEFAULT_4K_THRESHOLD = 6000000
 
 type BillingTier = '1K' | '2K' | '4K'
-type ImageQuality = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+type ImageQuality = 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'unmatched'
 type RoutingMode = 'priority' | 'round_robin'
 
 type OpenAIRule = {
@@ -741,7 +689,7 @@ type GeminiRule = {
 }
 
 const billingTiers: BillingTier[] = ['1K', '2K', '4K']
-const imageQualities: ImageQuality[] = ['low', 'medium', 'high', 'xhigh', 'max']
+const imageQualities: ImageQuality[] = ['low', 'medium', 'high', 'xhigh', 'max', 'unmatched']
 const routingModes: RoutingMode[] = ['priority', 'round_robin']
 
 const geminiAspectRatioOptions = [
@@ -784,8 +732,6 @@ const sampleTier = computed(() => {
 
 // ===================== 路由表单状态 =====================
 const openAIRules = reactive<Record<string, OpenAIRule[]>>({})
-const fallbackForm = reactive<Record<string, { one_k: number[]; two_k: number[]; four_k: number[] }>>({})
-const fallbackModes = reactive<Record<string, Record<BillingTier, RoutingMode>>>({})
 const geminiRules = reactive<Record<string, GeminiRule[]>>({})
 
 // ===================== 价格表单状态 =====================
@@ -804,6 +750,7 @@ const pricingDraft = reactive<PricingDraft>({
     high: { '1K': '', '2K': '', '4K': '' },
     xhigh: { '1K': '', '2K': '', '4K': '' },
     max: { '1K': '', '2K': '', '4K': '' },
+    unmatched: { '1K': '', '2K': '', '4K': '' },
   },
   image_rate_independent: false,
   image_rate_multiplier: '1',
@@ -1001,21 +948,8 @@ type GeminiRoutingSettingsInput = {
 
 function applyOpenAIRouting(settings: ImageBillingRoutingSettingsInput): void {
   Object.keys(openAIRules).forEach((key) => delete openAIRules[key])
-  Object.keys(fallbackForm).forEach((key) => delete fallbackForm[key])
-  Object.keys(fallbackModes).forEach((key) => delete fallbackModes[key])
 
   for (const [groupId, routing] of Object.entries(settings.groups || {})) {
-    fallbackForm[groupId] = {
-      one_k: normalizeAccountIDs(routing.one_k_account_ids, routing.one_k_account_id),
-      two_k: normalizeAccountIDs(routing.two_k_account_ids, routing.two_k_account_id),
-      four_k: normalizeAccountIDs(routing.four_k_account_ids, routing.four_k_account_id),
-    }
-    const tierModesRaw = routing.tier_modes || {}
-    fallbackModes[groupId] = {
-      '1K': tierModesRaw['1K'] === 'round_robin' ? 'round_robin' : 'priority',
-      '2K': tierModesRaw['2K'] === 'round_robin' ? 'round_robin' : 'priority',
-      '4K': tierModesRaw['4K'] === 'round_robin' ? 'round_robin' : 'priority',
-    }
     // 后端每条规则只表示一个 quality×tier 组合;按「调度方式 + 账号链」反向合并回展示规则。
     const merged: OpenAIRule[] = []
     const index = new Map<string, OpenAIRule>()
@@ -1037,6 +971,18 @@ function applyOpenAIRouting(settings: ImageBillingRoutingSettingsInput): void {
       }
       if (!target.qualities.includes(quality)) target.qualities.push(quality)
       if (!target.tiers.includes(tier)) target.tiers.push(tier)
+    }
+    // 旧版档位兜底字段(one_k_account_ids 等)→ 合成为「不匹配」规则;该档位已有不匹配规则时不再重复。
+    const legacyTiers: Array<[BillingTier, number[]]> = [
+      ['1K', normalizeAccountIDs(routing.one_k_account_ids, routing.one_k_account_id)],
+      ['2K', normalizeAccountIDs(routing.two_k_account_ids, routing.two_k_account_id)],
+      ['4K', normalizeAccountIDs(routing.four_k_account_ids, routing.four_k_account_id)],
+    ]
+    for (const [tier, ids] of legacyTiers) {
+      if (ids.length === 0) continue
+      const covered = merged.some((rule) => rule.qualities.includes('unmatched') && rule.tiers.includes(tier))
+      if (covered) continue
+      merged.push({ qualities: ['unmatched'], tiers: [tier], image_counts: [], mode: 'priority', account_ids: ids })
     }
     if (merged.length > 0) openAIRules[groupId] = merged
   }
@@ -1076,12 +1022,6 @@ function pruneRoutingToEnabledAccounts(): void {
     // OpenAI 规则/兜底与 Gemini 规则分别按各自平台的账号集合剪枝,避免页签切换时误删。
     const enabled = enabledAccountIDSetForGroupPlatform(group.id, 'openai')
     const geminiEnabled = enabledAccountIDSetForGroupPlatform(group.id, 'gemini')
-    const fallback = fallbackForm[key]
-    if (fallback) {
-      fallback.one_k = normalizeAccountIDs(fallback.one_k).filter((id) => enabled.has(id))
-      fallback.two_k = normalizeAccountIDs(fallback.two_k).filter((id) => enabled.has(id))
-      fallback.four_k = normalizeAccountIDs(fallback.four_k).filter((id) => enabled.has(id))
-    }
     if (openAIRules[key]) {
       openAIRules[key] = openAIRules[key]
         .map((rule) => ({ ...rule, account_ids: normalizeAccountIDs(rule.account_ids).filter((id) => enabled.has(id)) }))
@@ -1100,10 +1040,6 @@ function pruneRoutingToEnabledAccounts(): void {
 // ===================== 路由:保存 =====================
 type ImageBillingRoutingPayload = {
   groups: Record<string, {
-    one_k_account_ids: number[]
-    two_k_account_ids: number[]
-    four_k_account_ids: number[]
-    tier_modes?: Record<string, string>
     rules: Array<{ quality: ImageQuality; tier: BillingTier; image_counts?: number[]; mode: RoutingMode; account_ids: number[] }>
   }>
 }
@@ -1114,15 +1050,11 @@ type GeminiRoutingPayload = {
 
 function buildOpenAIRoutingPayload(): ImageBillingRoutingPayload {
   const payload: ImageBillingRoutingPayload['groups'] = {}
-  const groupIDs = new Set([...Object.keys(openAIRules), ...Object.keys(fallbackForm)])
+  const groupIDs = new Set(Object.keys(openAIRules))
   for (const rawID of groupIDs) {
     const groupId = Math.trunc(Number(rawID) || 0)
     if (groupId <= 0) continue
     const enabled = enabledAccountIDSetForGroupPlatform(groupId, 'openai')
-    const fallback = fallbackForm[rawID]
-    const oneK = normalizeAccountIDs(fallback?.one_k).filter((id) => enabled.has(id))
-    const twoK = normalizeAccountIDs(fallback?.two_k).filter((id) => enabled.has(id))
-    const fourK = normalizeAccountIDs(fallback?.four_k).filter((id) => enabled.has(id))
 
     // 展示规则 → quality × tier 组合展开(去重)
     const seen = new Set<string>()
@@ -1142,12 +1074,8 @@ function buildOpenAIRoutingPayload(): ImageBillingRoutingPayload {
       }
     }
 
-    if (oneK.length > 0 || twoK.length > 0 || fourK.length > 0 || rules.length > 0) {
-      const tierModes: Record<string, string> = {}
-      for (const tier of billingTiers) {
-        if (fallbackModes[rawID]?.[tier] === 'round_robin') tierModes[tier] = 'round_robin'
-      }
-      payload[rawID] = { one_k_account_ids: oneK, two_k_account_ids: twoK, four_k_account_ids: fourK, tier_modes: tierModes, rules }
+    if (rules.length > 0) {
+      payload[rawID] = { rules }
     }
   }
   return { groups: payload }
@@ -1195,65 +1123,6 @@ async function saveRouting(): Promise<void> {
   } finally {
     savingRouting.value = false
   }
-}
-
-// ===================== 兜底账号编辑 =====================
-function fallbackModeFor(groupId: number | null, tier: BillingTier): RoutingMode {
-  if (groupId === null) return 'priority'
-  return fallbackModes[String(groupId)]?.[tier] === 'round_robin' ? 'round_robin' : 'priority'
-}
-
-function setFallbackMode(groupId: number | null, tier: BillingTier, mode: string): void {
-  if (groupId === null) return
-  if (!fallbackModes[String(groupId)]) {
-    fallbackModes[String(groupId)] = { '1K': 'priority', '2K': 'priority', '4K': 'priority' }
-  }
-  fallbackModes[String(groupId)][tier] = mode === 'round_robin' ? 'round_robin' : 'priority'
-}
-
-function fallbackAccountIDs(groupId: number | null, tier: BillingTier): number[] {
-  if (groupId === null) return []
-  const fallback = fallbackForm[String(groupId)]
-  if (!fallback) return []
-  return tier === '1K' ? fallback.one_k : tier === '2K' ? fallback.two_k : fallback.four_k
-}
-
-function availableFallbackAccounts(tier: BillingTier): Account[] {
-  if (!selectedGroupId.value) return []
-  const selected = new Set(fallbackAccountIDs(selectedGroupId.value, tier))
-  return accountOptionsForGroup(selectedGroupId.value).filter((account) => !selected.has(account.id))
-}
-
-function addFallbackAccount(tier: BillingTier, rawID: string): void {
-  if (!selectedGroupId.value) return
-  const key = String(selectedGroupId.value)
-  if (!fallbackForm[key]) {
-    fallbackForm[key] = { one_k: [], two_k: [], four_k: [] }
-  }
-  const id = Math.trunc(Number(rawID) || 0)
-  if (id <= 0) return
-  const list = tier === '1K' ? fallbackForm[key].one_k : tier === '2K' ? fallbackForm[key].two_k : fallbackForm[key].four_k
-  if (!list.includes(id)) list.push(id)
-}
-
-function removeFallbackAccount(tier: BillingTier, accountId: number): void {
-  if (!selectedGroupId.value) return
-  const fallback = fallbackForm[String(selectedGroupId.value)]
-  if (!fallback) return
-  const list = tier === '1K' ? fallback.one_k : tier === '2K' ? fallback.two_k : fallback.four_k
-  const index = list.indexOf(accountId)
-  if (index !== -1) list.splice(index, 1)
-}
-
-function moveFallbackAccount(tier: BillingTier, index: number, direction: -1 | 1): void {
-  if (!selectedGroupId.value) return
-  const fallback = fallbackForm[String(selectedGroupId.value)]
-  if (!fallback) return
-  const list = tier === '1K' ? fallback.one_k : tier === '2K' ? fallback.two_k : fallback.four_k
-  const target = index + direction
-  if (index < 0 || target < 0 || index >= list.length || target >= list.length) return
-  const [item] = list.splice(index, 1)
-  list.splice(target, 0, item)
 }
 
 // ===================== 规则编辑弹窗 =====================
@@ -1426,7 +1295,7 @@ function fillPricingDraft(): void {
   flat['4K'] = group.image_price_4k === null || group.image_price_4k === undefined ? '' : String(group.image_price_4k)
   pricingDraft.flat_prices = flat
 
-  const qualityPrices: ImageQualityPrices = group.image_quality_prices ?? { low: {}, medium: {}, high: {}, xhigh: {}, max: {} }
+  const qualityPrices: ImageQualityPrices = group.image_quality_prices ?? { low: {}, medium: {}, high: {}, xhigh: {}, max: {}, unmatched: {} }
   for (const quality of imageQualities) {
     for (const tier of billingTiers) {
       const value = qualityPrices[quality]?.[tier]

@@ -19,7 +19,7 @@ export const videoPricingI18nKey = (key: string): string =>
   `admin.groups.videoPricing.${key}`;
 
 type ImagePricingTierKey = "image_price_1k" | "image_price_2k" | "image_price_4k";
-export type ImageQuality = "low" | "medium" | "high" | "xhigh" | "max";
+export type ImageQuality = "low" | "medium" | "high" | "xhigh" | "max" | "unmatched";
 export type ImageQualityPricingTierKey = "1K" | "2K" | "4K";
 
 export const imageQualityOptions: Array<{ key: ImageQuality; label: string }> = [
@@ -40,6 +40,8 @@ export const imageQualityPricePlaceholders: Record<
   // xhigh/max 暂无官方参考价,留空提示由管理员自行定价。
   xhigh: { "1K": "", "2K": "", "4K": "" },
   max: { "1K": "", "2K": "", "4K": "" },
+  // unmatched 仅用于路由匹配,不参与定价矩阵。
+  unmatched: { "1K": "", "2K": "", "4K": "" },
 };
 type VideoPricingTierKey =
   | "video_price_480p"

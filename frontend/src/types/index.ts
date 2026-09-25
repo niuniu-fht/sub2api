@@ -541,7 +541,7 @@ export interface PaginationConfig {
 export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'opencode_go' | 'composite'
 
 export type VideoModelPrices = Record<string, Record<string, number>>
-export type ImageQualityPrices = Record<'low' | 'medium' | 'high' | 'xhigh' | 'max', Partial<Record<'1K' | '2K' | '4K', number>>>
+export type ImageQualityPrices = Record<string, Partial<Record<'1K' | '2K' | '4K', number>>>
 
 export type SubscriptionType = 'standard' | 'subscription'
 

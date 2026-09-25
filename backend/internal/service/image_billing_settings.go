@@ -56,7 +56,20 @@ type ImageBillingAccountRoutingSettings struct {
 const (
 	ImageBillingRoutingModePriority   = "priority"
 	ImageBillingRoutingModeRoundRobin = "round_robin"
+	// ImageQualityUnmatched 伪质量:规则声明此质量时,命中"请求 quality 未匹配
+	// 任何具体质量规则"的场景(含请求未携带 quality/auto/未知值),承担原兜底链角色。
+	ImageQualityUnmatched = "unmatched"
 )
+
+// normalizeImageBillingRuleQuality 规则侧质量归一化:具体质量照常;
+// 规则允许声明 unmatched(承担兜底角色);其余未知值视为无效规则丢弃。
+func normalizeImageBillingRuleQuality(quality string) string {
+	q := strings.ToLower(strings.TrimSpace(quality))
+	if q == ImageQualityUnmatched {
+		return ImageQualityUnmatched
+	}
+	return NormalizeOpenAIImageQuality(q)
+}
 
 type OpenAIImageBillingRoutingRule struct {
 	Quality    string  `json:"quality"`
@@ -114,7 +127,7 @@ func normalizeOpenAIImageBillingRoutingRules(rules []OpenAIImageBillingRoutingRu
 	merged := make(map[string]*OpenAIImageBillingRoutingRule, len(rules))
 	order := make([]string, 0, len(rules))
 	for _, rule := range rules {
-		quality := NormalizeOpenAIImageQuality(rule.Quality)
+		quality := normalizeImageBillingRuleQuality(rule.Quality)
 		tier := NormalizeImageBillingTierOrDefault(rule.Tier)
 		ids := normalizeImageBillingRoutingAccountIDs(rule.AccountIDs, 0)
 		if quality == "" || tier == "" || len(ids) == 0 {
@@ -244,10 +257,15 @@ func (s ImageBillingAccountRoutingSettings) qualityRoutingRule(groupID int64, qu
 	if !ok {
 		return nil
 	}
-	quality = NormalizeOpenAIImageQuality(quality)
+	requestQuality := NormalizeOpenAIImageQuality(quality)
 	tier = NormalizeImageBillingTierOrDefault(tier)
-	if quality == "" || tier == "" {
+	if tier == "" {
 		return nil
+	}
+	// 匹配目标:请求质量可识别则按具体值匹配;为空/auto/未知时匹配 unmatched 规则。
+	quality = requestQuality
+	if quality == "" {
+		quality = ImageQualityUnmatched
 	}
 	var generic *OpenAIImageBillingRoutingRule
 	for i := range routing.Rules {
@@ -278,12 +296,19 @@ func (s ImageBillingAccountRoutingSettings) AccountIDsForQuality(groupID int64, 
 	return s.AccountIDsFor(groupID, tier)
 }
 
-// AccountIDsAndModeFor 返回命中(quality 规则或兜底链)的账号列表与调度方式。
+// AccountIDsAndModeFor 返回命中规则的账号列表与调度方式:
+// ① 具体 quality 规则 → ② unmatched(不匹配)规则(原兜底角色) → ③ 旧档位兜底字段(兼容历史数据)。
 func (s ImageBillingAccountRoutingSettings) AccountIDsAndModeFor(groupID int64, quality string, tier string, imageCount int) ([]int64, string) {
 	if rule := s.qualityRoutingRule(groupID, quality, tier, imageCount); rule != nil {
 		return append([]int64(nil), rule.AccountIDs...), normalizeImageBillingRoutingMode(rule.Mode)
 	}
-	return s.AccountIDsFor(groupID, tier), s.RoutingModeForTier(groupID, tier)
+	if rule := s.qualityRoutingRule(groupID, ImageQualityUnmatched, tier, imageCount); rule != nil {
+		return append([]int64(nil), rule.AccountIDs...), normalizeImageBillingRoutingMode(rule.Mode)
+	}
+	if legacy := s.AccountIDsFor(groupID, tier); len(legacy) > 0 {
+		return legacy, ImageBillingRoutingModePriority
+	}
+	return nil, ImageBillingRoutingModePriority
 }
 
 func (s ImageBillingAccountRoutingSettings) RoutingModeForQuality(groupID int64, quality string, tier string, imageCount int) string {
