@@ -580,6 +580,10 @@ type AccountSelectionResult struct {
 	Acquired    bool
 	ReleaseFunc func()
 	WaitPlan    *AccountWaitPlan // nil means no wait allowed
+	// ImageBillingRoundRobin 标记本次选号命中了图片计费的轮询链:遇到任意上游
+	// 错误(含 400/连接错误)都切换下一个账号,SwitchLimit 为切换次数上限。
+	ImageBillingRoundRobin bool
+	SwitchLimit            int
 	// profitGate 携带本次选号真实生效的利润门（无门为 nil）。门安装在调度栈的
 	// 局部 ctx 上，handler 必须经 ContextWithSelectionProfitGate 重放后才能在
 	// 调度栈之外做抢槽后终检与准入后粘性绑定。

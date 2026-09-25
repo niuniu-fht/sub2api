@@ -9,6 +9,9 @@ import (
 
 const openAIAccountScheduleLayerImageBillingRouting = "image_billing_routing"
 
+// imageBillingRoundRobinMaxSwitches 轮询链的账号切换上限(不含首次选中的账号)。
+const imageBillingRoundRobinMaxSwitches = 3
+
 func (s *OpenAIGatewayService) imageBillingForcedAccountIDs(ctx context.Context, groupID *int64) (accountIDs []int64, tier string, quality string, mode string, ok bool) {
 	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 {
 		return nil, "", "", "", false
@@ -19,8 +22,7 @@ func (s *OpenAIGatewayService) imageBillingForcedAccountIDs(ctx context.Context,
 	}
 	quality = ImageBillingSchedulingQualityFromContext(ctx)
 	settings := s.settingService.GetImageBillingAccountRoutingSettingsCached(ctx)
-	accountIDs = settings.AccountIDsForQuality(*groupID, quality, tier)
-	mode = settings.RoutingModeForQuality(*groupID, quality, tier)
+	accountIDs, mode = settings.AccountIDsAndModeFor(*groupID, quality, tier)
 	return accountIDs, tier, quality, mode, len(accountIDs) > 0
 }
 
@@ -98,6 +100,11 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 				"acquired", true,
 			)
 			selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+			if selection != nil && mode == ImageBillingRoutingModeRoundRobin {
+				// 轮询链:任意上游错误(含 400/连接错误)都切换下一个账号,最多 3 次。
+				selection.ImageBillingRoundRobin = true
+				selection.SwitchLimit = imageBillingRoundRobinMaxSwitches
+			}
 			return selection, true, selectErr
 		}
 

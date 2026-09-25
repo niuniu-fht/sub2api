@@ -153,6 +153,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	)
 
 	maxAccountSwitches := h.maxAccountSwitches
+	// 轮询链的切换上限,由选号结果按路由配置携带;0 表示用全局默认。
+	roundRobinSwitchLimit := 0
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
@@ -224,6 +226,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		)
 
 		account := selection.Account
+		// 轮询链:选号结果携带任意错误切换的次数上限;非轮询链为 0(用全局默认)。
+		roundRobinSwitchLimit = selection.SwitchLimit
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.images.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
@@ -274,6 +278,33 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					zap.Error(err),
 				)
 			} else {
+				// 轮询链(image_billing 路由 mode=round_robin):任意上游错误
+				// (含 400/内容审核/连接错误)都切换下一个账号,上限 3 次切换;
+				// 仅当错误尚未向客户端写出任何内容时才切换。
+				if selection.ImageBillingRoundRobin &&
+					service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) == writerSizeBeforeForward &&
+					(result == nil || result.ImageCount == 0) &&
+					!failoverClientGone(c) {
+					h.gatewayService.RecordOpenAIAccountSwitch()
+					failedAccountIDs[account.ID] = struct{}{}
+					lastFailoverErr = &service.UpstreamFailoverError{StatusCode: http.StatusBadGateway, ResponseBody: []byte(err.Error())}
+						if roundRobinSwitchLimit > 0 && switchCount >= roundRobinSwitchLimit {
+						reqLog.Warn("openai.images.round_robin_switch_exhausted",
+							zap.Int64("account_id", account.ID),
+							zap.Int("switch_count", switchCount),
+							zap.Error(err),
+						)
+						h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
+						return
+					}
+					switchCount++
+					reqLog.Warn("openai.images.round_robin_switching",
+						zap.Int64("account_id", account.ID),
+						zap.Int("switch_count", switchCount),
+						zap.Error(err),
+					)
+					continue
+				}
 				var imageUpstreamErr *service.OpenAIImagesUpstreamError
 				if errors.As(err, &imageUpstreamErr) {
 					retryableServerError := service.IsOpenAIImagesRetryableUpstreamError(imageUpstreamErr)

@@ -1491,6 +1491,8 @@ export interface ImageBillingGroupAccountRouting {
   one_k_account_id?: number;
   two_k_account_id?: number;
   four_k_account_id?: number;
+  // 兜底账号链调度方式:tier -> priority/round_robin
+  tier_modes?: Record<string, string>;
   rules?: ImageBillingRoutingRule[];
 }
 

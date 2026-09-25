@@ -221,6 +221,7 @@
               <div>
                 <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.imageBilling.routing.fallbackTitle') }}</div>
                 <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.routing.fallbackHint') }}</div>
+                <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.routing.fallbackModeHint') }}</div>
               </div>
               <div class="mt-3 space-y-3">
                 <div
@@ -230,6 +231,15 @@
                 >
                   <div class="flex flex-wrap items-center gap-2">
                     <span class="w-10 shrink-0 rounded-md bg-emerald-600 px-2 py-1 text-center text-xs font-bold text-white">{{ tier }}</span>
+                    <select
+                      :value="fallbackModeFor(selectedGroupId, tier)"
+                      class="shrink-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium text-gray-900 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
+                      :title="fallbackModeFor(selectedGroupId, tier) === 'round_robin' ? t('admin.imageBilling.routing.roundRobinHint') : t('admin.imageBilling.routing.priorityHint')"
+                      @change="setFallbackMode(selectedGroupId, tier, ($event.target as HTMLSelectElement).value)"
+                    >
+                      <option value="priority">{{ t('admin.imageBilling.routing.priorityMode') }}</option>
+                      <option value="round_robin">{{ t('admin.imageBilling.routing.roundRobinMode') }}</option>
+                    </select>
                     <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                       <template v-if="fallbackAccountIDs(selectedGroupId, tier).length > 0">
                         <span
@@ -738,6 +748,7 @@ const sampleTier = computed(() => {
 // ===================== 路由表单状态 =====================
 const openAIRules = reactive<Record<string, OpenAIRule[]>>({})
 const fallbackForm = reactive<Record<string, { one_k: number[]; two_k: number[]; four_k: number[] }>>({})
+const fallbackModes = reactive<Record<string, Record<BillingTier, RoutingMode>>>({})
 const geminiRules = reactive<Record<string, GeminiRule[]>>({})
 
 // ===================== 价格表单状态 =====================
@@ -940,6 +951,7 @@ type ImageBillingRoutingSettingsInput = {
     one_k_account_id?: number
     two_k_account_id?: number
     four_k_account_id?: number
+    tier_modes?: Record<string, string>
     rules?: Array<{ quality?: string; tier?: string; mode?: string; account_ids?: number[] }>
   }>
 }
@@ -951,12 +963,19 @@ type GeminiRoutingSettingsInput = {
 function applyOpenAIRouting(settings: ImageBillingRoutingSettingsInput): void {
   Object.keys(openAIRules).forEach((key) => delete openAIRules[key])
   Object.keys(fallbackForm).forEach((key) => delete fallbackForm[key])
+  Object.keys(fallbackModes).forEach((key) => delete fallbackModes[key])
 
   for (const [groupId, routing] of Object.entries(settings.groups || {})) {
     fallbackForm[groupId] = {
       one_k: normalizeAccountIDs(routing.one_k_account_ids, routing.one_k_account_id),
       two_k: normalizeAccountIDs(routing.two_k_account_ids, routing.two_k_account_id),
       four_k: normalizeAccountIDs(routing.four_k_account_ids, routing.four_k_account_id),
+    }
+    const tierModesRaw = routing.tier_modes || {}
+    fallbackModes[groupId] = {
+      '1K': tierModesRaw['1K'] === 'round_robin' ? 'round_robin' : 'priority',
+      '2K': tierModesRaw['2K'] === 'round_robin' ? 'round_robin' : 'priority',
+      '4K': tierModesRaw['4K'] === 'round_robin' ? 'round_robin' : 'priority',
     }
     // 后端每条规则只表示一个 quality×tier 组合;按「调度方式 + 账号链」反向合并回展示规则。
     const merged: OpenAIRule[] = []
@@ -1043,6 +1062,7 @@ type ImageBillingRoutingPayload = {
     one_k_account_ids: number[]
     two_k_account_ids: number[]
     four_k_account_ids: number[]
+    tier_modes?: Record<string, string>
     rules: Array<{ quality: ImageQuality; tier: BillingTier; mode: RoutingMode; account_ids: number[] }>
   }>
 }
@@ -1082,7 +1102,11 @@ function buildOpenAIRoutingPayload(): ImageBillingRoutingPayload {
     }
 
     if (oneK.length > 0 || twoK.length > 0 || fourK.length > 0 || rules.length > 0) {
-      payload[rawID] = { one_k_account_ids: oneK, two_k_account_ids: twoK, four_k_account_ids: fourK, rules }
+      const tierModes: Record<string, string> = {}
+      for (const tier of billingTiers) {
+        if (fallbackModes[rawID]?.[tier] === 'round_robin') tierModes[tier] = 'round_robin'
+      }
+      payload[rawID] = { one_k_account_ids: oneK, two_k_account_ids: twoK, four_k_account_ids: fourK, tier_modes: tierModes, rules }
     }
   }
   return { groups: payload }
@@ -1133,6 +1157,19 @@ async function saveRouting(): Promise<void> {
 }
 
 // ===================== 兜底账号编辑 =====================
+function fallbackModeFor(groupId: number | null, tier: BillingTier): RoutingMode {
+  if (groupId === null) return 'priority'
+  return fallbackModes[String(groupId)]?.[tier] === 'round_robin' ? 'round_robin' : 'priority'
+}
+
+function setFallbackMode(groupId: number | null, tier: BillingTier, mode: string): void {
+  if (groupId === null) return
+  if (!fallbackModes[String(groupId)]) {
+    fallbackModes[String(groupId)] = { '1K': 'priority', '2K': 'priority', '4K': 'priority' }
+  }
+  fallbackModes[String(groupId)][tier] = mode === 'round_robin' ? 'round_robin' : 'priority'
+}
+
 function fallbackAccountIDs(groupId: number | null, tier: BillingTier): number[] {
   if (groupId === null) return []
   const fallback = fallbackForm[String(groupId)]

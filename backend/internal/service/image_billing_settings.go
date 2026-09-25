@@ -43,6 +43,9 @@ type ImageBillingGroupAccountRouting struct {
 	TwoKAccountID   int64   `json:"two_k_account_id,omitempty"`
 	FourKAccountID  int64   `json:"four_k_account_id,omitempty"`
 	Rules           []OpenAIImageBillingRoutingRule `json:"rules,omitempty"`
+	// TierModes 兜底账号链(仅按档位匹配)的调度方式:
+	// "1K"/"2K"/"4K" -> "priority"(默认,按顺序)/"round_robin"(逐请求轮转)。
+	TierModes map[string]string `json:"tier_modes,omitempty"`
 }
 
 type ImageBillingAccountRoutingSettings struct {
@@ -91,6 +94,7 @@ func NormalizeImageBillingAccountRoutingSettings(settings ImageBillingAccountRou
 		routing.TwoKAccountID = 0
 		routing.FourKAccountID = 0
 		routing.Rules = normalizeOpenAIImageBillingRoutingRules(routing.Rules)
+		routing.TierModes = normalizeImageBillingTierModes(routing.TierModes)
 		if len(routing.OneKAccountIDs) == 0 && len(routing.TwoKAccountIDs) == 0 && len(routing.FourKAccountIDs) == 0 && len(routing.Rules) == 0 {
 			continue
 		}
@@ -228,7 +232,45 @@ func (s ImageBillingAccountRoutingSettings) RoutingModeForQuality(groupID int64,
 	if rule := s.qualityRoutingRule(groupID, quality, tier); rule != nil {
 		return normalizeImageBillingRoutingMode(rule.Mode)
 	}
-	return ImageBillingRoutingModePriority
+	return s.RoutingModeForTier(groupID, tier)
+}
+
+// RoutingModeForTier 返回兜底账号链(仅按档位匹配)的调度方式,默认 priority。
+func (s ImageBillingAccountRoutingSettings) RoutingModeForTier(groupID int64, tier string) string {
+	if groupID <= 0 {
+		return ImageBillingRoutingModePriority
+	}
+	routing, ok := s.Groups[groupID]
+	if !ok {
+		return ImageBillingRoutingModePriority
+	}
+	return normalizeImageBillingRoutingMode(routing.TierModes[strings.ToUpper(strings.TrimSpace(tier))])
+}
+
+// AccountIDsAndModeFor 返回命中(quality 规则或兜底链)的账号列表与调度方式。
+func (s ImageBillingAccountRoutingSettings) AccountIDsAndModeFor(groupID int64, quality string, tier string) ([]int64, string) {
+	if rule := s.qualityRoutingRule(groupID, quality, tier); rule != nil {
+		return append([]int64(nil), rule.AccountIDs...), normalizeImageBillingRoutingMode(rule.Mode)
+	}
+	return s.AccountIDsFor(groupID, tier), s.RoutingModeForTier(groupID, tier)
+}
+
+func normalizeImageBillingTierModes(modes map[string]string) map[string]string {
+	if len(modes) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(modes))
+	for tier, mode := range modes {
+		normalizedTier := NormalizeImageBillingTierOrDefault(tier)
+		if normalizedTier == "" {
+			continue
+		}
+		out[normalizedTier] = normalizeImageBillingRoutingMode(mode)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func NormalizeGeminiImageBillingAspectRatio(aspectRatio string) string {
