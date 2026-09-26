@@ -1062,11 +1062,13 @@ function buildOpenAIRoutingPayload(): ImageBillingRoutingPayload {
     for (const rule of openAIRules[rawID] || []) {
       const accountIDs = normalizeAccountIDs(rule.account_ids).filter((id) => enabled.has(id))
       if (accountIDs.length === 0) continue
+      // 去重键带参考图数量:同 quality×tier 下「不限」与指定数量的规则并存
+      const countsKey = (rule.image_counts || []).join('+')
       for (const quality of rule.qualities) {
         if (!normalizeQuality(quality)) continue
         for (const tier of rule.tiers) {
           if (!normalizeTier(tier)) continue
-          const key = `${quality}:${tier}`
+          const key = `${quality}:${tier}:${countsKey}`
           if (seen.has(key)) continue
           seen.add(key)
           rules.push({ quality, tier, image_counts: normalizeImageCounts(rule.image_counts), mode: rule.mode, account_ids: accountIDs })
