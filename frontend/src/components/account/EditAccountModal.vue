@@ -1913,7 +1913,7 @@
             edits 参考图转 Multipart 上传
           </label>
           <p class="text-xs text-gray-500 dark:text-gray-400">
-            该号池仅收文件上传时勾选:用户以 JSON + 参考图 URL 调用,网关自动下载参考图并转成 multipart 文件字段转发(单张上限 25MB,防内网地址)。
+            该号池仅收文件上传时勾选:用户以 JSON + 参考图 URL 调用,网关自动下载参考图并转成 multipart 文件字段转发(不限制大小,自动拦截内网地址)。
           </p>
         </div>
       </div>

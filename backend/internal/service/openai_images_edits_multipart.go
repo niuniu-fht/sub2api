@@ -23,11 +23,9 @@ import (
 // 直接转成 multipart 文件字段转发,无需对象存储中转。
 
 const (
-	editsMultipartExtraKey   = "openai_images_edits_multipart_upload"
-	editsImageMaxBytes       = 25 << 20 // 单张参考图上限
-	editsImageFetchTimeout   = 30 * time.Second
-	editsImageMaxConcurrent  = 4
-	editsMultipartTotalLimit = 64 << 20
+	editsMultipartExtraKey  = "openai_images_edits_multipart_upload"
+	editsImageFetchTimeout  = 30 * time.Second
+	editsImageMaxConcurrent = 4
 )
 
 func accountWantsEditsMultipartUpload(account *Account) bool {
@@ -100,15 +98,12 @@ func fetchEditsImage(ctx context.Context, rawURL string) ([]byte, string, error)
 	if resp.StatusCode >= 400 {
 		return nil, "", fmt.Errorf("status %d", resp.StatusCode)
 	}
-	payload, err := io.ReadAll(io.LimitReader(resp.Body, editsImageMaxBytes+1))
+	payload, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, "", err
 	}
 	if len(payload) == 0 {
 		return nil, "", fmt.Errorf("empty image payload")
-	}
-	if len(payload) > editsImageMaxBytes {
-		return nil, "", fmt.Errorf("image exceeds %d bytes", editsImageMaxBytes)
 	}
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" || strings.EqualFold(contentType, "application/octet-stream") {
@@ -187,12 +182,7 @@ func convertOpenAIImagesJSONEditsToMultipart(ctx context.Context, body []byte, p
 		return true
 	})
 
-	total := 0
 	for i, payload := range imagePayloads {
-		total += len(payload)
-		if total > editsMultipartTotalLimit {
-			return nil, "", fmt.Errorf("reference images exceed total limit %d bytes", editsMultipartTotalLimit)
-		}
 		part, err := writer.CreateFormFile("image", fmt.Sprintf("image-%d%s", i+1, imageFileExtension(imageTypes[i])))
 		if err != nil {
 			return nil, "", err
