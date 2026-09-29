@@ -55,7 +55,7 @@ export default {
         tierHint: 'Classified into 1K/2K/4K by total pixels or requested size',
       imageCount: 'Reference image count (edits only)',
       imageCountAny: 'Any',
-      imageCountHint: 'Matched by the number of reference images in the request; Any applies to all counts. Use it to route requests to pools that only accept specific reference image counts.',
+      imageCountHint: 'Matched by the number of reference images in the request; 0 = pure text-to-image (no references). Any applies to all counts. Use it to route requests to pools that only accept specific reference image counts.',
       imageCountShort: 'Refs',
         mode: 'Scheduling Mode',
         modePriority: 'Priority',

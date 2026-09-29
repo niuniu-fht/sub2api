@@ -232,7 +232,8 @@ func normalizeImageBillingRuleImageCounts(counts []int) []int {
 	seen := make(map[int]struct{}, len(counts))
 	out := make([]int, 0, len(counts))
 	for _, c := range counts {
-		if c < 1 || c > 32 {
+		// 允许 0(文生图,无参考图)~32;0 用于把纯文生图请求路由到指定号池。
+		if c < 0 || c > 32 {
 			continue
 		}
 		if _, ok := seen[c]; ok {

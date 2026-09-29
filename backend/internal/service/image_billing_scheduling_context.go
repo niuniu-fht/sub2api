@@ -82,9 +82,10 @@ type imageBillingSchedulingImageCountContextKey struct{}
 // WithImageBillingSchedulingImageCount 记录请求携带的参考图数量(edits 请求),
 // 供图片计费路由按数量选择账号。0 表示无参考图。
 func WithImageBillingSchedulingImageCount(ctx context.Context, count int) context.Context {
-	if ctx == nil || count <= 0 {
+	if ctx == nil || count < 0 {
 		return ctx
 	}
+	// 0(文生图)也是有效值:需与「未注入」区分,以便规则按 0 张参考图精确匹配。
 	return context.WithValue(ctx, imageBillingSchedulingImageCountContextKey{}, count)
 }
 

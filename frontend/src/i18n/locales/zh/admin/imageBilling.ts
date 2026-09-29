@@ -57,7 +57,7 @@ export default {
         tierHint: '按图片总像素或请求 size 归入 1K/2K/4K',
       imageCount: '参考图数量(edits 生效)',
       imageCountAny: '不限',
-      imageCountHint: '按请求携带的参考图张数匹配;选「不限」则对任意数量生效。用于把请求路由到只支持特定参考图数量的号池。',
+      imageCountHint: '按请求携带的参考图张数匹配;0=纯文生图(无参考图),选「不限」则对任意数量生效。用于把请求路由到只支持特定参考图数量的号池。',
       imageCountShort: '参考图',
         mode: '调度方式',
         modePriority: '优先级',

@@ -484,7 +484,7 @@
               {{ t('admin.imageBilling.routing.editor.imageCountAny') }}
             </button>
             <button
-              v-for="count in [1, 2, 3, 4]"
+              v-for="count in [0, 1, 2, 3, 4]"
               :key="count"
               type="button"
               class="rounded-full border px-3.5 py-1.5 text-sm font-semibold transition"
@@ -1175,7 +1175,7 @@ function normalizeImageCounts(counts: unknown): number[] {
   const out: number[] = []
   for (const c of counts) {
     const n = Math.trunc(Number(c))
-    if (Number.isFinite(n) && n >= 1 && n <= 32 && !out.includes(n)) out.push(n)
+    if (Number.isFinite(n) && n >= 0 && n <= 32 && !out.includes(n)) out.push(n)
   }
   return out.sort((x, y) => x - y)
 }
