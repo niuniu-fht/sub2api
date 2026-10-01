@@ -637,6 +637,12 @@ export default {
         imagesUrlToB64Json: 'Image result URL to base64',
         imagesUrlToB64JsonDesc:
           'Only applies to non-streaming Images responses of OpenAI API Key accounts. When an upstream image item has a url but no b64_json, the gateway downloads the url and fills b64_json with its base64 content (url is kept) for clients built on the official API; the response is returned unchanged if the download fails.',
+        imagesB64ToUrl: 'Image result to storage URL',
+        imagesB64ToUrlDesc:
+          'When enabled, image results (b64_json or upstream url) are re-uploaded to object storage and the url field is overridden with the storage URL - even if the upstream already provided one - so clients download via CDN. Requires image storage configured in the admin settings.',
+        imagesHideB64: 'Hide image result base64',
+        imagesHideB64Desc:
+          'Depends on image-to-storage being enabled: removes b64_json from the response after a successful rewrite, greatly reducing the response size. Items that failed to upload keep their original form.',
         endpointCapabilities: 'Endpoint capabilities',
         endpointCapabilitiesDesc:
           'Used by account routing. The text endpoint follows the Responses API support setting above and is shown as Responses, Chat Completions, or auto mode; Embeddings independently controls /v1/embeddings.',

@@ -2063,6 +2063,68 @@
       </div>
 
       <div
+        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div>
+          <label class="input-label mb-0">{{ t('admin.accounts.openai.imagesB64ToUrl') }}</label>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.openai.imagesB64ToUrlDesc') }}
+          </p>
+        </div>
+        <button
+          type="button"
+          data-testid="openai-images-b64-to-url-toggle"
+          role="switch"
+          :aria-checked="openAIImagesB64ToUrlEnabled"
+          @click="openAIImagesB64ToUrlEnabled = !openAIImagesB64ToUrlEnabled"
+          :class="[
+            'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+            openAIImagesB64ToUrlEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+          ]"
+        >
+          <span
+            :class="[
+              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+              openAIImagesB64ToUrlEnabled ? 'translate-x-5' : 'translate-x-0'
+            ]"
+          />
+        </button>
+      </div>
+
+      <div
+        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div>
+          <label class="input-label mb-0">{{ t('admin.accounts.openai.imagesHideB64') }}</label>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.openai.imagesHideB64Desc') }}
+          </p>
+        </div>
+        <button
+          type="button"
+          data-testid="openai-images-hide-b64-toggle"
+          role="switch"
+          :aria-checked="openAIImagesHideB64Enabled"
+          :disabled="!openAIImagesB64ToUrlEnabled"
+          @click="openAIImagesHideB64Enabled = !openAIImagesHideB64Enabled"
+          :class="[
+            'relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+            openAIImagesHideB64Enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600',
+            openAIImagesB64ToUrlEnabled ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+          ]"
+        >
+          <span
+            :class="[
+              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+              openAIImagesHideB64Enabled ? 'translate-x-5' : 'translate-x-0'
+            ]"
+          />
+        </button>
+      </div>
+
+      <div
         v-if="account?.type === 'apikey'"
         class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
@@ -3616,6 +3678,8 @@ const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 // Images 非流式响应缺 b64_json 时由网关下载 url 回填（仅 OpenAI API Key）。
 const openAIImagesUrlToB64JsonEnabled = ref(false)
+const openAIImagesB64ToUrlEnabled = ref(false)
+const openAIImagesHideB64Enabled = ref(false)
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -4209,6 +4273,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	allowOverages.value = extra?.allow_overages === true
 	upstreamRequestIdHeader.value = readUpstreamRequestIdHeader(extra)
 	openAIImagesUrlToB64JsonEnabled.value = extra?.images_url_to_b64_json === true
+	openAIImagesB64ToUrlEnabled.value = extra?.images_b64_to_url === true
+	openAIImagesHideB64Enabled.value = extra?.images_hide_b64 === true
+	if (!openAIImagesB64ToUrlEnabled.value) openAIImagesHideB64Enabled.value = false
 	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
 	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
 	autoPause5hDisabled.value = extra?.auto_pause_5h_disabled === true
@@ -5777,6 +5844,17 @@ const handleSubmit = async () => {
           newExtra.images_url_to_b64_json = true
         } else {
           delete newExtra.images_url_to_b64_json
+        }
+        if (openAIImagesB64ToUrlEnabled.value) {
+          newExtra.images_b64_to_url = true
+          if (openAIImagesHideB64Enabled.value) {
+            newExtra.images_hide_b64 = true
+          } else {
+            delete newExtra.images_hide_b64
+          }
+        } else {
+          delete newExtra.images_b64_to_url
+          delete newExtra.images_hide_b64
         }
 		}
 		if (autoPause5hThreshold.value != null && autoPause5hThreshold.value > 0) {

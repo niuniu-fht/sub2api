@@ -693,6 +693,10 @@ func ProvideImageStorageSettingService(
 // （handler 返回 404，不创建任务、不写 Redis），从而避免大 base64 结果撑爆 Redis。
 // 启用状态由 settings 服务在运行时解析，因此后台改开关后无需重启即可生效。
 func ProvideImageTaskService(store ImageTaskStore, settings *ImageStorageSettingService) *ImageTaskService {
+	// 同一份 uploader 解析器同时发布给同步 Images 路径(b64→图床 URL 改写)。
+	if settings != nil {
+		RegisterSyncImageUploaderResolver(settings.Resolver())
+	}
 	return NewImageTaskServiceWithResolver(store, settings.Resolver(), defaultImageTaskTTL, defaultImageTaskExecutionTimeout)
 }
 
