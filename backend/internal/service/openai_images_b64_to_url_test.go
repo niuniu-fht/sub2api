@@ -114,3 +114,36 @@ func TestRewriteURLOverrideAndDisabled(t *testing.T) {
 		t.Fatalf("disabled account must not download/upload")
 	}
 }
+
+func TestRewriteKeysUniquePerRequest(t *testing.T) {
+	// 串图回归:同一账号两次请求,对象键必须不同(否则第二次覆盖第一次,URL 串图)。
+	store := &stubSyncStorage{}
+	restore := withSyncUploaderForTest(store)
+	defer restore()
+
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 203, Extra: map[string]any{AccountExtraImagesB64ToURL: true}}
+	body := []byte(`{"created":1,"data":[{"b64_json":"` + b64ToURLPNG() + `"}]}`)
+
+	got1 := svc.rewriteOpenAIImagesB64ToURL(context.Background(), account, &OpenAIImagesRequest{}, body)
+	got2 := svc.rewriteOpenAIImagesB64ToURL(context.Background(), account, &OpenAIImagesRequest{}, body)
+
+	url1 := gjson.GetBytes(got1, "data.0.url").String()
+	url2 := gjson.GetBytes(got2, "data.0.url").String()
+	if url1 == "" || url2 == "" {
+		t.Fatalf("urls missing: %q %q", url1, url2)
+	}
+	if url1 == url2 {
+		t.Fatalf("FATAL 串图: 两次请求返回同一 URL %s — 第二次会覆盖第一次的图", url1)
+	}
+	if len(store.saved) != 2 {
+		t.Fatalf("saved=%d, want 2 distinct objects", len(store.saved))
+	}
+	keys := make([]string, 0)
+	for k := range store.saved {
+		keys = append(keys, k)
+	}
+	if keys[0] == keys[1] {
+		t.Fatalf("FATAL: 同一账号两次请求写了同一个 key %s", keys[0])
+	}
+}

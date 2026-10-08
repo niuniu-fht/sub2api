@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
@@ -70,6 +71,7 @@ func (s *OpenAIGatewayService) rewriteOpenAIImagesB64ToURL(
 		return body
 	}
 	hideB64 := imagesHideB64Enabled(account)
+	syncRewriteRequestID := strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
 	for index, item := range items.Array() {
 		if !item.IsObject() {
 			continue
@@ -106,7 +108,9 @@ func (s *OpenAIGatewayService) rewriteOpenAIImagesB64ToURL(
 			contentType = sniffImageContentType(payload)
 		}
 
-		key := uploader.buildKey(fmt.Sprintf("sync-%d-%d", account.ID, index), index, contentType)
+		// 每次改写调用生成随机 ID:键必须请求间唯一,否则并发请求互相覆盖(串图),
+		// 且确定性键可被枚举遍历他人图片。
+		key := uploader.buildKey(fmt.Sprintf("sync-%s-%d", syncRewriteRequestID, index), index, contentType)
 		storedURL, saveErr := uploader.storage.Save(ctx, key, contentType, payload)
 		if saveErr != nil {
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url skipped account_id=%d index=%d err=upload: %s", account.ID, index, saveErr.Error())
@@ -143,4 +147,3 @@ func sniffImageContentType(payload []byte) string {
 		return "image/png"
 	}
 }
-
