@@ -380,6 +380,46 @@ func TestForwardOpenAIImagesViaGeminiStreamRejected(t *testing.T) {
 	}
 }
 
+// TestForwardOpenAIImagesViaGeminiCustomModelMapping 验证:客户端以自定义模型名
+// (gpt-image-* 前缀,如 gpt-image-gemini)调用,经账号模型映射转成真实 gemini
+// 模型后进入桥接;上游收到的是映射后的 gemini 模型,下游看到的仍是调用名。
+func TestForwardOpenAIImagesViaGeminiCustomModelMapping(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+
+	upstream := &httpUpstreamRecorder{resp: geminiBridgeJSONResponse(`{
+		"candidates": [{"content": {"parts": [{"inlineData": {"mimeType": "image/png", "data": "aW1n"}}]}, "finishReason": "STOP"}],
+		"usageMetadata": {"promptTokenCount": 5, "candidatesTokenCount": 50, "totalTokenCount": 55}
+	}`)}
+	svc := newOpenAIImagesTestService(upstream)
+	account := newGeminiBridgeTestAccount()
+	account.Credentials["model_mapping"] = map[string]any{
+		"gpt-image-gemini": "gemini-2.5-flash-image",
+	}
+	parsed := &OpenAIImagesRequest{
+		Endpoint: openAIImagesGenerationsEndpoint,
+		Model:    "gpt-image-gemini",
+		Prompt:   "a cat",
+		N:        1,
+	}
+
+	result, err := svc.forwardOpenAIImagesViaGemini(context.Background(), c, account, parsed, "")
+	if err != nil {
+		t.Fatalf("forwardOpenAIImagesViaGemini: %v", err)
+	}
+	if upstream.lastReq == nil || upstream.lastReq.URL.Path != "/v1beta/models/gemini-2.5-flash-image:generateContent" {
+		t.Fatalf("upstream should receive mapped gemini model, got %v", upstream.lastReq)
+	}
+	if result.Model != "gpt-image-gemini" {
+		t.Fatalf("client-facing model = %q, want gpt-image-gemini", result.Model)
+	}
+	if result.UpstreamModel != "gemini-2.5-flash-image" {
+		t.Fatalf("upstream model = %q", result.UpstreamModel)
+	}
+}
+
 // stubPassthroughRepo 透传规则仓库桩:仅返回预置规则。
 type stubPassthroughRepo struct {
 	rules []*model.ErrorPassthroughRule
