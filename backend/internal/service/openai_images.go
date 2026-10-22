@@ -612,6 +612,11 @@ func (s *OpenAIGatewayService) ForwardImages(
 	}
 	parsedCopy := *parsed
 	parsed = &parsedCopy
+	// Gemini 图片桥接账号:OpenAI Images 协议在网关内转成 generateContent,
+	// 响应包装回 OpenAI 格式;参考图/图床 URL/错误透传/计费均沿用既有链路。
+	if account.Platform == PlatformGemini {
+		return s.forwardOpenAIImagesViaGemini(ctx, c, account, parsed, channelMappedModel)
+	}
 	var err error
 	body, parsed.ContentType, err = applyOpenAIImagesAccountRequestDefaults(account, body, parsed.ContentType, parsed)
 	if err != nil {
@@ -1018,7 +1023,6 @@ func applyOpenAIImagesMultipartAccountRequestDefaults(body []byte, contentType s
 	var buffer bytes.Buffer
 	writer := multipart.NewWriter(&buffer)
 	seen := make(map[string]struct{})
-	replaced := make(map[string]struct{})
 
 	for {
 		part, err := reader.NextPart()
@@ -1037,13 +1041,15 @@ func applyOpenAIImagesMultipartAccountRequestDefaults(body []byte, contentType s
 			if defaultValue, ok := defaults[formName]; ok {
 				_, _ = io.Copy(io.Discard, part)
 				_ = part.Close()
-				if _, err := writer.CreatePart(cloneMultipartHeader(part.Header)); err != nil {
-					return nil, "", fmt.Errorf("create multipart part: %w", err)
+				// 值写入同一个 part(原位替换)。不能 CreatePart 之后再 WriteField 各来一次:
+				// 那会产生一个空 part + 一个同名新 part,服务端解析通常取第一个,读到空值。
+				replacement, cErr := writer.CreatePart(cloneMultipartHeader(part.Header))
+				if cErr != nil {
+					return nil, "", fmt.Errorf("create multipart part: %w", cErr)
 				}
-				if err := writer.WriteField(formName, formatOpenAIImageRequestDefaultValue(defaultValue)); err != nil {
-					return nil, "", fmt.Errorf("override multipart default field %q: %w", formName, err)
+				if _, cErr = replacement.Write([]byte(formatOpenAIImageRequestDefaultValue(defaultValue))); cErr != nil {
+					return nil, "", fmt.Errorf("override multipart default field %q: %w", formName, cErr)
 				}
-				replaced[formName] = struct{}{}
 				applyOpenAIImageParsedDefault(parsed, formName, defaultValue, true)
 				continue
 			}

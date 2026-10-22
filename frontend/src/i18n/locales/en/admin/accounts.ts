@@ -678,6 +678,9 @@ export default {
         imagesHideB64: 'Hide image result base64',
         imagesHideB64Desc:
           'Depends on image-to-storage being enabled: removes b64_json from the response after a successful rewrite, greatly reducing the response size. Items that failed to upload keep their original form.',
+        geminiImageBridge: 'OpenAI images protocol bridge',
+        geminiImageBridgeDesc:
+          'For Gemini API Key accounts. When the OpenAI /v1/images endpoint routes to this account, the gateway converts the request to Gemini generateContent and wraps the result back as an OpenAI images response; the storage URL rewrite applies as usual.',
         endpointCapabilities: 'Endpoint capabilities',
         endpointCapabilitiesDesc:
           'Used by account routing. The text endpoint follows the Responses API support setting above and is shown as Responses, Chat Completions, or auto mode; Embeddings independently controls /v1/embeddings.',

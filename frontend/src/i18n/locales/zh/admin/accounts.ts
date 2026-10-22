@@ -790,6 +790,9 @@ export default {
         imagesHideB64: '隐藏生图结果 base64',
         imagesHideB64Desc:
           '依赖「生图结果转图床 URL」开启:改写成功后从响应中移除 b64_json 字段,大幅减小响应体。未转存成功的图片保留原样。',
+        geminiImageBridge: 'OpenAI 生图协议桥接',
+        geminiImageBridgeDesc:
+          '仅 Gemini API Key 账号可用。开启后,OpenAI /v1/images 端点调度到该账号时,网关自动把请求转成 Gemini generateContent 协议调用,并把结果包装回 OpenAI 生图响应格式;图床 URL 转存等账号能力照常生效。',
         endpointCapabilities: '端点能力',
         endpointCapabilitiesDesc:
           '用于调度筛选。文本端点会跟随上方 Responses API 支持显示为 Responses、Chat Completions 或自动模式；Embeddings 独立控制 /v1/embeddings。',

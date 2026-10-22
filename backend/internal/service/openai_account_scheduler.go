@@ -2154,6 +2154,10 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	excludedIDs map[int64]struct{},
 	requiredCapability OpenAIImagesCapability,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	// Gemini 图片模型且分组内有桥接账号时优先走桥接层(未配路由规则也能选到)。
+	if selection, decision, handled, err := s.selectGeminiImageBridgeAccountForImages(ctx, groupID, sessionHash, requestedModel, excludedIDs); handled {
+		return selection, decision, err
+	}
 	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, false, PlatformOpenAI, false, false)
 	if err == nil && selection != nil && selection.Account != nil {
 		return selection, decision, nil

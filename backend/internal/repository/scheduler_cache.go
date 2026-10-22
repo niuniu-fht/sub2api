@@ -1021,6 +1021,9 @@ func filterSchedulerExtra(extra map[string]any) map[string]any {
 		// 走网关报 no available accounts"。
 		"openai_passthrough",
 		"openai_oauth_passthrough",
+		// Gemini 图片桥接开关必须进投影:OpenAI Images 兜底选号(ListSchedulableAccounts)
+		// 读本投影判断账号能否承接 OpenAI 协议生图,裁掉会永远选不中桥接账号。
+		"gemini_image_bridge",
 		"codex_fingerprint_mode",
 		"codex_fingerprint_seed",
 		"codex_5h_used_percent",

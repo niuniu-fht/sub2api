@@ -2125,6 +2125,36 @@
       </div>
 
       <div
+        v-if="account?.platform === 'gemini' && account?.type === 'apikey'"
+        class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div>
+          <label class="input-label mb-0">{{ t('admin.accounts.openai.geminiImageBridge') }}</label>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.openai.geminiImageBridgeDesc') }}
+          </p>
+        </div>
+        <button
+          type="button"
+          data-testid="gemini-image-bridge-toggle"
+          role="switch"
+          :aria-checked="geminiImageBridgeEnabled"
+          @click="geminiImageBridgeEnabled = !geminiImageBridgeEnabled"
+          :class="[
+            'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+            geminiImageBridgeEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+          ]"
+        >
+          <span
+            :class="[
+              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+              geminiImageBridgeEnabled ? 'translate-x-5' : 'translate-x-0'
+            ]"
+          />
+        </button>
+      </div>
+
+      <div
         v-if="account?.type === 'apikey'"
         class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
@@ -3850,6 +3880,7 @@ const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
 const openAIImagesUrlToB64JsonEnabled = ref(false)
 const openAIImagesB64ToUrlEnabled = ref(false)
 const openAIImagesHideB64Enabled = ref(false)
+const geminiImageBridgeEnabled = ref(false)
 const openAIEndpointCapabilities = ref<OpenAIEndpointCapability[]>(['chat_completions', 'embeddings'])
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -4447,6 +4478,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	openAIImagesB64ToUrlEnabled.value = extra?.images_b64_to_url === true
 	openAIImagesHideB64Enabled.value = extra?.images_hide_b64 === true
 	if (!openAIImagesB64ToUrlEnabled.value) openAIImagesHideB64Enabled.value = false
+	geminiImageBridgeEnabled.value = extra?.gemini_image_bridge === true
 	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
 	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
 	autoPause5hDisabled.value = extra?.auto_pause_5h_disabled === true
@@ -6029,6 +6061,11 @@ const handleSubmit = async () => {
           delete newExtra.images_b64_to_url
           delete newExtra.images_hide_b64
         }
+		}
+		if (geminiImageBridgeEnabled.value) {
+			newExtra.gemini_image_bridge = true
+		} else {
+			delete newExtra.gemini_image_bridge
 		}
 		if (autoPause5hThreshold.value != null && autoPause5hThreshold.value > 0) {
 			newExtra.auto_pause_5h_threshold = autoPause5hThreshold.value / 100

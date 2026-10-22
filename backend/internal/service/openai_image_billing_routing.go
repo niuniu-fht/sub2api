@@ -8,6 +8,7 @@ import (
 )
 
 const openAIAccountScheduleLayerImageBillingRouting = "image_billing_routing"
+const openAIAccountScheduleLayerGeminiBridge = "gemini_image_bridge"
 
 // imageBillingRoundRobinMaxSwitches 轮询链的账号切换上限(不含首次选中的账号)。
 const imageBillingRoundRobinMaxSwitches = 3
@@ -55,6 +56,35 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 		account, err := s.getSchedulableAccount(ctx, accountID)
 		if err != nil || account == nil {
 			reasons = append(reasons, fmt.Sprintf("not_schedulable=%d", accountID))
+			continue
+		}
+		// Gemini 图片桥接账号:开了桥接开关的 Gemini API-key 账号可承接
+		// OpenAI Images 请求(协议在网关内转换),过滤条件与 OpenAI 账号不同。
+		if account.Platform == PlatformGemini {
+			if !s.geminiImageBridgeAccountEligible(ctx, account, req.GroupID) {
+				reasons = append(reasons, fmt.Sprintf("gemini_bridge_ineligible=%d", accountID))
+				continue
+			}
+			if result, acquireErr := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency); acquireErr == nil && result != nil && result.Acquired {
+				slog.Debug("openai image billing gemini bridge account selected",
+					"group_id", derefGroupID(req.GroupID),
+					"tier", tier,
+					"quality", quality,
+					"mode", mode,
+					"account_id", account.ID,
+					"configured_account_ids", accountIDs,
+					"acquired", true,
+				)
+				selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+				if selection != nil && mode == ImageBillingRoutingModeRoundRobin {
+					selection.ImageBillingRoundRobin = true
+					selection.SwitchLimit = imageBillingRoundRobinMaxSwitches
+				}
+				return selection, true, selectErr
+			}
+			if waitAccount == nil {
+				waitAccount = account
+			}
 			continue
 		}
 		if account.Platform != platform || !account.IsOpenAICompatible() || !account.IsSchedulable() {
@@ -139,6 +169,77 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 // imageBillingRoundRobinCounter 全局轮询计数器:每个请求递增,按取模结果
 // 轮转账号链起点,保证请求在链上逐个轮转,而不是按会话哈希固定起点。
 var imageBillingRoundRobinCounter atomic.Uint64
+
+// selectGeminiImageBridgeAccountForImages 常规调度兜底层:模型是 gemini 图片模型
+// 且分组内存在开了桥接开关的 Gemini 账号时,按全局计数器轮转选一个。
+// 只要存在桥接候选就接管该请求(等待或报无可用),不落回 OpenAI 调度——
+// 未配路由规则的分组也能以 OpenAI 协议直调 gemini 生图。
+func (s *OpenAIGatewayService) selectGeminiImageBridgeAccountForImages(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, bool, error) {
+	decision := OpenAIAccountScheduleDecision{}
+	if s == nil || s.schedulerSnapshot == nil || !isGeminiCompatibleImageModel(requestedModel) {
+		return nil, decision, false, nil
+	}
+	accounts, _, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, PlatformGemini, false)
+	if err != nil || len(accounts) == 0 {
+		return nil, decision, false, nil
+	}
+	candidates := make([]int64, 0, len(accounts))
+	accountByID := make(map[int64]Account, len(accounts))
+	for i := range accounts {
+		account := &accounts[i]
+		if !s.geminiImageBridgeAccountEligible(ctx, account, groupID) {
+			continue
+		}
+		if excludedIDs != nil {
+			if _, excluded := excludedIDs[account.ID]; excluded {
+				continue
+			}
+		}
+		candidates = append(candidates, account.ID)
+		accountByID[account.ID] = *account
+	}
+	if len(candidates) == 0 {
+		return nil, decision, false, nil
+	}
+
+	ordered := orderedOpenAIImageBillingAccountIDs(candidates, ImageBillingRoutingModeRoundRobin, sessionHash)
+	var waitAccount Account
+	for _, accountID := range ordered {
+		account := accountByID[accountID]
+		if result, acquireErr := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency); acquireErr == nil && result != nil && result.Acquired {
+			selection, selectErr := s.newAcquiredSelectionResult(ctx, &account, result.ReleaseFunc)
+			decision.Layer = openAIAccountScheduleLayerGeminiBridge
+			if selection != nil {
+				decision.SelectedAccountID = account.ID
+				decision.SelectedAccountType = account.Type
+			}
+			return selection, decision, true, selectErr
+		}
+		if waitAccount.ID == 0 {
+			waitAccount = account
+		}
+	}
+	if waitAccount.ID != 0 {
+		cfg := s.schedulingConfig()
+		selection, selectErr := s.newSelectionResult(ctx, &waitAccount, false, nil, &AccountWaitPlan{
+			AccountID:      waitAccount.ID,
+			MaxConcurrency: waitAccount.Concurrency,
+			Timeout:        cfg.FallbackWaitTimeout,
+			MaxWaiting:     cfg.FallbackMaxWaiting,
+		})
+		decision.Layer = openAIAccountScheduleLayerGeminiBridge
+		decision.SelectedAccountID = waitAccount.ID
+		decision.SelectedAccountType = waitAccount.Type
+		return selection, decision, true, selectErr
+	}
+	return nil, decision, true, noAvailableOpenAISelectionError(requestedModel, false, "gemini_image_bridge_accounts_unavailable")
+}
 
 // orderedOpenAIImageBillingAccountIDs 按调度方式整理账号链顺序。
 // priority 模式保持配置顺序;round_robin 模式按全局计数器逐请求轮转起点

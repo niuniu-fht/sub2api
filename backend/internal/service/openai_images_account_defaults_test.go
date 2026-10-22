@@ -1,6 +1,9 @@
 package service
 
 import (
+	"bytes"
+	"io"
+	"mime/multipart"
 	"strings"
 	"testing"
 
@@ -120,6 +123,48 @@ func TestApplyOpenAIImagesAccountRequestDefaultsWithoutOverrideKeepsExisting(t *
 	}
 	if parsed.Quality != "low" {
 		t.Fatalf("parsed.Quality=%q, want low", parsed.Quality)
+	}
+}
+
+func TestApplyOpenAIImagesMultipartOverrideSinglePart(t *testing.T) {
+	// 串值回归:覆盖后必须恰好一个 quality part 且值为新值,不允许空 part/重复 part。
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			"openai_image_request_defaults":          map[string]any{"quality": "high"},
+			"openai_image_request_defaults_override": []any{"quality"},
+		},
+	}
+	boundary := "tb"
+	body := "--tb\r\nContent-Disposition: form-data; name=\"quality\"\r\n\r\nlow\r\n--tb--\r\n"
+
+	got, contentType, err := applyOpenAIImagesAccountRequestDefaults(account, []byte(body), "multipart/form-data; boundary="+boundary, &OpenAIImagesRequest{})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	b := strings.Split(contentType, "boundary=")[1]
+	b = strings.Trim(b, "\"")
+	reader := multipart.NewReader(bytes.NewReader(got), b)
+	qualityCount := 0
+	for {
+		part, perr := reader.NextPart()
+		if perr == io.EOF {
+			break
+		}
+		if perr != nil {
+			t.Fatalf("read part: %v", perr)
+		}
+		if part.FormName() == "quality" {
+			qualityCount++
+			value, _ := io.ReadAll(part)
+			if string(value) != "high" {
+				t.Fatalf("quality part value=%q, want high", string(value))
+			}
+		}
+	}
+	if qualityCount != 1 {
+		t.Fatalf("quality part count=%d, want exactly 1 (no duplicate/empty parts)", qualityCount)
 	}
 }
 
