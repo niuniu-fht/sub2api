@@ -475,3 +475,29 @@ func (r *stubPassthroughRepo) Update(_ context.Context, rule *model.ErrorPassthr
 }
 
 func (r *stubPassthroughRepo) Delete(_ context.Context, _ int64) error { return nil }
+
+// TestParseGeminiImageBridgeResponseSnakeCase 验证 snake_case 中转(如 geekcloud)
+// 返回的 inline_data/mime_type 也能解析出图片。
+func TestParseGeminiImageBridgeResponseSnakeCase(t *testing.T) {
+	imageB64 := base64.StdEncoding.EncodeToString([]byte("jpeg-bytes"))
+	raw := []byte(`{
+		"candidates": [{
+			"content": {"role": "model", "parts": [{"inline_data": {"mime_type": "image/jpeg", "data": "` + imageB64 + `"}}]},
+			"finish_reason": "STOP"
+		}],
+		"usage_metadata": {"prompt_token_count": 8, "candidates_token_count": 100, "total_token_count": 108}
+	}`)
+	images, usage, status, message, err := parseGeminiImageBridgeResponse(raw)
+	if err != nil {
+		t.Fatalf("parseGeminiImageBridgeResponse: %v", err)
+	}
+	if len(images) != 1 || images[0].MimeType != "image/jpeg" {
+		t.Fatalf("images = %+v", images)
+	}
+	if usage.InputTokens != 8 || usage.OutputTokens != 100 {
+		t.Fatalf("usage = %+v", usage)
+	}
+	if status != 0 || message != "" {
+		t.Fatalf("unexpected error fields: status=%d message=%q", status, message)
+	}
+}

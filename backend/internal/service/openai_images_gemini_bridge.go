@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 // OpenAI Images 协议 → Gemini generateContent 协议转换(账号级开关)。
@@ -186,7 +187,49 @@ type geminiImageBridgeImage struct {
 
 // parseGeminiImageBridgeResponse 从 generateContent 响应里取图片与用量;
 // 无图但带 blockReason/SAFETY 类 finishReason 时返回内容拦截错误。
+// 兼容 camelCase(Google 官方)与 snake_case(部分中转)两种字段拼写。
 func parseGeminiImageBridgeResponse(raw []byte) ([]geminiImageBridgeImage, OpenAIUsage, int, string, error) {
+	images, usage, status, message, err := parseGeminiImageBridgeResponseTyped(raw)
+	// camelCase 解析 valid 但无图且字段是 snake_case 拼写时,归一化后重解析一次。
+	if err != nil || len(images) > 0 || !isSnakeCaseGeminiResponse(raw) {
+		return images, usage, status, message, err
+	}
+	return parseGeminiImageBridgeResponseTyped(normalizeSnakeCaseGeminiResponse(raw))
+}
+
+// isSnakeCaseGeminiResponse 判断响应是否使用 snake_case 字段拼写。
+func isSnakeCaseGeminiResponse(raw []byte) bool {
+	if gjson.GetBytes(raw, "inlineData").Exists() || gjson.GetBytes(raw, "promptFeedback").Exists() ||
+		gjson.GetBytes(raw, "usageMetadata").Exists() {
+		return false
+	}
+	return gjson.GetBytes(raw, "prompt_feedback").Exists() || gjson.GetBytes(raw, "usage_metadata").Exists() ||
+		gjson.GetBytes(raw, "finish_reason").Exists()
+}
+
+// normalizeSnakeCaseGeminiResponse 把 snake_case 拼写转成官方 camelCase,供统一解析。
+func normalizeSnakeCaseGeminiResponse(raw []byte) []byte {
+	out := raw
+	replacements := [][2]string{
+		{"prompt_feedback", "promptFeedback"},
+		{"block_reason", "blockReason"},
+		{"finish_reason", "finishReason"},
+		{"usage_metadata", "usageMetadata"},
+		{"prompt_token_count", "promptTokenCount"},
+		{"candidates_token_count", "candidatesTokenCount"},
+		{"total_token_count", "totalTokenCount"},
+		{"thoughts_token_count", "thoughtsTokenCount"},
+		{"inline_data", "inlineData"},
+		{"mime_type", "mimeType"},
+	}
+	for _, pair := range replacements {
+		out = bytes.ReplaceAll(out, []byte(`"`+pair[0]+`"`), []byte(`"`+pair[1]+`"`))
+	}
+	return out
+}
+
+// parseGeminiImageBridgeResponseTyped 按官方 camelCase 字段解析响应。
+func parseGeminiImageBridgeResponseTyped(raw []byte) ([]geminiImageBridgeImage, OpenAIUsage, int, string, error) {
 	var parsed struct {
 		Candidates []struct {
 			Content struct {
