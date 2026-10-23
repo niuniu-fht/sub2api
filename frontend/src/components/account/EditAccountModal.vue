@@ -6062,11 +6062,6 @@ const handleSubmit = async () => {
           delete newExtra.images_hide_b64
         }
 		}
-		if (geminiImageBridgeEnabled.value) {
-			newExtra.gemini_image_bridge = true
-		} else {
-			delete newExtra.gemini_image_bridge
-		}
 		if (autoPause5hThreshold.value != null && autoPause5hThreshold.value > 0) {
 			newExtra.auto_pause_5h_threshold = autoPause5hThreshold.value / 100
 		} else {
@@ -6266,6 +6261,19 @@ const handleSubmit = async () => {
         delete newExtra.upstream_request_id_header
       }
       updatePayload.extra = newExtra
+    }
+
+    // Gemini 图片桥接开关(表单只对 gemini apikey 账号渲染):按平台条件写回 extra,
+    // 避免 OpenAI 专属 extra 段不执行时丢失该标记,也避免其他平台账号被误删。
+    if (props.account.platform === 'gemini') {
+      const bridgeCurrentExtra = (updatePayload.extra as Record<string, unknown>) || (props.account.extra as Record<string, unknown>) || {}
+      const bridgeExtra: Record<string, unknown> = { ...bridgeCurrentExtra }
+      if (geminiImageBridgeEnabled.value) {
+        bridgeExtra.gemini_image_bridge = true
+      } else {
+        delete bridgeExtra.gemini_image_bridge
+      }
+      updatePayload.extra = bridgeExtra
     }
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
