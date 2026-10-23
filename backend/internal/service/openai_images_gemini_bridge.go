@@ -14,7 +14,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
-	"github.com/tidwall/gjson"
 )
 
 // OpenAI Images 协议 → Gemini generateContent 协议转换(账号级开关)。
@@ -190,24 +189,18 @@ type geminiImageBridgeImage struct {
 // 兼容 camelCase(Google 官方)与 snake_case(部分中转)两种字段拼写。
 func parseGeminiImageBridgeResponse(raw []byte) ([]geminiImageBridgeImage, OpenAIUsage, int, string, error) {
 	images, usage, status, message, err := parseGeminiImageBridgeResponseTyped(raw)
-	// camelCase 解析 valid 但无图且字段是 snake_case 拼写时,归一化后重解析一次。
-	if err != nil || len(images) > 0 || !isSnakeCaseGeminiResponse(raw) {
-		return images, usage, status, message, err
+	// 无图时无条件做 snake_case → camelCase 归一化重试:部分中转(如 geekcloud)
+	// 用 inline_data/mime_type 甚至混合拼写返回;归一化对 camelCase 响应无副作用。
+	if err == nil && len(images) == 0 {
+		if images2, u2, s2, m2, e2 := parseGeminiImageBridgeResponseTyped(normalizeSnakeCaseGeminiResponse(raw)); len(images2) > 0 {
+			return images2, u2, s2, m2, e2
+		}
 	}
-	return parseGeminiImageBridgeResponseTyped(normalizeSnakeCaseGeminiResponse(raw))
-}
-
-// isSnakeCaseGeminiResponse 判断响应是否使用 snake_case 字段拼写。
-func isSnakeCaseGeminiResponse(raw []byte) bool {
-	if gjson.GetBytes(raw, "inlineData").Exists() || gjson.GetBytes(raw, "promptFeedback").Exists() ||
-		gjson.GetBytes(raw, "usageMetadata").Exists() {
-		return false
-	}
-	return gjson.GetBytes(raw, "prompt_feedback").Exists() || gjson.GetBytes(raw, "usage_metadata").Exists() ||
-		gjson.GetBytes(raw, "finish_reason").Exists()
+	return images, usage, status, message, err
 }
 
 // normalizeSnakeCaseGeminiResponse 把 snake_case 拼写转成官方 camelCase,供统一解析。
+// 对本就是 camelCase 的响应无副作用(仅替换带引号的 snake 键名)。
 func normalizeSnakeCaseGeminiResponse(raw []byte) []byte {
 	out := raw
 	replacements := [][2]string{
