@@ -3233,6 +3233,7 @@
         :groups="selectableGroups"
         :platform="account?.platform"
         :mixed-scheduling="mixedScheduling"
+        :allow-cross-platform="account?.platform === 'gemini' && account?.type === 'apikey' && geminiImageBridgeEnabled"
         data-tour="account-form-groups"
       />
 

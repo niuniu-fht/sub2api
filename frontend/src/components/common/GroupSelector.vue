@@ -72,6 +72,7 @@ interface Props {
   groups: (Group & { account_count?: number })[]
   platform?: GroupPlatform // Optional platform filter
   mixedScheduling?: boolean // For antigravity accounts: allow anthropic/gemini groups
+  allowCrossPlatform?: boolean // For gemini bridge accounts: allow any platform's groups
   searchable?: boolean | 'auto'
 }
 
@@ -100,6 +101,9 @@ const filteredGroups = computed(() => {
       result = result.filter(
         (g) => g.platform === 'antigravity' || g.platform === 'anthropic' || g.platform === 'gemini' || g.platform === 'composite'
       )
+    } else if (props.allowCrossPlatform) {
+      // Gemini 图片桥接账号:网关内做协议转换,可承接任意平台分组的 OpenAI 生图请求,
+      // 分组选择不再按平台过滤(composite 本就放行)。
     } else {
       // 默认：只能选择同 platform 的分组；composite 分组可接收任意具体平台账号
       result = result.filter((g) => g.platform === props.platform || g.platform === 'composite')
