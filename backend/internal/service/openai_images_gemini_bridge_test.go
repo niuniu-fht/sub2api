@@ -420,6 +420,34 @@ func TestForwardOpenAIImagesViaGeminiCustomModelMapping(t *testing.T) {
 	}
 }
 
+// TestResolveGeminiBridgeUpstreamModel 验证上游模型解析的三级回退:
+// 账号映射 → 剥 gpt-image- 前缀 → 默认模型。
+func TestResolveGeminiBridgeUpstreamModel(t *testing.T) {
+	withMapping := &Account{Credentials: map[string]any{
+		"model_mapping": map[string]any{"gpt-image-gemini": "gemini-2.5-flash-image"},
+	}}
+	plain := &Account{}
+
+	cases := []struct {
+		name    string
+		account *Account
+		model   string
+		want    string
+	}{
+		{"mapping hit", withMapping, "gpt-image-gemini", "gemini-2.5-flash-image"},
+		{"strip gpt-image prefix", plain, "gpt-image-gemini-3.1-flash-image", "gemini-3.1-flash-image"},
+		{"plain gemini model", plain, "gemini-2.5-flash-image", "gemini-2.5-flash-image"},
+		{"unknown falls back to default", plain, "gpt-image-2", defaultGeminiBridgeModel},
+		{"empty falls back to default", plain, "", defaultGeminiBridgeModel},
+		{"mapping miss then strip", withMapping, "gpt-image-gemini-3.1-flash-image", "gemini-3.1-flash-image"},
+	}
+	for _, tc := range cases {
+		if got := resolveGeminiBridgeUpstreamModel(tc.account, tc.model); got != tc.want {
+			t.Fatalf("%s: resolveGeminiBridgeUpstreamModel(%q) = %q, want %q", tc.name, tc.model, got, tc.want)
+		}
+	}
+}
+
 // stubPassthroughRepo 透传规则仓库桩:仅返回预置规则。
 type stubPassthroughRepo struct {
 	rules []*model.ErrorPassthroughRule

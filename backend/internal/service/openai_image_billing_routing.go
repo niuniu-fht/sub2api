@@ -170,10 +170,10 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 // 轮转账号链起点,保证请求在链上逐个轮转,而不是按会话哈希固定起点。
 var imageBillingRoundRobinCounter atomic.Uint64
 
-// selectGeminiImageBridgeAccountForImages 常规调度兜底层:模型是 gemini 图片模型
-// 且分组内存在开了桥接开关的 Gemini 账号时,按全局计数器轮转选一个。
-// 只要存在桥接候选就接管该请求(等待或报无可用),不落回 OpenAI 调度——
-// 未配路由规则的分组也能以 OpenAI 协议直调 gemini 生图。
+// selectGeminiImageBridgeAccountForImages 常规调度无可用账号时的最后兜底层:
+// 分组内存在开了桥接开关的 Gemini 账号时,按全局计数器轮转选一个。
+// 任意生图模型名都会尝试(不再限定 gemini-* 前缀,纯桥接分组的 gpt-image-*
+// 别名与缺省模型也要承接);只要存在桥接候选就接管该请求(等待或报无可用)。
 func (s *OpenAIGatewayService) selectGeminiImageBridgeAccountForImages(
 	ctx context.Context,
 	groupID *int64,
@@ -182,7 +182,7 @@ func (s *OpenAIGatewayService) selectGeminiImageBridgeAccountForImages(
 	excludedIDs map[int64]struct{},
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, bool, error) {
 	decision := OpenAIAccountScheduleDecision{}
-	if s == nil || s.schedulerSnapshot == nil || !isGeminiCompatibleImageModel(requestedModel) {
+	if s == nil || s.schedulerSnapshot == nil {
 		return nil, decision, false, nil
 	}
 	accounts, _, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, PlatformGemini, false)

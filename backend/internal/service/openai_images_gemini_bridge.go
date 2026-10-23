@@ -266,6 +266,28 @@ func geminiImageBridgeStatusRetryable(statusCode int) bool {
 	return false
 }
 
+// defaultGeminiBridgeModel 客户端模型名解析不出 gemini 图片模型时的桥接默认模型。
+const defaultGeminiBridgeModel = "gemini-2.5-flash-image"
+
+// resolveGeminiBridgeUpstreamModel 解析桥接上游模型:
+//  1. 账号模型映射命中且为 gemini 图片模型 → 用之;
+//  2. 客户端名剥掉 gpt-image- 前缀后是 gemini 图片模型 → 用之
+//     (gpt-image-gemini-3.1-flash-image → gemini-3.1-flash-image);
+//  3. 否则回落默认模型,让纯桥接分组的任意 OpenAI 调用直接可用。
+func resolveGeminiBridgeUpstreamModel(account *Account, requestModel string) string {
+	if mapped := strings.TrimSpace(account.GetMappedModel(requestModel)); isGeminiCompatibleImageModel(mapped) {
+		return mapped
+	}
+	trimmed := strings.TrimSpace(requestModel)
+	if len(trimmed) > len("gpt-image-") && strings.EqualFold(trimmed[:len("gpt-image-")], "gpt-image-") {
+		stripped := trimmed[len("gpt-image-"):]
+		if isGeminiCompatibleImageModel(stripped) {
+			return stripped
+		}
+	}
+	return defaultGeminiBridgeModel
+}
+
 // forwardOpenAIImagesViaGemini 把 OpenAI Images 请求经协议转换发给 Gemini 账号,
 // 并把响应包装回 OpenAI 格式(含图床 URL 改写、错误透传、计费用量)。
 func (s *OpenAIGatewayService) forwardOpenAIImagesViaGemini(
@@ -281,14 +303,8 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesViaGemini(
 	if mapped := strings.TrimSpace(channelMappedModel); mapped != "" {
 		requestModel = mapped
 	}
-	upstreamModel := account.GetMappedModel(requestModel)
-	if !isGeminiCompatibleImageModel(upstreamModel) {
-		return nil, &OpenAIImagesUpstreamError{
-			StatusCode: http.StatusBadRequest,
-			ErrorType:  "invalid_request_error",
-			Message:    fmt.Sprintf("gemini image bridge requires a gemini image model, got %q", upstreamModel),
-		}
-	}
+	upstreamModel := resolveGeminiBridgeUpstreamModel(account, requestModel)
+	SetOpsUpstreamModel(c, upstreamModel)
 	if parsed.Stream {
 		return nil, &OpenAIImagesUpstreamError{
 			StatusCode: http.StatusBadRequest,
@@ -296,7 +312,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesViaGemini(
 			Message:    "streaming is not supported for gemini image bridge accounts",
 		}
 	}
-	SetOpsUpstreamModel(c, upstreamModel)
 
 	n := parsed.N
 	if n <= 0 {

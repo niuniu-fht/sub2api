@@ -2154,17 +2154,22 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	excludedIDs map[int64]struct{},
 	requiredCapability OpenAIImagesCapability,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
-	// Gemini 图片模型且分组内有桥接账号时优先走桥接层(未配路由规则也能选到)。
-	if selection, decision, handled, err := s.selectGeminiImageBridgeAccountForImages(ctx, groupID, sessionHash, requestedModel, excludedIDs); handled {
-		return selection, decision, err
-	}
 	selection, decision, err := s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", requiredCapability, false, PlatformOpenAI, false, false)
 	if err == nil && selection != nil && selection.Account != nil {
 		return selection, decision, nil
 	}
 	// 如果要求 native 能力（如指定了模型）但没有可用的 APIKey 账号，回退到 basic（OAuth 账号）
 	if requiredCapability == OpenAIImagesCapabilityNative {
-		return s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, false, PlatformOpenAI, false, false)
+		selection, decision, err = s.selectAccountWithScheduler(ctx, groupID, "", sessionHash, requestedModel, excludedIDs, OpenAIUpstreamTransportHTTPSSE, "", OpenAIImagesCapabilityBasic, false, PlatformOpenAI, false, false)
+		if err == nil && selection != nil && selection.Account != nil {
+			return selection, decision, nil
+		}
+	}
+	// 常规调度两轮都无可用账号时,分组内的 Gemini 桥接账号作为最后兜底:
+	// 任意生图模型名(含 gpt-image-* 前缀别名与缺省模型)都能被纯桥接分组承接;
+	// 混合分组里 OpenAI 兼容账号仍优先,桥接只在无人可用时接管。
+	if bridgeSelection, bridgeDecision, handled, bridgeErr := s.selectGeminiImageBridgeAccountForImages(ctx, groupID, sessionHash, requestedModel, excludedIDs); handled {
+		return bridgeSelection, bridgeDecision, bridgeErr
 	}
 	return selection, decision, err
 }

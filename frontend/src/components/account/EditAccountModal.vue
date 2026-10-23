@@ -2063,7 +2063,7 @@
       </div>
 
       <div
-        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        v-if="(account?.platform === 'openai' || account?.platform === 'gemini') && account?.type === 'apikey'"
         class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div>
@@ -2093,7 +2093,7 @@
       </div>
 
       <div
-        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
+        v-if="(account?.platform === 'openai' || account?.platform === 'gemini') && account?.type === 'apikey'"
         class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div>
@@ -6273,6 +6273,18 @@ const handleSubmit = async () => {
         bridgeExtra.gemini_image_bridge = true
       } else {
         delete bridgeExtra.gemini_image_bridge
+      }
+      // 生图结果转图床 URL / 隐藏 b64 对 gemini 桥接同样生效(网关转换路径会读取)。
+      if (openAIImagesB64ToUrlEnabled.value) {
+        bridgeExtra.images_b64_to_url = true
+        if (openAIImagesHideB64Enabled.value) {
+          bridgeExtra.images_hide_b64 = true
+        } else {
+          delete bridgeExtra.images_hide_b64
+        }
+      } else {
+        delete bridgeExtra.images_b64_to_url
+        delete bridgeExtra.images_hide_b64
       }
       updatePayload.extra = bridgeExtra
     }
