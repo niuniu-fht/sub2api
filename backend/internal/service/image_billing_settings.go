@@ -1,6 +1,7 @@
 package service
 
 import (
+	"sort"
 	"context"
 	"encoding/json"
 	"errors"
@@ -86,6 +87,9 @@ const GeminiImageBillingAspectRatioAny = "*"
 type GeminiImageBillingRoutingRule struct {
 	Tier        string  `json:"tier"`
 	AspectRatio string  `json:"aspect_ratio"`
+	// 用于把请求路由到只支持特定参考图数量的号池(如仅单参考图/文生图的渠道);
+	// 为空表示不限参考图数量。
+	ImageCounts []int   `json:"image_counts,omitempty"`
 	AccountIDs  []int64 `json:"account_ids"`
 }
 
@@ -382,10 +386,14 @@ func NormalizeGeminiImageBillingRoutingSettings(settings GeminiImageBillingRouti
 			if len(accountIDs) == 0 {
 				continue
 			}
-			key := tier + "|" + aspectRatio
+			imageCounts := normalizeGeminiImageBillingRuleCounts(rule.ImageCounts)
+			// 去重键必须包含参考图数量:仅数量不同的两条规则(如 [0,1]→A、[2,3,4]→B)
+			// 是不同的路由意图,不能合并。
+			countsKey := geminiImageBillingRuleCountsKey(GeminiImageBillingRoutingRule{ImageCounts: imageCounts})
+			key := tier + "|" + aspectRatio + "|" + countsKey
 			if _, ok := seenRules[key]; ok {
 				for i := range rules {
-					if rules[i].Tier == tier && rules[i].AspectRatio == aspectRatio {
+					if rules[i].Tier == tier && rules[i].AspectRatio == aspectRatio && geminiImageBillingRuleCountsKey(rules[i]) == countsKey {
 						rules[i].AccountIDs = normalizeImageBillingRoutingAccountIDs(append(rules[i].AccountIDs, accountIDs...), 0)
 						break
 					}
@@ -396,6 +404,7 @@ func NormalizeGeminiImageBillingRoutingSettings(settings GeminiImageBillingRouti
 			rules = append(rules, GeminiImageBillingRoutingRule{
 				Tier:        tier,
 				AspectRatio: aspectRatio,
+				ImageCounts: imageCounts,
 				AccountIDs:  accountIDs,
 			})
 		}
@@ -406,7 +415,51 @@ func NormalizeGeminiImageBillingRoutingSettings(settings GeminiImageBillingRouti
 	return normalized
 }
 
-func (s GeminiImageBillingRoutingSettings) AccountIDsFor(groupID int64, tier string, aspectRatio string) []int64 {
+// geminiImageBillingRuleMatchesImageCount 参考图数量匹配:规则未配置数量=泛化
+// (任意数量都匹配);配置了则要求请求的参考图数在列表内。
+func geminiImageBillingRuleMatchesImageCount(rule GeminiImageBillingRoutingRule, imageCount int) bool {
+	if len(rule.ImageCounts) == 0 {
+		return true
+	}
+	for _, count := range rule.ImageCounts {
+		if count == imageCount {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeGeminiImageBillingRuleCounts 归一化参考图数量列表:去重、去非正数、升序。
+func normalizeGeminiImageBillingRuleCounts(counts []int) []int {
+	seen := make(map[int]struct{}, len(counts))
+	out := make([]int, 0, len(counts))
+	for _, count := range counts {
+		if count < 0 {
+			continue
+		}
+		if _, ok := seen[count]; ok {
+			continue
+		}
+		seen[count] = struct{}{}
+		out = append(out, count)
+	}
+	sort.Ints(out)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// geminiImageBillingRuleCountsKey 规则的参考图数量签名("any" 或 "0-1" 形式),
+// 用于保存归一化时区分仅参考图数量不同的规则。
+func geminiImageBillingRuleCountsKey(rule GeminiImageBillingRoutingRule) string {
+	if len(rule.ImageCounts) == 0 {
+		return "any"
+	}
+	return strings.Trim(strings.ReplaceAll(fmt.Sprint(rule.ImageCounts), " ", "-"), "[]")
+}
+
+func (s GeminiImageBillingRoutingSettings) AccountIDsFor(groupID int64, tier string, aspectRatio string, imageCount int) []int64 {
 	if groupID <= 0 {
 		return nil
 	}
@@ -416,20 +469,33 @@ func (s GeminiImageBillingRoutingSettings) AccountIDsFor(groupID int64, tier str
 	}
 	tier = NormalizeImageBillingTierOrDefault(tier)
 	aspectRatio = NormalizeGeminiImageBillingAspectRatio(aspectRatio)
-	for _, rule := range routing.Rules {
-		if rule.Tier == tier && rule.AspectRatio == aspectRatio && len(rule.AccountIDs) > 0 {
-			return append([]int64(nil), rule.AccountIDs...)
+	// 参考图数量专用规则优先;数量不限的泛化规则作为同档位/比例下的兜底。
+	var generic *GeminiImageBillingRoutingRule
+	for i := range routing.Rules {
+		rule := &routing.Rules[i]
+		if rule.Tier != tier || len(rule.AccountIDs) == 0 {
+			continue
+		}
+		if rule.AspectRatio != aspectRatio && rule.AspectRatio != GeminiImageBillingAspectRatioAny {
+			continue
+		}
+		if len(rule.ImageCounts) > 0 {
+			if geminiImageBillingRuleMatchesImageCount(*rule, imageCount) {
+				return append([]int64(nil), rule.AccountIDs...)
+			}
+			continue
+		}
+		if generic == nil {
+			generic = rule
 		}
 	}
-	for _, rule := range routing.Rules {
-		if rule.Tier == tier && rule.AspectRatio == GeminiImageBillingAspectRatioAny && len(rule.AccountIDs) > 0 {
-			return append([]int64(nil), rule.AccountIDs...)
-		}
+	if generic != nil {
+		return append([]int64(nil), generic.AccountIDs...)
 	}
 	return nil
 }
 
-func (s GeminiImageBillingRoutingSettings) AccountAllowedFor(groupID int64, accountID int64, tier string, aspectRatio string) bool {
+func (s GeminiImageBillingRoutingSettings) AccountAllowedFor(groupID int64, accountID int64, tier string, aspectRatio string, imageCount int) bool {
 	if groupID <= 0 || accountID <= 0 {
 		return true
 	}
@@ -446,14 +512,16 @@ func (s GeminiImageBillingRoutingSettings) AccountAllowedFor(groupID int64, acco
 			continue
 		}
 		constrained = true
-		if rule.Tier == tier && (rule.AspectRatio == aspectRatio || rule.AspectRatio == GeminiImageBillingAspectRatioAny) {
+		if rule.Tier == tier &&
+			(rule.AspectRatio == aspectRatio || rule.AspectRatio == GeminiImageBillingAspectRatioAny) &&
+			geminiImageBillingRuleMatchesImageCount(rule, imageCount) {
 			return true
 		}
 	}
 	return !constrained
 }
 
-func (s GeminiImageBillingRoutingSettings) ConstrainedButNotAllowedAccountIDsFor(groupID int64, tier string, aspectRatio string) []int64 {
+func (s GeminiImageBillingRoutingSettings) ConstrainedButNotAllowedAccountIDsFor(groupID int64, tier string, aspectRatio string, imageCount int) []int64 {
 	if groupID <= 0 {
 		return nil
 	}
@@ -472,7 +540,7 @@ func (s GeminiImageBillingRoutingSettings) ConstrainedButNotAllowedAccountIDsFor
 				continue
 			}
 			seen[accountID] = struct{}{}
-			if !s.AccountAllowedFor(groupID, accountID, tier, aspectRatio) {
+			if !s.AccountAllowedFor(groupID, accountID, tier, aspectRatio, imageCount) {
 				ids = append(ids, accountID)
 			}
 		}

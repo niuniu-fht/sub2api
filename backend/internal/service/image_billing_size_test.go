@@ -57,9 +57,9 @@ func TestNormalizeGeminiImageBillingRoutingSettings(t *testing.T) {
 		-1: {Rules: []GeminiImageBillingRoutingRule{{Tier: "1K", AspectRatio: "*", AccountIDs: []int64{99}}}},
 	}})
 
-	require.Equal(t, []int64{10, 20, 30}, settings.AccountIDsFor(1, ImageBillingSize2K, "16:9"))
-	require.Equal(t, []int64{40}, settings.AccountIDsFor(1, ImageBillingSize4K, "9:16"))
-	require.Nil(t, settings.AccountIDsFor(1, ImageBillingSize1K, "1:1"))
+	require.Equal(t, []int64{10, 20, 30}, settings.AccountIDsFor(1, ImageBillingSize2K, "16:9", 0))
+	require.Equal(t, []int64{40}, settings.AccountIDsFor(1, ImageBillingSize4K, "9:16", 0))
+	require.Nil(t, settings.AccountIDsFor(1, ImageBillingSize1K, "1:1", 0))
 	require.NotContains(t, settings.Groups, int64(-1))
 }
 
@@ -72,13 +72,13 @@ func TestGeminiImageBillingConstrainedAccountOnlyAllowsConfiguredTierAndRatio(t 
 		}},
 	}})
 
-	require.True(t, settings.AccountAllowedFor(15, 169, ImageBillingSize1K, "1:1"))
-	require.True(t, settings.AccountAllowedFor(15, 169, ImageBillingSize2K, "3:4"))
-	require.True(t, settings.AccountAllowedFor(15, 169, ImageBillingSize2K, "16:9"))
-	require.False(t, settings.AccountAllowedFor(15, 169, ImageBillingSize4K, "3:4"))
-	require.False(t, settings.AccountAllowedFor(15, 169, ImageBillingSize2K, "9:16"))
-	require.True(t, settings.AccountAllowedFor(15, 168, ImageBillingSize4K, "9:16"))
-	require.ElementsMatch(t, []int64{169}, settings.ConstrainedButNotAllowedAccountIDsFor(15, ImageBillingSize4K, "9:16"))
+	require.True(t, settings.AccountAllowedFor(15, 169, ImageBillingSize1K, "1:1", 0))
+	require.True(t, settings.AccountAllowedFor(15, 169, ImageBillingSize2K, "3:4", 0))
+	require.True(t, settings.AccountAllowedFor(15, 169, ImageBillingSize2K, "16:9", 0))
+	require.False(t, settings.AccountAllowedFor(15, 169, ImageBillingSize4K, "3:4", 0))
+	require.False(t, settings.AccountAllowedFor(15, 169, ImageBillingSize2K, "9:16", 0))
+	require.True(t, settings.AccountAllowedFor(15, 168, ImageBillingSize4K, "9:16", 0))
+	require.ElementsMatch(t, []int64{169}, settings.ConstrainedButNotAllowedAccountIDsFor(15, ImageBillingSize4K, "9:16", 0))
 }
 
 func TestParseGeminiImageBillingRequestInfo(t *testing.T) {

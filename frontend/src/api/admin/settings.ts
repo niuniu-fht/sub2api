@@ -1527,6 +1527,7 @@ export interface ImageBillingAccountRoutingSettings {
 export interface GeminiImageBillingRoutingRule {
   tier: '1K' | '2K' | '4K' | string;
   aspect_ratio: string;
+  image_counts?: number[];
   account_ids: number[];
 }
 

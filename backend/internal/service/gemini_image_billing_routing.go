@@ -16,8 +16,9 @@ func (s *GatewayService) geminiImageBillingForcedAccountIDs(ctx context.Context,
 		tier = ImageBillingSize1K
 	}
 	aspectRatio = ImageBillingSchedulingAspectRatioFromContext(ctx)
+	imageCount := ImageBillingSchedulingImageCountFromContext(ctx)
 	settings := s.settingService.GetGeminiImageBillingRoutingSettingsCached(ctx)
-	accountIDs = settings.AccountIDsFor(*groupID, tier, aspectRatio)
+	accountIDs = settings.AccountIDsFor(*groupID, tier, aspectRatio, imageCount)
 	return accountIDs, tier, aspectRatio, len(accountIDs) > 0
 }
 
@@ -131,12 +132,13 @@ func (s *GatewayService) filterGeminiImageBillingDefaultAccounts(ctx context.Con
 		tier = ImageBillingSize1K
 	}
 	aspectRatio := ImageBillingSchedulingAspectRatioFromContext(ctx)
+	imageCount := ImageBillingSchedulingImageCountFromContext(ctx)
 	settings := s.settingService.GetGeminiImageBillingRoutingSettingsCached(ctx)
 
 	filtered := accounts[:0]
 	skippedIDs := make([]int64, 0)
 	for _, account := range accounts {
-		if settings.AccountAllowedFor(*groupID, account.ID, tier, aspectRatio) {
+		if settings.AccountAllowedFor(*groupID, account.ID, tier, aspectRatio, imageCount) {
 			filtered = append(filtered, account)
 			continue
 		}
@@ -162,6 +164,7 @@ func (s *GatewayService) geminiImageBillingDefaultExclusions(ctx context.Context
 		tier = ImageBillingSize1K
 	}
 	aspectRatio := ImageBillingSchedulingAspectRatioFromContext(ctx)
+	imageCount := ImageBillingSchedulingImageCountFromContext(ctx)
 	settings := s.settingService.GetGeminiImageBillingRoutingSettingsCached(ctx)
-	return settings.ConstrainedButNotAllowedAccountIDsFor(*groupID, tier, aspectRatio)
+	return settings.ConstrainedButNotAllowedAccountIDsFor(*groupID, tier, aspectRatio, imageCount)
 }

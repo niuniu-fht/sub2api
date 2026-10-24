@@ -513,6 +513,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		imageRouting := service.ParseGeminiImageBillingRequestInfo(body)
 		ctx := service.WithImageBillingSchedulingTier(c.Request.Context(), imageRouting.Tier)
 		ctx = service.WithImageBillingSchedulingAspectRatio(ctx, imageRouting.AspectRatio)
+		ctx = service.WithImageBillingSchedulingImageCount(ctx, imageRouting.RefImageCount)
 		c.Request = c.Request.WithContext(ctx)
 	}
 

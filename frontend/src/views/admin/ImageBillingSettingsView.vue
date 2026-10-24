@@ -685,6 +685,7 @@ type OpenAIRule = {
 type GeminiRule = {
   tiers: BillingTier[]
   aspect_ratios: string[]
+  image_counts: number[]
   account_ids: number[]
 }
 
@@ -943,7 +944,7 @@ type ImageBillingRoutingSettingsInput = {
 }
 
 type GeminiRoutingSettingsInput = {
-  groups?: Record<string, { rules?: Array<{ tier?: string; aspect_ratio?: string; account_ids?: number[] }> }>
+  groups?: Record<string, { rules?: Array<{ tier?: string; aspect_ratio?: string; image_counts?: number[]; account_ids?: number[] }> }>;
 }
 
 function applyOpenAIRouting(settings: ImageBillingRoutingSettingsInput): void {
@@ -1004,7 +1005,7 @@ function applyGeminiRouting(settings: GeminiRoutingSettingsInput): void {
       const key = accountIDs.join(',')
       let target = index.get(key)
       if (!target) {
-        target = { tiers: [], aspect_ratios: [], account_ids: accountIDs }
+        target = { tiers: [], aspect_ratios: [], image_counts: rule.image_counts ?? [], account_ids: accountIDs }
         index.set(key, target)
         merged.push(target)
       }
@@ -1045,7 +1046,7 @@ type ImageBillingRoutingPayload = {
 }
 
 type GeminiRoutingPayload = {
-  groups: Record<string, { rules: Array<{ tier: BillingTier; aspect_ratio: string; account_ids: number[] }> }>
+  groups: Record<string, { rules: Array<{ tier: BillingTier; aspect_ratio: string; image_counts?: number[]; account_ids: number[] }> }>
 }
 
 function buildOpenAIRoutingPayload(): ImageBillingRoutingPayload {
@@ -1094,12 +1095,15 @@ function buildGeminiRoutingPayload(): GeminiRoutingPayload {
       for (const tier of rule.tiers) {
         if (!normalizeTier(tier)) continue
         for (const ratio of rule.aspect_ratios) {
-          const key = `${tier}:${ratio}`
+          const countsKey = rule.image_counts.length > 0 ? rule.image_counts.join('-') : 'any'
+          const key = `${tier}:${ratio}:${countsKey}`
           const existing = merged.get(key)
           if (existing) {
             existing.account_ids = normalizeAccountIDs([...existing.account_ids, ...accountIDs])
           } else {
-            merged.set(key, { tier, aspect_ratio: ratio, account_ids: accountIDs })
+            const entry: GeminiRoutingPayload['groups'][string]['rules'][number] = { tier, aspect_ratio: ratio, account_ids: accountIDs }
+            if (rule.image_counts.length > 0) entry.image_counts = [...rule.image_counts]
+            merged.set(key, entry)
           }
         }
       }
@@ -1256,6 +1260,7 @@ function confirmRuleEditor(): void {
     const rule: GeminiRule = {
       tiers: [...editorDraft.tiers],
       aspect_ratios: [...editorDraft.aspect_ratios],
+      image_counts: [...editorDraft.image_counts],
       account_ids: [...editorDraft.account_ids],
     }
     if (editorIndex.value === null) geminiRules[key].push(rule)

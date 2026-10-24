@@ -999,7 +999,8 @@ func (s *BatchImagePublicService) geminiBatchImageRoutingAccountIDs(ctx context.
 		return nil
 	}
 	settings := s.SettingService.GetGeminiImageBillingRoutingSettingsCached(ctx)
-	return settings.AccountIDsFor(*groupID, NormalizeImageBillingTierOrDefault(imageSize), aspectRatio)
+	// 批量生图无逐请求参考图数上下文,传 -1 表示数量不受限,仅命中未配参考图条件的泛化规则。
+	return settings.AccountIDsFor(*groupID, NormalizeImageBillingTierOrDefault(imageSize), aspectRatio, -1)
 }
 
 func (s *BatchImagePublicService) listCandidateAccounts(ctx context.Context, groupID *int64, platform string) ([]Account, error) {
