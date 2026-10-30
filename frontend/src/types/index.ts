@@ -237,6 +237,7 @@ export interface PublicSettings {
   site_subtitle: string
   api_base_url: string
   contact_info: string
+  contact_info_label: string
   doc_url: string
   home_content: string
   compact_home_enabled: boolean

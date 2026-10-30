@@ -663,6 +663,10 @@ export default {
         contactInfo: '联系QQ群',
         contactInfoPlaceholder: '例如：77889900',
         contactInfoHint: '填写QQ群号，将显示在顶部导航和用户菜单中，点击可复制',
+        contactInfoLabel: '客服入口名称',
+        contactInfoLabelPlaceholder: '例如：联系QQ群',
+        contactInfoLabelHint: '顶部导航和用户菜单中客服入口的显示名称，留空默认显示「联系QQ群」。',
+
         docUrl: '文档链接',
         docUrlHint: '文档网站的链接。留空则隐藏文档链接。',
         docUrlPlaceholder: 'https://docs.example.com',

@@ -671,6 +671,10 @@ export default {
         contactInfo: 'Contact QQ Group',
         contactInfoPlaceholder: 'e.g., 77889900',
         contactInfoHint: 'Enter a QQ group number. It appears in the top navigation and user menu and can be copied.',
+        contactInfoLabel: 'Contact entry label',
+        contactInfoLabelPlaceholder: 'e.g., Contact QQ Group',
+        contactInfoLabelHint: 'Display name of the contact entry in the top nav and user menu; defaults to Contact QQ Group if empty.',
+
         docUrl: 'Documentation URL',
         docUrlPlaceholder: 'https://docs.example.com',
         docUrlHint: 'Link to your documentation site. Leave empty to hide the documentation link.',

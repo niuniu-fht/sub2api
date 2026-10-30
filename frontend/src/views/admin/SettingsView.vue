@@ -6653,7 +6653,7 @@
                 <label
                   class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
                 >
-                  {{ t("admin.settings.site.contactInfo") }}
+                  {{ form.contact_info_label || t("admin.settings.site.contactInfo") }}
                 </label>
                 <input
                   v-model="form.contact_info"
@@ -6663,6 +6663,20 @@
                 />
                 <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                   {{ t("admin.settings.site.contactInfoHint") }}
+                </p>
+                <label
+                  class="mb-2 mt-4 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{ t("admin.settings.site.contactInfoLabel") }}
+                </label>
+                <input
+                  v-model="form.contact_info_label"
+                  type="text"
+                  class="input"
+                  :placeholder="t('admin.settings.site.contactInfoLabelPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.site.contactInfoLabelHint") }}
                 </p>
               </div>
 
@@ -9804,6 +9818,7 @@ const form = reactive<SettingsForm>({
   site_subtitle: "Subscription to API Conversion Platform",
   api_base_url: "",
   contact_info: "",
+  contact_info_label: "",
   doc_url: "",
   home_content: "",
   compact_home_enabled: false,
@@ -11511,6 +11526,7 @@ async function saveSettings() {
       site_subtitle: form.site_subtitle,
       api_base_url: form.api_base_url,
       contact_info: form.contact_info,
+      contact_info_label: form.contact_info_label,
       doc_url: form.doc_url,
       home_content: form.home_content,
       compact_home_enabled: form.compact_home_enabled,

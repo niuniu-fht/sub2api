@@ -47,7 +47,7 @@
           @click="copyContactInfo"
         >
           <Icon name="chatBubble" size="sm" />
-          <span class="hidden md:inline">{{ t('common.contactGroup') }}</span>
+          <span class="hidden md:inline">{{ contactInfoLabel || t('common.contactGroup') }}</span>
           <span class="max-w-[9rem] truncate">{{ contactInfo }}</span>
         </button>
 
@@ -291,6 +291,7 @@ const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
+const contactInfoLabel = computed(() => appStore.contactInfoLabel)
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
