@@ -1514,7 +1514,8 @@ export interface ImageBillingGroupAccountRouting {
 
 export interface ImageBillingRoutingRule {
   quality: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'unmatched';
-  tier: '1K' | '2K' | '4K';
+  // 1K/2K/4K 或 '*'(全部档位,仅 Gemini 标签页)
+  tier: string;
   image_counts?: number[];
   mode?: 'priority' | 'round_robin';
   account_ids: number[];

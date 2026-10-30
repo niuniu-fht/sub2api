@@ -514,17 +514,26 @@ func isGeminiCompatibleImageModel(model string) bool {
 		(strings.HasSuffix(model, "-image") || strings.Contains(model, "-image-"))
 }
 
+// validateCompatibleImagesModel 兼容 OpenAI 协议的 images 端点:任意非空模型名
+// 均放行,具体路由到哪个账号由调度与账号能力(模型映射/白名单)决定。
 func validateCompatibleImagesModel(model string) error {
-	if isGeminiCompatibleImageModel(model) {
-		return nil
+	if strings.TrimSpace(model) == "" {
+		return fmt.Errorf("images endpoint requires an image model")
 	}
-	return validateOpenAIImagesModel(model)
+	return nil
 }
 
 // RequiredCapabilityForModel also applies the API-key-only fence when channel
 // mapping introduces a compatible provider model after request parsing.
+// 非 gpt-image-/grok-imagine/gemini 图片模型的外来名字(如 seedream-5.0-flash)
+// 固定 APIKey 能力:显式约束到 openai 兼容 APIKey 账号,避免唯一可用的是 OAuth
+// 账号时被 Native 选中后按 gpt-image 协议打上游必败。
 func (req *OpenAIImagesRequest) RequiredCapabilityForModel(model string) OpenAIImagesCapability {
 	if isGeminiCompatibleImageModel(model) {
+		return OpenAIImagesCapabilityAPIKey
+	}
+	model = strings.ToLower(strings.TrimSpace(model))
+	if !isOpenAIImageGenerationModel(model) {
 		return OpenAIImagesCapabilityAPIKey
 	}
 	return req.RequiredCapability

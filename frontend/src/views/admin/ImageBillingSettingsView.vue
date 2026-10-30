@@ -454,7 +454,7 @@
           <div class="text-sm font-medium text-gray-700 dark:text-gray-200">{{ t('admin.imageBilling.routing.editor.tier') }}</div>
           <div class="mt-2 flex flex-wrap gap-2">
             <button
-              v-for="tier in billingTiers"
+              v-for="tier in editorTierOptions"
               :key="tier"
               type="button"
               class="rounded-full border px-3.5 py-1.5 text-sm font-semibold transition"
@@ -463,10 +463,10 @@
                 : 'border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-700 dark:border-dark-600 dark:bg-dark-900 dark:text-gray-300 dark:hover:border-emerald-700'"
               @click="toggleEditorTier(tier)"
             >
-              {{ tier }}
+              {{ tierLabel(tier) }}
             </button>
           </div>
-          <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.routing.editor.tierHint') }}</p>
+          <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">{{ editorTierHint }}</p>
         </div>
 
         <!-- 参考图数量(edits 生效) -->
@@ -676,14 +676,14 @@ type RoutingMode = 'priority' | 'round_robin'
 
 type OpenAIRule = {
   qualities: ImageQuality[]
-  tiers: BillingTier[]
+  tiers: string[]
   image_counts: number[]
   mode: RoutingMode
   account_ids: number[]
 }
 
 type GeminiRule = {
-  tiers: BillingTier[]
+  tiers: string[]
   aspect_ratios: string[]
   image_counts: number[]
   account_ids: number[]
@@ -692,6 +692,8 @@ type GeminiRule = {
 const billingTiers: BillingTier[] = ['1K', '2K', '4K']
 const imageQualities: ImageQuality[] = ['low', 'medium', 'high', 'xhigh', 'max', 'unmatched']
 const routingModes: RoutingMode[] = ['priority', 'round_robin']
+
+const geminiTierOptions = ['*', '1K', '2K', '4K']
 
 const geminiAspectRatioOptions = [
   { value: '*', labelKey: 'all' },
@@ -764,7 +766,7 @@ const editorIndex = ref<number | null>(null)
 const editorSearch = ref('')
 const editorDraft = reactive<{
   qualities: ImageQuality[]
-  tiers: BillingTier[]
+  tiers: string[]
   image_counts: number[]
   aspect_ratios: string[]
   mode: RoutingMode
@@ -853,9 +855,14 @@ function normalizeQuality(value?: string): ImageQuality | null {
   return (imageQualities as string[]).includes(quality) ? (quality as ImageQuality) : null
 }
 
-function normalizeTier(value?: string): BillingTier | null {
+function normalizeTier(value?: string): string | null {
   const tier = String(value || '').trim().toUpperCase()
+  if (tier === '*') return editorPlatform.value === 'gemini' ? tier : null
   return tier === '1K' || tier === '2K' || tier === '4K' ? tier : null
+}
+
+function tierLabel(value: string): string {
+  return value === '*' ? t('admin.imageBilling.aspect.all') : value
 }
 
 function normalizeGeminiRatio(value?: string): string {
@@ -871,10 +878,16 @@ function accountBelongsToGroup(account: Account, groupId: number): boolean {
 
 function accountOptionsForGroupPlatform(groupId: number, platform: 'openai' | 'gemini'): Account[] {
   const allowedPlatforms = platform === 'gemini' ? ['gemini'] : ['openai', 'grok']
+  const group = groups.value.find((item) => item.id === groupId)
+  const isComposite = String(group?.platform || '').toLowerCase() === 'composite'
   return accounts.value
     .filter((account) => {
-      const platform = String(account.platform || '').toLowerCase()
-      if (!allowedPlatforms.includes(platform)) return false
+      const accountPlatform = String(account.platform || '').toLowerCase()
+      if (!allowedPlatforms.includes(accountPlatform)) {
+        // composite 分组的 OpenAI 页:组内开了桥接开关的 gemini 账号实际可被
+        // OpenAI 生图调度选中(协议转换兜底),一并列出供配置。
+        if (!(isComposite && platform === 'openai' && accountPlatform === 'gemini' && account.extra?.gemini_image_bridge === true)) return false
+      }
       if (account.status !== 'active' || account.schedulable !== true) return false
       return accountBelongsToGroup(account, groupId)
     })
@@ -902,6 +915,16 @@ function aspectRatioLabel(value: string): string {
   const ratio = normalizeGeminiRatio(value)
   return ratio === '*' ? t('admin.imageBilling.aspect.all') : ratio
 }
+
+const editorTierOptions = computed<string[]>(() =>
+  editorPlatform.value === 'gemini' ? geminiTierOptions : billingTiers
+)
+
+const editorTierHint = computed(() =>
+  editorPlatform.value === 'gemini'
+    ? t('admin.imageBilling.routing.editor.tierHintGemini')
+    : t('admin.imageBilling.routing.editor.tierHint')
+)
 
 function enabledAccountIDSetForGroupPlatform(groupId: number, platform: 'openai' | 'gemini'): Set<number> {
   return new Set(accountOptionsForGroupPlatform(groupId, platform).map((account) => account.id))
@@ -1041,12 +1064,12 @@ function pruneRoutingToEnabledAccounts(): void {
 // ===================== 路由:保存 =====================
 type ImageBillingRoutingPayload = {
   groups: Record<string, {
-    rules: Array<{ quality: ImageQuality; tier: BillingTier; image_counts?: number[]; mode: RoutingMode; account_ids: number[] }>
+    rules: Array<{ quality: ImageQuality; tier: string; image_counts?: number[]; mode: RoutingMode; account_ids: number[] }>
   }>
 }
 
 type GeminiRoutingPayload = {
-  groups: Record<string, { rules: Array<{ tier: BillingTier; aspect_ratio: string; image_counts?: number[]; account_ids: number[] }> }>
+  groups: Record<string, { rules: Array<{ tier: string; aspect_ratio: string; image_counts?: number[]; account_ids: number[] }> }>
 }
 
 function buildOpenAIRoutingPayload(): ImageBillingRoutingPayload {
@@ -1194,7 +1217,7 @@ function toggleEditorImageCount(count: number): void {
   }
 }
 
-function toggleEditorTier(tier: BillingTier): void {
+function toggleEditorTier(tier: string): void {
   const index = editorDraft.tiers.indexOf(tier)
   if (index === -1) editorDraft.tiers.push(tier)
   else if (editorDraft.tiers.length > 1) editorDraft.tiers.splice(index, 1)

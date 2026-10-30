@@ -53,6 +53,7 @@ export default {
         qualityHint: 'Matches when the request quality equals any selected option',
         tier: 'Resolution Tier (multi-select)',
         tierHint: 'Classified into 1K/2K/4K by total pixels or requested size',
+tierHintGemini: 'Pick which size tiers this rule applies to; Any matches requests regardless of tier. Routing matches the imageSize parameter declared by the client, so requests without it hit the Any rule.',
       imageCount: 'Reference image count (edits only)',
       imageCountAny: 'Any',
       imageCountHint: 'Matched by the number of reference images in the request; 0 = pure text-to-image (no references). Any applies to all counts. Applies to both OpenAI images and native Gemini image requests; use it to route requests to pools that only accept specific reference image counts.',

@@ -55,6 +55,7 @@ export default {
         qualityHint: '请求参数 quality 命中其中任意一项即匹配',
         tier: '分辨率档位(可多选)',
         tierHint: '按图片总像素或请求 size 归入 1K/2K/4K',
+tierHintGemini: '选择此规则生效的出图档位;选「全部」则对任意档位生效。注意:路由按请求声明的 imageSize 参数匹配,客户端未声明时会命中「全部」规则。',
       imageCount: '参考图数量(edits 生效)',
       imageCountAny: '不限',
       imageCountHint: '按请求携带的参考图张数匹配;0=纯文生图(无参考图),选「不限」则对任意数量生效。OpenAI 生图与 Gemini 原生生图均生效,用于把请求路由到只支持特定参考图数量的号池。',

@@ -84,6 +84,29 @@ type OpenAIImageBillingRoutingRule struct {
 
 const GeminiImageBillingAspectRatioAny = "*"
 
+// GeminiImageBillingTierAny Gemini 路由规则的"全部档位"通配值:请求未声明
+// imageConfig.imageSize 时只会命中通配规则,避免全部按 1K 误配。
+const GeminiImageBillingTierAny = "*"
+
+// normalizeGeminiImageBillingRuleTier 规则档位归一化:1K/2K/4K 精确值或通配 *,
+// 其他值归为通配(全部档位),不落入默认 1K 造成误配。
+func normalizeGeminiImageBillingRuleTier(tier string) string {
+	tier = strings.ToUpper(strings.TrimSpace(tier))
+	switch tier {
+	case ImageBillingSize1K, ImageBillingSize2K, ImageBillingSize4K:
+		return tier
+	case "*", "ALL", "ANY", "全部", "全部档位":
+		return GeminiImageBillingTierAny
+	default:
+		return GeminiImageBillingTierAny
+	}
+}
+
+// geminiImageBillingRuleMatchesTier 档位匹配:精确值或通配全部档位。
+func geminiImageBillingRuleMatchesTier(rule GeminiImageBillingRoutingRule, tier string) bool {
+	return rule.Tier == tier || rule.Tier == GeminiImageBillingTierAny
+}
+
 type GeminiImageBillingRoutingRule struct {
 	Tier        string  `json:"tier"`
 	AspectRatio string  `json:"aspect_ratio"`
@@ -377,7 +400,7 @@ func NormalizeGeminiImageBillingRoutingSettings(settings GeminiImageBillingRouti
 		rules := make([]GeminiImageBillingRoutingRule, 0, len(routing.Rules))
 		seenRules := make(map[string]struct{}, len(routing.Rules))
 		for _, rule := range routing.Rules {
-			tier := NormalizeImageBillingTierOrDefault(rule.Tier)
+			tier := normalizeGeminiImageBillingRuleTier(rule.Tier)
 			aspectRatio := NormalizeGeminiImageBillingAspectRatio(rule.AspectRatio)
 			if aspectRatio == "" {
 				aspectRatio = GeminiImageBillingAspectRatioAny
@@ -467,13 +490,13 @@ func (s GeminiImageBillingRoutingSettings) AccountIDsFor(groupID int64, tier str
 	if !ok {
 		return nil
 	}
-	tier = NormalizeImageBillingTierOrDefault(tier)
+	tier = normalizeGeminiImageBillingRuleTier(tier)
 	aspectRatio = NormalizeGeminiImageBillingAspectRatio(aspectRatio)
 	// 参考图数量专用规则优先;数量不限的泛化规则作为同档位/比例下的兜底。
 	var generic *GeminiImageBillingRoutingRule
 	for i := range routing.Rules {
 		rule := &routing.Rules[i]
-		if rule.Tier != tier || len(rule.AccountIDs) == 0 {
+		if !geminiImageBillingRuleMatchesTier(*rule, tier) || len(rule.AccountIDs) == 0 {
 			continue
 		}
 		if rule.AspectRatio != aspectRatio && rule.AspectRatio != GeminiImageBillingAspectRatioAny {
@@ -503,7 +526,7 @@ func (s GeminiImageBillingRoutingSettings) AccountAllowedFor(groupID int64, acco
 	if !ok {
 		return true
 	}
-	tier = NormalizeImageBillingTierOrDefault(tier)
+	tier = normalizeGeminiImageBillingRuleTier(tier)
 	aspectRatio = NormalizeGeminiImageBillingAspectRatio(aspectRatio)
 
 	constrained := false
@@ -512,7 +535,7 @@ func (s GeminiImageBillingRoutingSettings) AccountAllowedFor(groupID int64, acco
 			continue
 		}
 		constrained = true
-		if rule.Tier == tier &&
+		if geminiImageBillingRuleMatchesTier(rule, tier) &&
 			(rule.AspectRatio == aspectRatio || rule.AspectRatio == GeminiImageBillingAspectRatioAny) &&
 			geminiImageBillingRuleMatchesImageCount(rule, imageCount) {
 			return true

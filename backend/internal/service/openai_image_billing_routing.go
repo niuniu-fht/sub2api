@@ -185,6 +185,11 @@ func (s *OpenAIGatewayService) selectGeminiImageBridgeAccountForImages(
 	if s == nil || s.schedulerSnapshot == nil {
 		return nil, decision, false, nil
 	}
+	// 桥接兜底只承接与图片相关的模型名:不含 "image" 的名字(如 chat 文本模型)
+	// 不被桥接吞掉,直接走常规调度报无可用账号。
+	if !isOpenAIImageBillingModelAlias(requestedModel) {
+		return nil, decision, false, nil
+	}
 	accounts, _, err := s.schedulerSnapshot.ListSchedulableAccounts(ctx, groupID, PlatformGemini, false)
 	if err != nil || len(accounts) == 0 {
 		return nil, decision, false, nil
