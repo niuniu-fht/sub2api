@@ -7,8 +7,11 @@ import (
 	"strings"
 )
 
+// 门控说明:此处不再要求 requestedModel 命中内置 gemini 生图名白名单——
+// 账号映射键(如 nano-banana-2-1)是合法的可路由模型名,是否支持由下方
+// isModelSupportedByAccountWithContext 按映射逐账号判定。
 func (s *GatewayService) geminiImageBillingForcedAccountIDs(ctx context.Context, groupID *int64, requestedModel string) (accountIDs []int64, tier string, aspectRatio string, ok bool) {
-	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 || !isImageGenerationModel(requestedModel) {
+	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 {
 		return nil, "", "", false
 	}
 	tier = ImageBillingSchedulingTierFromContext(ctx)
@@ -124,7 +127,7 @@ func (s *GatewayService) selectForcedGeminiImageBillingAccount(
 }
 
 func (s *GatewayService) filterGeminiImageBillingDefaultAccounts(ctx context.Context, groupID *int64, requestedModel string, accounts []Account) []Account {
-	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 || len(accounts) == 0 || !isImageGenerationModel(requestedModel) {
+	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 || len(accounts) == 0 {
 		return accounts
 	}
 	tier := ImageBillingSchedulingTierFromContext(ctx)
@@ -156,7 +159,7 @@ func (s *GatewayService) filterGeminiImageBillingDefaultAccounts(ctx context.Con
 }
 
 func (s *GatewayService) geminiImageBillingDefaultExclusions(ctx context.Context, groupID *int64, requestedModel string) []int64 {
-	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 || !isImageGenerationModel(requestedModel) {
+	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 {
 		return nil
 	}
 	tier := ImageBillingSchedulingTierFromContext(ctx)

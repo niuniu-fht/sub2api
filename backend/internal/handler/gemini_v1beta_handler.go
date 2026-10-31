@@ -523,13 +523,14 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 	fs := NewFailoverState(h.maxAccountSwitchesGemini, hasBoundSession)
 
-	if service.IsGeminiImageGenerationModel(modelName) {
-		imageRouting := service.ParseGeminiImageBillingRequestInfo(body)
-		ctx := service.WithImageBillingSchedulingTier(c.Request.Context(), imageRouting.Tier)
-		ctx = service.WithImageBillingSchedulingAspectRatio(ctx, imageRouting.AspectRatio)
-		ctx = service.WithImageBillingSchedulingImageCount(ctx, imageRouting.RefImageCount)
-		c.Request = c.Request.WithContext(ctx)
-	}
+	// 对所有 generateContent 请求提取档位/比例/参考图数(提取无副作用):
+	// 账号映射键(如 nano-banana-2-1)是合法的生图模型名,不能按内置白名单
+	// 过滤,否则映射模型的参考图/档位路由永不生效。
+	imageRouting := service.ParseGeminiImageBillingRequestInfo(body)
+	ctx := service.WithImageBillingSchedulingTier(c.Request.Context(), imageRouting.Tier)
+	ctx = service.WithImageBillingSchedulingAspectRatio(ctx, imageRouting.AspectRatio)
+	ctx = service.WithImageBillingSchedulingImageCount(ctx, imageRouting.RefImageCount)
+	c.Request = c.Request.WithContext(ctx)
 
 	// 单账号分组提前设置 SingleAccountRetry 标记，让 Service 层首次 503 就不设模型限流标记。
 	// 避免单账号分组收到 503 (MODEL_CAPACITY_EXHAUSTED) 时设 29s 限流，导致后续请求连续快速失败。
