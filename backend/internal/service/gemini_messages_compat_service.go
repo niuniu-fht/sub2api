@@ -1685,8 +1685,10 @@ func (s *GeminiMessagesCompatService) checkErrorPolicyInLoop(
 }
 
 func (s *GeminiMessagesCompatService) shouldRetryGeminiUpstreamError(account *Account, statusCode int) bool {
+	// 502 不原地重试:确定性/渠道性错误(如上游模型不支持该请求)应立即以
+	// UpstreamFailoverError 抛出,由调度层切换到链中下一个账号。
 	switch statusCode {
-	case 429, 500, 502, 503, 504, 529:
+	case 429, 500, 503, 504, 529:
 		return true
 	case 403:
 		// GeminiCli OAuth occasionally returns 403 transiently (activation/quota propagation); allow retry.

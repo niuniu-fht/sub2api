@@ -173,6 +173,12 @@
                           >
                             {{ aspectRatioLabel(ratio) }}
                           </span>
+                          <template v-if="(rule as GeminiRule).image_counts?.length">
+                            <span class="text-gray-400">×</span>
+                            <span class="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-200">
+                              {{ t('admin.imageBilling.routing.editor.imageCountShort') }} {{ (rule as GeminiRule).image_counts.join('/') }}
+                            </span>
+                          </template>
                         </template>
                       </div>
                     </td>
@@ -857,7 +863,7 @@ function normalizeQuality(value?: string): ImageQuality | null {
 
 function normalizeTier(value?: string): string | null {
   const tier = String(value || '').trim().toUpperCase()
-  if (tier === '*') return editorPlatform.value === 'gemini' ? tier : null
+  if (tier === '*') return tier
   return tier === '1K' || tier === '2K' || tier === '4K' ? tier : null
 }
 
@@ -1175,6 +1181,7 @@ function openRuleEditor(ruleIndex?: number): void {
     } else {
       const rule = source as GeminiRule
       editorDraft.aspect_ratios = [...rule.aspect_ratios]
+      editorDraft.image_counts = [...rule.image_counts]
     }
     editorDraft.tiers = [...source.tiers]
     editorDraft.account_ids = [...source.account_ids]
