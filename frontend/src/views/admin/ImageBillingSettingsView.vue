@@ -1025,7 +1025,11 @@ function applyGeminiRouting(settings: GeminiRoutingSettingsInput): void {
       const ratio = normalizeGeminiRatio(rule.aspect_ratio)
       const accountIDs = normalizeAccountIDs(rule.account_ids)
       if (accountIDs.length === 0) continue
-      const key = accountIDs.join(',')
+      // 聚合 key 必须包含参考图数量签名: 同账号链下「指定数量」与「不限」
+      // 是不同的路由意图(数量专用规则优先),合并会导致不限规则被吞。
+      const counts = rule.image_counts ?? []
+      const countsKey = counts.length > 0 ? counts.join('-') : 'any'
+      const key = accountIDs.join(',') + '|' + countsKey
       let target = index.get(key)
       if (!target) {
         target = { tiers: [], aspect_ratios: [], image_counts: rule.image_counts ?? [], account_ids: accountIDs }
