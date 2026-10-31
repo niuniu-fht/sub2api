@@ -326,7 +326,9 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_ExplicitSizeRequiresNative
 	require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapability)
 }
 
-func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsNonImageModel(t *testing.T) {
+// 放开模型名限制后,任意非空模型名都可进入 images 端点;路由到哪个账号由
+// APIKey 能力围栏与账号模型白名单决定,空模型名仍然拒绝。
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_AcceptsArbitraryModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := []byte(`{"model":"gpt-5.4","prompt":"draw a cat"}`)
 
@@ -338,8 +340,28 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_RejectsNonImageModel(t *te
 
 	svc := &OpenAIGatewayService{}
 	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
-	require.Nil(t, parsed)
-	require.ErrorContains(t, err, `images endpoint requires an image model, got "gpt-5.4"`)
+	require.NoError(t, err)
+	require.NotNil(t, parsed)
+	require.Equal(t, "gpt-5.4", parsed.Model)
+	require.Equal(t, OpenAIImagesCapabilityAPIKey, parsed.RequiredCapabilityForModel("gpt-5.4"))
+}
+
+// 空模型名沿用既有默认行为:补 gpt-image-2 后按 Basic 能力进入调度。
+func TestOpenAIGatewayServiceParseOpenAIImagesRequest_EmptyModelDefaults(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"prompt":"draw a cat"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+	require.NotNil(t, parsed)
+	require.Equal(t, "gpt-image-2", parsed.Model)
 }
 
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_AllowsGrokImageModels(t *testing.T) {
