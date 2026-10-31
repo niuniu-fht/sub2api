@@ -69,15 +69,23 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 	for _, id := range agModelIDs {
 		agModels = append(agModels, gemini.FallbackModel(id))
 	}
+	// 分组内账号的模型映射键汇总(与 OpenAI /v1/models 同源): 上游只 advertised
+	// 自己的原生名,账号映射的自定义名(如 nano-banana-2-1)不进列表会导致
+	// 「列表展示名」与「可调用名」不一致,这里统一并入。
+	mappingModelIDs := h.gatewayService.GetAvailableModels(c.Request.Context(), apiKey.GroupID, service.PlatformGemini)
+	mappingModels := make([]gemini.Model, 0, len(mappingModelIDs))
+	for _, id := range mappingModelIDs {
+		mappingModels = append(mappingModels, gemini.FallbackModel(id))
+	}
 	if forcePlatform == service.PlatformAntigravity {
-		c.JSON(http.StatusOK, gemini.ModelsListResponse{Models: filterGeminiModels(agModels)})
+		c.JSON(http.StatusOK, gemini.ModelsListResponse{Models: filterGeminiModels(mergeGeminiModelLists(agModels, mappingModels))})
 		return
 	}
 
 	account, err := h.geminiCompatService.SelectAccountForAIStudioEndpoints(c.Request.Context(), apiKey.GroupID)
 	if err != nil {
-		if len(agModels) > 0 {
-			c.JSON(http.StatusOK, gemini.ModelsListResponse{Models: filterGeminiModels(agModels)})
+		if len(agModels) > 0 || len(mappingModels) > 0 {
+			c.JSON(http.StatusOK, gemini.ModelsListResponse{Models: filterGeminiModels(mergeGeminiModelLists(agModels, mappingModels))})
 			return
 		}
 		markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
@@ -91,11 +99,12 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 		return
 	}
 	if shouldFallbackGeminiModels(res) {
-		c.JSON(http.StatusOK, gemini.ModelsListResponse{Models: filterGeminiModels(mergeGeminiModelLists(gemini.DefaultModels(), agModels))})
+		c.JSON(http.StatusOK, gemini.ModelsListResponse{Models: filterGeminiModels(mergeGeminiModelLists(mergeGeminiModelLists(gemini.DefaultModels(), agModels), mappingModels))})
 		return
 	}
-	if res.StatusCode == http.StatusOK && len(agModels) > 0 {
-		if merged, ok := appendUpstreamGeminiModels(res.Body, agModels); ok {
+	if res.StatusCode == http.StatusOK && (len(agModels) > 0 || len(mappingModels) > 0) {
+		extras := append(append([]gemini.Model{}, agModels...), mappingModels...)
+		if merged, ok := appendUpstreamGeminiModels(res.Body, extras); ok {
 			res.Body = merged
 		}
 	}
