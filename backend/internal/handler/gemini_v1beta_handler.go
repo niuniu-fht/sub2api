@@ -72,10 +72,15 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 	// 分组内账号的模型映射键汇总(与 OpenAI /v1/models 同源): 上游只 advertised
 	// 自己的原生名,账号映射的自定义名(如 nano-banana-2-1)不进列表会导致
 	// 「列表展示名」与「可调用名」不一致,这里统一并入。
-	mappingModelIDs := h.gatewayService.GetAvailableModels(c.Request.Context(), apiKey.GroupID, service.PlatformGemini)
-	mappingModels := make([]gemini.Model, 0, len(mappingModelIDs))
-	for _, id := range mappingModelIDs {
-		mappingModels = append(mappingModels, gemini.FallbackModel(id))
+	var mappingModels []gemini.Model
+	if h.gatewayService != nil && apiKey.GroupID != nil {
+		mappingModelIDs := h.gatewayService.GetAvailableModels(c.Request.Context(), apiKey.GroupID, service.PlatformGemini)
+		if len(mappingModelIDs) > 0 {
+			mappingModels = make([]gemini.Model, 0, len(mappingModelIDs))
+			for _, id := range mappingModelIDs {
+				mappingModels = append(mappingModels, gemini.FallbackModel(id))
+			}
+		}
 	}
 	if forcePlatform == service.PlatformAntigravity {
 		c.JSON(http.StatusOK, gemini.ModelsListResponse{Models: filterGeminiModels(mergeGeminiModelLists(agModels, mappingModels))})
