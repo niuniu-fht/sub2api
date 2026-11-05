@@ -509,6 +509,19 @@ export default {
     usage: {
       title: '使用记录',
       description: '查看和管理所有用户的使用记录',
+      attemptCount: '账号尝试',
+      attemptChain: {
+        title: '账号尝试链路',
+        hint: '本次请求共尝试 {count} 个账号',
+        switchedHint: '请求内切换了账号（共尝试 {count} 个账号），点击查看每次尝试的详情',
+        viewChain: '查看链路',
+        account: '账号',
+        outcome: '结果',
+        duration: '耗时',
+        error: '错误信息',
+        success: '成功',
+        unknownStatus: '未知'
+      },
       userFilter: '用户',
       searchUserPlaceholder: '按邮箱搜索用户...',
       searchApiKeyPlaceholder: '按名称搜索 API 密钥...',

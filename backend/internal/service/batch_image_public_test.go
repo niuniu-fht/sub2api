@@ -36,7 +36,7 @@ func TestBatchImagePublicService_SelectAccountPriority(t *testing.T) {
 			accounts[0].Schedulable = !tt.firstBlocked
 			svc.AccountRepo = &publicBatchImageAccountRepo{accounts: accounts}
 
-			provider, account, err := svc.selectProviderAndAccount(context.Background(), testBatchImageOwner(), BatchImageProviderGeminiAPI, "gemini-2.5-flash-image")
+			provider, account, err := svc.selectProviderAndAccount(context.Background(), testBatchImageOwner(), BatchImageProviderGeminiAPI, "gemini-2.5-flash-image", "", "")
 			require.NoError(t, err)
 			require.NotNil(t, provider)
 			require.NotNil(t, account)

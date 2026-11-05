@@ -203,6 +203,10 @@ type UsageLog struct {
 	ImageSizeBreakdown map[string]int
 	MediaType          *string
 
+	// AccountAttempts 账号尝试链（请求内发生账号切换时非空，按账号去重）。
+	// 仅在链长>1 时由 repo 持久化为 JSONB，管理端接口可见。
+	AccountAttempts []AccountAttempt
+
 	// 视频生成字段（Grok 视频按秒计费；video_count>0 的行不要求 image_size）
 	VideoCount           int
 	VideoResolution      *string

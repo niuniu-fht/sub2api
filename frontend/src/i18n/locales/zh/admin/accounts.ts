@@ -457,6 +457,20 @@ export default {
         viewTempUnschedDetails: '查看临时不可调度详情',
         tempUnschedulableUntil: '预计 {time} 恢复'
       },
+      errorFailover: {
+        title: '图片请求错误自动切换',
+        hint: '图片请求上游错误命中规则时，自动切换到下一个账号重试，且不惩罚该账号（不标记限流/失败/临时不可调度）。',
+        notice: '仅图片相关请求生效（OpenAI Images、Gemini 生图、Gemini 桥接）。状态码与关键词都填写时需同时命中；多条规则任一命中即切换。',
+        addRule: '添加规则',
+        ruleIndex: '规则 #{index}',
+        statusCodes: '状态码',
+        statusCodesPlaceholder: '例如 400, 429',
+        statusCodesHint: '多个状态码用逗号分隔；留空表示任意状态码。',
+        keywords: '关键词',
+        keywordsPlaceholder: '例如 quota exceeded, content_policy',
+        keywordsHint: '多个关键词用逗号分隔，对上游错误内容做包含匹配；留空表示不限关键词。',
+        rulesInvalid: '请至少填写一条包含状态码或关键词的规则。'
+      },
       tempUnschedulable: {
         title: '临时不可调度',
         statusTitle: '临时不可调度状态',

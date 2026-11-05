@@ -1489,6 +1489,23 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			}, nil
 		}
 
+		// 账号级图片错误自动切换策略(error_failover_rules)：命中即换下一个账号，不惩罚该账号
+		// （优先于透传规则与错误策略，且不走 handleGeminiUpstreamError 的状态标记）。
+		if failoverErr := geminiImageErrorFailoverError(ctx, account, resp.StatusCode, respBody); failoverErr != nil {
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				ProxyID:            opsUpstreamProxyID(account),
+				ProxyName:          opsUpstreamProxyName(account),
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: resp.StatusCode,
+				UpstreamRequestID:  requestID,
+				Kind:               "failover",
+				Message:            sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody))),
+				Detail:             s.upstreamErrorDetail(respBody),
+			})
+			return nil, failoverErr
+		}
 		// 错误透传规则：管理员配置的匹配规则优先于账号错误策略，命中即按规则透传。
 		if ptStatus, _, ptErrMsg, ptMatched := applyErrorPassthroughRule(c, PlatformGemini, resp.StatusCode, respBody, resp.StatusCode, "INTERNAL", geminiCustomCodeSkippedClientMessage); ptMatched {
 			return nil, s.writeGoogleError(c, ptStatus, ptErrMsg)

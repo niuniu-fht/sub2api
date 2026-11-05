@@ -911,6 +911,11 @@ func (s *OpenAIGatewayService) handleOpenAIImagesErrorResponse(
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
 
+	// 账号级图片错误自动切换策略：命中即换下一个账号，不惩罚该账号（优先于全局透传规则）。
+	if failoverErr := s.matchImageErrorFailoverPolicy(account, resp.StatusCode, resp.Header, body); failoverErr != nil {
+		return nil, failoverErr
+	}
+
 	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
 	upstreamDetail := ""
 	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {

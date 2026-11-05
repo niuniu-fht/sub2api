@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
@@ -287,6 +288,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if result != nil && result.FirstTokenMs != nil {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
+		// 账号尝试链：每次账号尝试（成功或失败）都记录；同账号原地重试自动合并。
+		recordImageAccountAttempt(c, account, forwardStart, err)
 		if err != nil {
 			if result != nil && result.ImageCount > 0 {
 				reqLog.Warn("openai.images.forward_partial_error_with_image_result",
@@ -343,9 +346,12 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					)
 					return
 				}
-				var failoverErr *service.UpstreamFailoverError
-				if errors.As(err, &failoverErr) {
+			var failoverErr *service.UpstreamFailoverError
+			if errors.As(err, &failoverErr) {
+				// SkipAccountPenalty(账号级错误自动切换策略命中)不上报调度失败,不影响健康熔断与排序。
+				if failoverErr.ShouldReportAccountScheduleFailure() {
 					h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, requestModel, false, result), false, nil, err)
+				}
 					if service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
 						reqLog.Warn("openai.images.upstream_failover_skipped_after_flush",
 							zap.Int64("account_id", account.ID),
@@ -446,6 +452,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			upstreamModel = result.UpstreamModel
 		}
 		sessionID := service.ExtractClientSessionID(c)
+		// 尝试链在 handler 协程内预捕获快照：异步 worker 里不得再访问 gin.Context
+		//（池积压时闭包可能延迟到 ctx 复用后才执行，读到空链甚至其他请求的链）。
+		accountAttempts := service.AccountAttemptsFromContext(c)
 		h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
@@ -461,6 +470,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				APIKeyService:      h.apiKeyService,
 				QuotaPlatform:      quotaPlatform,
 				SessionID:          sessionID,
+				AccountAttempts:    accountAttempts,
 				ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, requestModel, upstreamModel),
 			}); err != nil {
 				logger.L().With(
@@ -487,6 +497,64 @@ func (h *OpenAIGatewayHandler) openAIImagesJSONKeepaliveInterval() time.Duration
 		return 0
 	}
 	return time.Duration(h.cfg.Gateway.ImageNonstreamKeepaliveInterval) * time.Second
+}
+
+// recordImageAccountAttempt 把一次账号尝试写入请求级尝试链（usage_log.account_attempts）。
+// 状态码从 failover/image 两类错误中提取；两者都不匹配时记 0（未拿到上游状态码）。
+func recordImageAccountAttempt(c *gin.Context, account *service.Account, startedAt time.Time, err error) {
+	status := 0
+	msg := ""
+	success := err == nil
+	if err != nil {
+		var failoverErr *service.UpstreamFailoverError
+		var imageErr *service.OpenAIImagesUpstreamError
+		switch {
+		case errors.As(err, &failoverErr):
+			status = failoverErr.StatusCode
+			msg = upstreamAttemptErrorMessage(c, account, failoverErr.ResponseBody, err)
+		case errors.As(err, &imageErr):
+			status = imageErr.StatusCode
+			msg = imageErr.Message
+		default:
+			msg = err.Error()
+		}
+	} else {
+		status = http.StatusOK
+	}
+	service.AppendAccountAttempt(c, account, startedAt, status, msg, success)
+}
+
+const accountAttemptErrorBodyMaxLen = 500
+
+// upstreamAttemptErrorMessage 提取上游真实错误内容用于账号尝试链展示：
+// 优先解析上游响应体中的错误消息字段；遇到传输层占位文案（或解析不出）时，
+// 回退到 ops 错误事件里该账号的真实原因（DNS/超时/连接拒绝等）；再回退原始
+// 响应体截断 / 错误字符串。管理员排查需要看到上游真实返回，而不是
+// "upstream error: 400 (failover)" 这类封装文案。
+func upstreamAttemptErrorMessage(c *gin.Context, account *service.Account, body []byte, fallbackErr error) string {
+	extracted := strings.TrimSpace(service.ExtractUpstreamErrorMessage(body))
+	if extracted == "" || extracted == service.TransportFailoverPlaceholderMessage {
+		if real := service.LastUpstreamEventMessageForAccount(c, account.ID); real != "" {
+			return real
+		}
+	}
+	if extracted != "" {
+		return extracted
+	}
+	if len(body) > 0 {
+		cut := string(body)
+		if len(cut) > accountAttemptErrorBodyMaxLen {
+			cut = cut[:accountAttemptErrorBodyMaxLen]
+			for len(cut) > 0 && !utf8.ValidString(cut) {
+				cut = cut[:len(cut)-1]
+			}
+		}
+		return cut
+	}
+	if fallbackErr != nil {
+		return fallbackErr.Error()
+	}
+	return ""
 }
 
 func isMultipartImagesContentType(contentType string) bool {

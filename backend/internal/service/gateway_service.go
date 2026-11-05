@@ -700,6 +700,7 @@ type UpstreamFailoverError struct {
 	SameAccountRetryMax      int           // 可选的错误级同账号重试上限，低于 handler 默认预算时优先采用
 	RequestScopedTransient   bool          // 故障因素与账号无关（如上游按客户端身份/模型容量降载）：可同账号重试，但不得据此对账号做临时封禁
 	SafeToFailoverAfterWrite bool          // 仅写出 SSE 注释等非语义字节时，仍可在同一客户端流中切换账号
+	SkipAccountPenalty       bool          // 账号级错误自动切换策略(error_failover_rules)命中：切换账号但不惩罚该账号(不标记状态/不临时封禁/不计健康熔断/不上报调度失败)
 	Stage                    GatewayFailureStage
 	Scope                    GatewayFailureScope
 	Reason                   GatewayFailureReason
@@ -726,8 +727,13 @@ func (e *UpstreamFailoverError) IsCredentialFailure() bool {
 // ShouldReportAccountScheduleFailure prevents provider- and request-scoped
 // credential failures from being misattributed to the selected account. Legacy
 // and inference failures retain their existing scheduler-health behavior.
+// SkipAccountPenalty（账号级错误自动切换策略命中）同样不上报调度失败，
+// 使健康熔断与调度排序不受策略命中影响。
 func (e *UpstreamFailoverError) ShouldReportAccountScheduleFailure() bool {
 	if e == nil {
+		return false
+	}
+	if e.SkipAccountPenalty {
 		return false
 	}
 	return !e.IsCredentialFailure() || e.Scope == GatewayFailureScopeAccount
@@ -748,6 +754,10 @@ func (e *sseStreamErrorEventError) Error() string { return "have error in stream
 // 由 handler 层在同账号重试全部用尽、切换账号时调用。
 func (s *GatewayService) TempUnscheduleRetryableError(ctx context.Context, accountID int64, failoverErr *UpstreamFailoverError) {
 	if failoverErr == nil || !failoverErr.RetryableOnSameAccount {
+		return
+	}
+	// 账号级错误自动切换策略命中：换号但不封禁该账号。
+	if failoverErr.SkipAccountPenalty {
 		return
 	}
 	// 请求级瞬时故障与账号健康无关：封禁只会把与故障无关的账号一并摘掉，

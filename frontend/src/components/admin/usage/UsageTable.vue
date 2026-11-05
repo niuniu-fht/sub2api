@@ -258,6 +258,31 @@
           </div>
         </template>
 
+        <!-- 账号尝试次数：>1 表示请求内发生过账号切换，可点击查看尝试链路（仅管理端） -->
+        <template #cell-account_attempts="{ row }">
+          <span
+            v-if="!row.account_attempts || row.account_attempts.length === 0"
+            class="text-sm text-gray-400 dark:text-gray-500"
+          >1</span>
+          <span
+            v-else-if="row.account_attempts.length === 1"
+            class="text-sm text-gray-600 dark:text-gray-300"
+          >1</span>
+          <span v-else class="inline-flex items-center gap-1.5">
+            <span
+              class="inline-flex items-center rounded px-2 py-0.5 text-xs font-bold tabular-nums ring-1 ring-inset bg-amber-100 text-amber-800 ring-amber-200 dark:bg-amber-500/20 dark:text-amber-400 dark:ring-amber-500/30"
+              :title="t('admin.usage.attemptChain.switchedHint', { count: row.account_attempts.length })"
+            >{{ row.account_attempts.length }}</span>
+            <button
+              type="button"
+              class="rounded px-1.5 py-0.5 text-xs font-medium text-primary-600 underline decoration-dashed underline-offset-2 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              @click="openAttemptsModal(row)"
+            >
+              {{ t('admin.usage.attemptChain.viewChain') }}
+            </button>
+          </span>
+        </template>
+
         <template #cell-created_at="{ value }">
           <span class="text-sm text-gray-600 dark:text-gray-400">{{ formatDateTime(value) }}</span>
         </template>
@@ -540,12 +565,20 @@
       </div>
     </div>
   </Teleport>
+
+  <AccountAttemptsModal
+    v-model:show="showAttemptsModal"
+    :attempts="attemptsData"
+    :request-id="attemptsRequestId"
+  />
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import AccountAttemptsModal from '@/components/admin/usage/AccountAttemptsModal.vue'
+import type { AdminUsageAccountAttempt } from '@/types'
 import { formatDateTime, formatReasoningEffort, reasoningEffortValuesEqual } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
@@ -632,6 +665,17 @@ const copiedRequestId = ref<string | null>(null)
 const showAccountBilling = props.showAccountBilling
 const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)
+
+// 账号尝试链弹窗（仅管理端列存在时可用）
+const showAttemptsModal = ref(false)
+const attemptsData = ref<AdminUsageAccountAttempt[]>([])
+const attemptsRequestId = ref<string | null>(null)
+
+const openAttemptsModal = (row: AdminUsageLog) => {
+  attemptsData.value = row.account_attempts ?? []
+  attemptsRequestId.value = row.request_id ?? null
+  showAttemptsModal.value = true
+}
 
 const showIpGeoToolbar = computed(() => props.columns.some((col) => col.key === 'ip_address'))
 

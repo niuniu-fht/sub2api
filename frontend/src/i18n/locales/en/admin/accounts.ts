@@ -409,6 +409,20 @@ export default {
           normal: 'Quota normal'
         },
       },
+      errorFailover: {
+        title: 'Image Request Error Failover',
+        hint: 'When an image request upstream error matches a rule, automatically switch to the next account without penalizing this account (no rate-limit/error/temp-unschedulable marking).',
+        notice: 'Applies to image requests only (OpenAI Images, Gemini image generation, Gemini bridge). When both status codes and keywords are set, both must match; any rule match triggers the switch.',
+        addRule: 'Add Rule',
+        ruleIndex: 'Rule #{index}',
+        statusCodes: 'Status Codes',
+        statusCodesPlaceholder: 'e.g. 400, 429',
+        statusCodesHint: 'Separate codes with commas; leave empty to match any status code.',
+        keywords: 'Keywords',
+        keywordsPlaceholder: 'e.g. quota exceeded, content_policy',
+        keywordsHint: 'Separate keywords with commas; substring match against the upstream error. Leave empty to skip keyword matching.',
+        rulesInvalid: 'Add at least one rule with status codes and/or keywords.'
+      },
       tempUnschedulable: {
         title: 'Temp Unschedulable',
         statusTitle: 'Temp Unschedulable Status',

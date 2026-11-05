@@ -608,6 +608,23 @@ func normalizeOpenAIImageSizeTier(size string) string {
 	return NormalizeImageBillingTierOrDefault(size)
 }
 
+// matchImageErrorFailoverPolicy 图片请求的账号级错误自动切换策略
+// (Account.Credentials 的 error_failover_enabled / error_failover_rules):
+// 上游错误命中规则时返回带 SkipAccountPenalty 的 failover 错误——由 handler 切换到
+// 路由名单的下一个账号,且不对该账号做任何惩罚标记;未命中返回 nil,走原有错误处理。
+func (s *OpenAIGatewayService) matchImageErrorFailoverPolicy(account *Account, statusCode int, respHeader http.Header, respBody []byte) *UpstreamFailoverError {
+	if !account.MatchErrorFailoverRules(statusCode, respBody) {
+		return nil
+	}
+	return &UpstreamFailoverError{
+		StatusCode:         statusCode,
+		ResponseHeaders:    respHeader.Clone(),
+		ResponseBody:       respBody,
+		NextAccountAction:  NextAccountRetry,
+		SkipAccountPenalty: true,
+	}
+}
+
 func (s *OpenAIGatewayService) ForwardImages(
 	ctx context.Context,
 	c *gin.Context,
@@ -744,6 +761,10 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+		// 账号级图片错误自动切换策略：命中即换下一个账号，不惩罚该账号（优先于全局透传规则）。
+		if failoverErr := s.matchImageErrorFailoverPolicy(account, resp.StatusCode, resp.Header, respBody); failoverErr != nil {
+			return nil, failoverErr
+		}
 		// 错误透传规则：命中即按规则原样返回，不再切换账号。
 		if ptStatus, _, ptErrMsg, ptMatched := applyErrorPassthroughRule(c, PlatformOpenAI, resp.StatusCode, respBody, resp.StatusCode, "upstream_error", upstreamMsg); ptMatched {
 			upErr := &OpenAIImagesUpstreamError{StatusCode: ptStatus, ErrorType: "upstream_error", Message: ptErrMsg}

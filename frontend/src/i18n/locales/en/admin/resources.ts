@@ -512,6 +512,19 @@ export default {
     usage: {
       title: 'Usage Records',
       description: 'View and manage all user usage records',
+      attemptCount: 'Account Attempts',
+      attemptChain: {
+        title: 'Account Attempt Chain',
+        hint: 'This request tried {count} accounts',
+        switchedHint: 'Account switching happened in this request ({count} accounts tried). Click to view each attempt',
+        viewChain: 'View chain',
+        account: 'Account',
+        outcome: 'Outcome',
+        duration: 'Duration',
+        error: 'Error',
+        success: 'Success',
+        unknownStatus: 'Unknown'
+      },
       userFilter: 'User',
       searchUserPlaceholder: 'Search user by email...',
       searchApiKeyPlaceholder: 'Search API key by name...',

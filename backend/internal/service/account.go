@@ -136,6 +136,14 @@ type TempUnschedulableRule struct {
 	Description     string   `json:"description"`
 }
 
+// ErrorFailoverRule 图片请求的账号级错误自动切换规则(error_failover_rules):
+// 上游错误命中规则时切换到下一个账号重试,但不对该账号做任何惩罚标记。
+// StatusCodes 与 Keywords 均为可选;同时配置时需同时命中(AND),多条规则任一命中即命中(OR)。
+type ErrorFailoverRule struct {
+	StatusCodes []int    `json:"status_codes"`
+	Keywords    []string `json:"keywords"`
+}
+
 func (a *Account) IsActive() bool {
 	return a.Status == StatusActive
 }
@@ -508,6 +516,131 @@ func parseTempUnschedStrings(value any) []string {
 		}
 	}
 	return out
+}
+
+func (a *Account) IsErrorFailoverEnabled() bool {
+	if a == nil || a.Credentials == nil {
+		return false
+	}
+	raw, ok := a.Credentials["error_failover_enabled"]
+	if !ok || raw == nil {
+		return false
+	}
+	enabled, ok := raw.(bool)
+	return ok && enabled
+}
+
+func (a *Account) GetErrorFailoverRules() []ErrorFailoverRule {
+	if a == nil || a.Credentials == nil {
+		return nil
+	}
+	raw, ok := a.Credentials["error_failover_rules"]
+	if !ok || raw == nil {
+		return nil
+	}
+
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+
+	rules := make([]ErrorFailoverRule, 0, len(arr))
+	for _, item := range arr {
+		entry, ok := item.(map[string]any)
+		if !ok || entry == nil {
+			continue
+		}
+
+		rule := ErrorFailoverRule{
+			StatusCodes: parseErrorFailoverStatusCodes(entry["status_codes"]),
+			Keywords:    parseTempUnschedStrings(entry["keywords"]),
+		}
+		// 空规则(状态码与关键词均未配置)视为无效,跳过。
+		if len(rule.StatusCodes) == 0 && len(rule.Keywords) == 0 {
+			continue
+		}
+
+		rules = append(rules, rule)
+	}
+
+	return rules
+}
+
+func parseErrorFailoverStatusCodes(value any) []int {
+	if value == nil {
+		return nil
+	}
+	var raw []any
+	switch v := value.(type) {
+	case []int:
+		out := make([]int, 0, len(v))
+		for _, item := range v {
+			if item >= 100 && item <= 599 {
+				out = append(out, item)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case []any:
+		raw = v
+	default:
+		return nil
+	}
+
+	out := make([]int, 0, len(raw))
+	for _, item := range raw {
+		code := parseTempUnschedInt(item)
+		if code >= 100 && code <= 599 {
+			out = append(out, code)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// MatchErrorFailoverRules 判定上游错误(状态码+响应体)是否命中账号的图片错误自动切换策略。
+// 命中语义见 ErrorFailoverRule;关键词对响应体做不区分大小写的包含匹配。
+func (a *Account) MatchErrorFailoverRules(statusCode int, body []byte) bool {
+	if !a.IsErrorFailoverEnabled() {
+		return false
+	}
+	rules := a.GetErrorFailoverRules()
+	if len(rules) == 0 {
+		return false
+	}
+
+	var bodyLower string
+	lowered := false
+	for _, rule := range rules {
+		statusOK := len(rule.StatusCodes) == 0
+		for _, code := range rule.StatusCodes {
+			if code == statusCode {
+				statusOK = true
+				break
+			}
+		}
+		if !statusOK {
+			continue
+		}
+		if len(rule.Keywords) == 0 {
+			return true
+		}
+		if !lowered {
+			bodyLower = strings.ToLower(string(body))
+			lowered = true
+		}
+		for _, keyword := range rule.Keywords {
+			kwLower := strings.ToLower(strings.TrimSpace(keyword))
+			if kwLower != "" && strings.Contains(bodyLower, kwLower) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func normalizeAccountNotes(value *string) *string {

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
@@ -530,6 +531,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	ctx := service.WithImageBillingSchedulingTier(c.Request.Context(), imageRouting.Tier)
 	ctx = service.WithImageBillingSchedulingAspectRatio(ctx, imageRouting.AspectRatio)
 	ctx = service.WithImageBillingSchedulingImageCount(ctx, imageRouting.RefImageCount)
+	// 图片生成请求打上标记：账号级错误自动切换策略(error_failover_rules)仅在图片请求生效。
+	if service.IsGeminiImageGenerationRequest(imageRouting, modelName) {
+		ctx = service.WithImageBillingErrorFailoverScope(ctx)
+	}
 	c.Request = c.Request.WithContext(ctx)
 
 	// 单账号分组提前设置 SingleAccountRetry 标记，让 Service 层首次 503 就不设模型限流标记。
@@ -676,6 +681,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 		// 5) forward (根据平台分流)
 		var result *service.ForwardResult
+		attemptStart := time.Now()
 		requestCtx := c.Request.Context()
 		if fs.SwitchCount > 0 {
 			requestCtx = service.WithAccountSwitchCount(requestCtx, fs.SwitchCount, h.metadataBridgeEnabled())
@@ -699,6 +705,8 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
 		}
+		// 账号尝试链：每次账号尝试（成功或失败）都记录；同账号原地重试自动合并。
+		recordGeminiAccountAttempt(c, account, attemptStart, err)
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
@@ -748,6 +756,9 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		sessionID := service.ExtractClientSessionID(c)
 		// 长上下文阶梯由目录数据驱动，统一在计费路径内生效，入口无需声明。
+		// 尝试链在 handler 协程内预捕获快照：异步 worker 里不得再访问 gin.Context
+		//（池积压时闭包可能延迟到 ctx 复用后才执行，读到空链甚至其他请求的链）。
+		accountAttempts := service.AccountAttemptsFromContext(c)
 		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
@@ -765,6 +776,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				ForceCacheBilling:  forceCacheBilling,
 				APIKeyService:      h.apiKeyService,
 				SessionID:          sessionID,
+				AccountAttempts:    accountAttempts,
 				ChannelUsageFields: clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),
 			}); err != nil {
 				logger.L().With(
@@ -802,6 +814,26 @@ func parseGeminiModelAction(rest string) (model string, action string, err error
 	}
 
 	return "", "", &pathParseError{"invalid model action path"}
+}
+
+// recordGeminiAccountAttempt 把一次 Gemini 账号尝试写入请求级尝试链（usage_log.account_attempts）。
+// 错误信息优先取上游响应体中的真实错误内容（见 upstreamAttemptErrorMessage）。
+func recordGeminiAccountAttempt(c *gin.Context, account *service.Account, startedAt time.Time, err error) {
+	status := 0
+	msg := ""
+	success := err == nil
+	if err != nil {
+		var failoverErr *service.UpstreamFailoverError
+		if errors.As(err, &failoverErr) {
+			status = failoverErr.StatusCode
+			msg = upstreamAttemptErrorMessage(c, account, failoverErr.ResponseBody, err)
+		} else {
+			msg = err.Error()
+		}
+	} else {
+		status = http.StatusOK
+	}
+	service.AppendAccountAttempt(c, account, startedAt, status, msg, success)
 }
 
 func (h *GatewayHandler) handleGeminiFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError) {

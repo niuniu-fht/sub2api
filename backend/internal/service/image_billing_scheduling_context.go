@@ -96,3 +96,32 @@ func ImageBillingSchedulingImageCountFromContext(ctx context.Context) int {
 	count, _ := ctx.Value(imageBillingSchedulingImageCountContextKey{}).(int)
 	return count
 }
+
+type imageBillingErrorFailoverScopeContextKey struct{}
+
+// WithImageBillingErrorFailoverScope 标记本次请求为图片生成请求,
+// 使账号级错误自动切换策略(error_failover_rules)在 Gemini 生图链路生效。
+// 仅图片请求注入,文本 generateContent 不受策略影响。
+func WithImageBillingErrorFailoverScope(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, imageBillingErrorFailoverScopeContextKey{}, true)
+}
+
+func ImageBillingErrorFailoverScopeFromContext(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	enabled, _ := ctx.Value(imageBillingErrorFailoverScopeContextKey{}).(bool)
+	return enabled
+}
+
+// IsGeminiImageGenerationRequest 判定 gemini v1beta 请求是否为图片生成请求:
+// 携带参考图、声明了宽高比,或模型名为 gemini 兼容图片模型(含映射键)。
+func IsGeminiImageGenerationRequest(info GeminiImageBillingRequestInfo, model string) bool {
+	if info.RefImageCount > 0 || info.AspectRatio != "" {
+		return true
+	}
+	return isGeminiCompatibleImageModel(model)
+}

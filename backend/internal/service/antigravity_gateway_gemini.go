@@ -350,6 +350,23 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 		if unwrapErr != nil || len(unwrappedForOps) == 0 {
 			unwrappedForOps = respBody
 		}
+		// 账号级图片错误自动切换策略(error_failover_rules)：命中即换下一个账号，不惩罚该账号
+		// （跳过下方 handleUpstreamError 的状态标记，优先于后续错误分类）。
+		if failoverErr := geminiImageErrorFailoverError(ctx, account, resp.StatusCode, respBody); failoverErr != nil {
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				ProxyID:            opsUpstreamProxyID(account),
+				ProxyName:          opsUpstreamProxyName(account),
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: resp.StatusCode,
+				UpstreamRequestID:  requestID,
+				Kind:               "failover",
+				Message:            sanitizeUpstreamErrorMessage(strings.TrimSpace(extractAntigravityErrorMessage(unwrappedForOps))),
+				Detail:             s.getUpstreamErrorDetail(unwrappedForOps),
+			})
+			return nil, failoverErr
+		}
 		s.handleUpstreamError(ctx, prefix, account, resp.StatusCode, resp.Header, respBody, originalModel, forwardOpts.groupID, forwardOpts.sessionHash, isStickySession)
 		upstreamMsg := strings.TrimSpace(extractAntigravityErrorMessage(unwrappedForOps))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)

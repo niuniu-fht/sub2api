@@ -703,8 +703,24 @@ type AdminUsageLog struct {
 	// IPAddress 用户请求 IP
 	IPAddress *string `json:"ip_address,omitempty"`
 
+	// AccountAttempts 账号尝试链（请求内发生账号切换时非空，按账号去重；仅管理端可见）
+	AccountAttempts []AdminAccountAttempt `json:"account_attempts,omitempty"`
+
 	// Account 最小账号信息（避免泄露敏感字段）
 	Account *AccountSummary `json:"account,omitempty"`
+}
+
+// AdminAccountAttempt 账号尝试链中单账号的尝试记录（仅管理端可见）。
+type AdminAccountAttempt struct {
+	AtUnixMs    int64  `json:"at_unix_ms"`
+	AccountID   int64  `json:"account_id"`
+	AccountName string `json:"account_name,omitempty"`
+	Platform    string `json:"platform,omitempty"`
+	// StatusCode 上游 HTTP 状态码；0 表示未到达上游（传输/凭据错误）
+	StatusCode int `json:"status_code,omitempty"`
+	DurationMs int64 `json:"duration_ms"`
+	Error      string `json:"error,omitempty"`
+	Success    bool   `json:"success"`
 }
 
 type UsageCleanupFilters struct {

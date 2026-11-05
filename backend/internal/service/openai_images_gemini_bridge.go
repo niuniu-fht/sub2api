@@ -467,6 +467,10 @@ func (s *OpenAIGatewayService) callGeminiImageBridgeOnce(
 		respBody := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(respBody)))
+		// 账号级图片错误自动切换策略：命中即换下一个账号，不惩罚该账号（优先于全局透传规则）。
+		if failoverErr := s.matchImageErrorFailoverPolicy(account, resp.StatusCode, resp.Header, respBody); failoverErr != nil {
+			return nil, OpenAIUsage{}, failoverErr
+		}
 		// 错误透传规则:命中即按规则原样返回,不再切换账号。
 		if ptStatus, _, ptErrMsg, ptMatched := applyErrorPassthroughRule(c, PlatformGemini, resp.StatusCode, respBody, resp.StatusCode, "upstream_error", upstreamMsg); ptMatched {
 			upErr := &OpenAIImagesUpstreamError{StatusCode: ptStatus, ErrorType: "upstream_error", Message: ptErrMsg}
@@ -496,6 +500,11 @@ func (s *OpenAIGatewayService) callGeminiImageBridgeOnce(
 		return nil, usage, &OpenAIImagesUpstreamError{StatusCode: http.StatusBadGateway, ErrorType: "upstream_error", Message: err.Error()}
 	}
 	if len(images) == 0 {
+		// 账号级图片错误自动切换策略:内容拦截(200 但无图)按合成状态码+原始响应体匹配,
+		// 命中即换下一个账号,不惩罚该账号。
+		if failoverErr := s.matchImageErrorFailoverPolicy(account, status, resp.Header, body); failoverErr != nil {
+			return nil, usage, failoverErr
+		}
 		// 内容拦截:200 但无图。按 400+原始响应体过一遍透传规则,命中则原样返回。
 		if ptStatus, _, ptErrMsg, ptMatched := applyErrorPassthroughRule(c, PlatformGemini, status, body, status, "upstream_error", message); ptMatched {
 			upErr := &OpenAIImagesUpstreamError{StatusCode: ptStatus, ErrorType: "upstream_error", Message: ptErrMsg}

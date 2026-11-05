@@ -778,8 +778,30 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 		AccountRateMultiplier:   l.AccountRateMultiplier,
 		AccountStatsCost:        l.AccountStatsCost,
 		IPAddress:               l.IPAddress,
+		AccountAttempts:         accountAttemptsFromService(l.AccountAttempts),
 		Account:                 AccountSummaryFromService(l.Account),
 	}
+}
+
+// accountAttemptsFromService 转换账号尝试链；nil/空链输出 nil（JSON 省略）。
+func accountAttemptsFromService(attempts []service.AccountAttempt) []AdminAccountAttempt {
+	if len(attempts) == 0 {
+		return nil
+	}
+	out := make([]AdminAccountAttempt, 0, len(attempts))
+	for _, a := range attempts {
+		out = append(out, AdminAccountAttempt{
+			AtUnixMs:    a.AtUnixMs,
+			AccountID:   a.AccountID,
+			AccountName: a.AccountName,
+			Platform:    a.Platform,
+			StatusCode:  a.StatusCode,
+			DurationMs:  a.DurationMs,
+			Error:       a.Error,
+			Success:     a.Success,
+		})
+	}
+	return out
 }
 
 func userFacingReasoningEffort(l *service.UsageLog) *string {

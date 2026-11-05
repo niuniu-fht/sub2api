@@ -1577,6 +1577,102 @@
         </div>
       </div>
 
+      <!-- Image Request Error Failover Rules -->
+      <div class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
+        <div class="mb-3 flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.errorFailover.title') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.errorFailover.hint') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            @click="errorFailoverEnabled = !errorFailoverEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              errorFailoverEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                errorFailoverEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+
+        <div v-if="errorFailoverEnabled" class="space-y-3">
+          <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
+            <p class="text-xs text-blue-700 dark:text-blue-400">
+              <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
+              {{ t('admin.accounts.errorFailover.notice') }}
+            </p>
+          </div>
+
+          <div v-if="errorFailoverRules.length > 0" class="space-y-3">
+            <div
+              v-for="(rule, index) in errorFailoverRules"
+              :key="getErrorFailoverRuleKey(rule)"
+              class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"
+            >
+              <div class="mb-2 flex items-center justify-between">
+                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t('admin.accounts.errorFailover.ruleIndex', { index: index + 1 }) }}
+                </span>
+                <button
+                  type="button"
+                  @click="removeErrorFailoverRule(index)"
+                  class="rounded p-1 text-red-500 transition-colors hover:text-red-600"
+                >
+                  <Icon name="x" size="sm" :stroke-width="2" />
+                </button>
+              </div>
+
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label class="input-label">{{ t('admin.accounts.errorFailover.statusCodes') }}</label>
+                  <input
+                    v-model="rule.status_codes"
+                    type="text"
+                    class="input"
+                    :placeholder="t('admin.accounts.errorFailover.statusCodesPlaceholder')"
+                  />
+                  <p class="input-hint">{{ t('admin.accounts.errorFailover.statusCodesHint') }}</p>
+                </div>
+                <div>
+                  <label class="input-label">{{ t('admin.accounts.errorFailover.keywords') }}</label>
+                  <input
+                    v-model="rule.keywords"
+                    type="text"
+                    class="input"
+                    :placeholder="t('admin.accounts.errorFailover.keywordsPlaceholder')"
+                  />
+                  <p class="input-hint">{{ t('admin.accounts.errorFailover.keywordsHint') }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            @click="addErrorFailoverRule()"
+            class="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-sm text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+          >
+            <svg
+              class="mr-1 inline h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>
+            {{ t('admin.accounts.errorFailover.addRule') }}
+          </button>
+        </div>
+      </div>
+
 
       <div
         v-if="supportsAccountSchedulingThresholdOverride"
@@ -3828,6 +3924,8 @@ const supportsAccountSchedulingThresholdOverride = computed(() =>
   supportsAccountSchedulingThresholdOverridePlatform(props.account?.platform)
 )
 const tempUnschedRules = ref<TempUnschedRuleForm[]>([])
+const errorFailoverEnabled = ref(false)
+const errorFailoverRules = ref<ErrorFailoverRuleForm[]>([])
 const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-model-mapping')
 const getOpenAICompactModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-openai-compact-model-mapping')
 const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-antigravity-model-mapping')
@@ -4673,6 +4771,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   loadQuotaControlSettings(newAccount)
 
   loadTempUnschedRules(credentials)
+  loadErrorFailoverRules(credentials)
   loadAccountSchedulingThresholdOverride(newAccount.platform, credentials)
 
   // Load header override state for eligible account platforms/types
@@ -5127,6 +5226,93 @@ const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
   credentials.temp_unschedulable_enabled = true
   credentials.temp_unschedulable_rules = rules
   return true
+}
+
+// ── 图片请求错误自动切换（error_failover_enabled / error_failover_rules）──
+// 上游错误命中规则时切换到下一个账号重试，但不对该账号做任何惩罚标记。
+// 仅图片相关请求生效（OpenAI Images / Gemini 生图 / Gemini 桥接）。
+interface ErrorFailoverRuleForm {
+  status_codes: string
+  keywords: string
+}
+
+const splitErrorFailoverKeywords = (value: string) =>
+  splitTempUnschedKeywords(value)
+
+const splitErrorFailoverStatusCodes = (value: string) => {
+  const out: number[] = []
+  for (const part of String(value || '').split(/[,，\s]+/)) {
+    if (!part) continue
+    const code = Number(part)
+    if (!Number.isFinite(code) || code < 100 || code > 599) {
+      continue
+    }
+    out.push(Math.trunc(code))
+  }
+  return out
+}
+
+const addErrorFailoverRule = () => {
+  errorFailoverRules.value.push({ status_codes: '', keywords: '' })
+}
+
+const removeErrorFailoverRule = (index: number) => {
+  errorFailoverRules.value.splice(index, 1)
+}
+
+const getErrorFailoverRuleKey = createStableObjectKeyResolver<ErrorFailoverRuleForm>(
+  'edit-error-failover-rule'
+)
+
+const buildErrorFailoverRules = (rules: ErrorFailoverRuleForm[]) => {
+  const out: Array<{ status_codes: number[]; keywords: string[] }> = []
+  for (const rule of rules) {
+    const statusCodes = splitErrorFailoverStatusCodes(rule.status_codes)
+    const keywords = splitErrorFailoverKeywords(rule.keywords)
+    // 每条规则至少要有一个状态码或一个关键词，否则跳过（后端同样校验）。
+    if (statusCodes.length === 0 && keywords.length === 0) {
+      continue
+    }
+    out.push({ status_codes: statusCodes, keywords })
+  }
+  return out
+}
+
+const applyErrorFailoverConfig = (credentials: Record<string, unknown>) => {
+  if (!errorFailoverEnabled.value) {
+    delete credentials.error_failover_enabled
+    delete credentials.error_failover_rules
+    return true
+  }
+
+  const rules = buildErrorFailoverRules(errorFailoverRules.value)
+  if (rules.length === 0) {
+    appStore.showError(t('admin.accounts.errorFailover.rulesInvalid'))
+    return false
+  }
+
+  credentials.error_failover_enabled = true
+  credentials.error_failover_rules = rules
+  return true
+}
+
+function loadErrorFailoverRules(credentials?: Record<string, unknown>) {
+  errorFailoverEnabled.value = credentials?.error_failover_enabled === true
+  const rawRules = credentials?.error_failover_rules
+  if (!Array.isArray(rawRules)) {
+    errorFailoverRules.value = []
+    return
+  }
+
+  errorFailoverRules.value = rawRules.map((rule) => {
+    const entry = rule as Record<string, unknown>
+    return {
+      status_codes: Array.isArray(entry.status_codes)
+        ? entry.status_codes.join(', ')
+        : '',
+      keywords: formatTempUnschedKeywords(entry.keywords)
+    }
+  })
 }
 
 
@@ -5633,6 +5819,9 @@ const handleSubmit = async () => {
       if (!applyTempUnschedConfig(newCredentials)) {
         return
       }
+      if (!applyErrorFailoverConfig(newCredentials)) {
+        return
+      }
 
       updatePayload.credentials = newCredentials
     } else if (props.account.type === 'upstream') {
@@ -5650,6 +5839,9 @@ const handleSubmit = async () => {
 
       applyAccountSchedulingThresholdOverridePatch(newCredentials, currentCredentials)
       if (!applyTempUnschedConfig(newCredentials)) {
+        return
+      }
+      if (!applyErrorFailoverConfig(newCredentials)) {
         return
       }
 
@@ -5699,6 +5891,9 @@ const handleSubmit = async () => {
       applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
       applyAccountSchedulingThresholdOverridePatch(newCredentials, currentCredentials)
       if (!applyTempUnschedConfig(newCredentials)) {
+        return
+      }
+      if (!applyErrorFailoverConfig(newCredentials)) {
         return
       }
 
@@ -5759,6 +5954,9 @@ const handleSubmit = async () => {
       if (!applyTempUnschedConfig(newCredentials)) {
         return
       }
+      if (!applyErrorFailoverConfig(newCredentials)) {
+        return
+      }
 
       updatePayload.credentials = newCredentials
     } else {
@@ -5769,6 +5967,9 @@ const handleSubmit = async () => {
       applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
       applyAccountSchedulingThresholdOverridePatch(newCredentials, currentCredentials)
       if (!applyTempUnschedConfig(newCredentials)) {
+        return
+      }
+      if (!applyErrorFailoverConfig(newCredentials)) {
         return
       }
 

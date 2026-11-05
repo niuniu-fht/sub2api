@@ -43,6 +43,8 @@ type OpenAIRecordUsageInput struct {
 	// Responses handler from stream=true + compaction_trigger. It never stores
 	// the request payload and does not replace the transport request type.
 	NativeCompactionV2 bool
+	// AccountAttempts 账号尝试链快照（handler 在提交 usage 时从请求上下文读取）。
+	AccountAttempts []AccountAttempt
 	ChannelUsageFields
 }
 
@@ -409,6 +411,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ImageSizeSource:          optionalTrimmedStringPtr(result.ImageSizeSource),
 		ImageSizeBreakdown:       imageSizeBreakdown,
 		NativeCompactionV2:       input.NativeCompactionV2,
+		AccountAttempts:          input.AccountAttempts,
 	}
 	// 复用一直未启用的 billing_tier 列记录图片质量(low/medium/high/xhigh/max),供使用记录展示。
 	if quality := NormalizeOpenAIImageQuality(result.ImageQuality); quality != "" && result.ImageCount > 0 {

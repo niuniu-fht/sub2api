@@ -1832,8 +1832,24 @@ export interface AdminUsageLog extends UsageLog {
   channel_id?: number | null
   billing_tier?: string | null
 
+  // 账号尝试链（请求内发生账号切换时非空，按账号去重；仅管理员可见）
+  account_attempts?: AdminUsageAccountAttempt[]
+
   // 最小账号信息（仅管理员接口返回）
   account?: UsageLogAccountSummary
+}
+
+// 账号尝试链中单账号的尝试记录（仅管理员可见）
+export interface AdminUsageAccountAttempt {
+  at_unix_ms: number
+  account_id: number
+  account_name?: string
+  platform?: string
+  // 上游 HTTP 状态码；0 表示未到达上游（传输/凭据错误）
+  status_code?: number
+  duration_ms: number
+  error?: string
+  success: boolean
 }
 
 export interface UsageCleanupFilters {
