@@ -82,6 +82,17 @@ RUN VERSION_VALUE="${VERSION}" && \
 # -----------------------------------------------------------------------------
 # Stage 3: Final Runtime Image
 # -----------------------------------------------------------------------------
+# Stage 3.5: PG client tools (pg_dump/psql) for the built-in backup/restore
+# feature (BackupService shells out to them inside the app container).
+# Version must match the deployed PG server major (18) — pg_dump cannot dump
+# a newer server. Binaries are copied together with libpq from the same
+# official image; zstd/lz4/readline runtime libs come from the base repo.
+# -----------------------------------------------------------------------------
+FROM postgres:18-alpine AS pg-client-tools
+
+# -----------------------------------------------------------------------------
+# Stage 4: Final minimal image
+# -----------------------------------------------------------------------------
 FROM ${ALPINE_IMAGE}
 
 # Labels
@@ -90,11 +101,18 @@ LABEL description="Sub2API - AI API Gateway Platform"
 LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
 
 # Install runtime dependencies
+# zstd-libs/lz4-libs: pg_dump deps; readline: psql deps;
+# krb5-libs/libldap: libpq deps (GSSAPI/LDAP)
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     curl \
     su-exec \
+    zstd-libs \
+    lz4-libs \
+    readline \
+    krb5-libs \
+    libldap \
     && rm -rf /var/cache/apk/*
 
 # Create non-root user
@@ -107,6 +125,12 @@ WORKDIR /app
 # Copy binary and runtime fallback resources from builder
 COPY --from=backend-builder /app/sub2api /app/sub2api
 COPY --from=backend-builder --chown=sub2api:sub2api /app/backend/resources /app/resources
+
+# PG client tools for the built-in backup/restore feature (must be PG18 to
+# match sub2api-postgres). libpq goes to /usr/lib (default musl search path).
+COPY --from=pg-client-tools /usr/local/bin/pg_dump /usr/local/bin/pg_dump
+COPY --from=pg-client-tools /usr/local/bin/psql /usr/local/bin/psql
+COPY --from=pg-client-tools /usr/local/lib/libpq.so.5 /usr/lib/libpq.so.5
 
 # Create data directory
 RUN mkdir -p /app/data && chown -R sub2api:sub2api /app
