@@ -196,7 +196,7 @@ export default {
       },
       channelStatus: {
         title: 'Channel Status Statistics',
-        description: 'Periodically aggregates real generation records (usage logs + error logs) into per-channel/model success rates and average generation times, exposed via a public API (GET /api/v1/channel-status) for external systems.',
+        description: 'Periodically aggregates real generation records (usage logs + error logs) into per-group/model success rates and average generation times, with a built-in public status page (/status) and a public API (GET /api/v1/channel-status) for external systems.',
         enabled: 'Enable channel status statistics',
         windowHours: 'Window (hours)',
         refreshSeconds: 'Refresh interval (seconds)',

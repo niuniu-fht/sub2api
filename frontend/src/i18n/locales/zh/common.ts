@@ -462,26 +462,25 @@ export default {
   // 渠道状态公开页（/status）
   statusPage: {
     title: '服务状态',
-    subtitle: '各渠道基于真实生成记录的可用性统计（被动聚合，非主动探测）',
-    overallOperational: '全部渠道运行正常',
-    overallDegraded: '部分渠道降级',
-    overallDown: '部分渠道故障',
+    subtitle: '各分组基于真实生成记录的可用性统计（被动聚合，非主动探测）',
+    overallOperational: '全部分组运行正常',
+    overallDegraded: '部分分组降级',
+    overallDown: '部分分组故障',
     overallUnknown: '暂无统计数据',
     statusOperational: '正常',
     statusDegraded: '降级',
     statusDown: '故障',
     statusUnknown: '无数据',
+    tabAll: '全部',
+    searchPlaceholder: '搜索分组…',
+    noMatch: '没有匹配的分组',
     updatedAt: '更新于 {time}',
     windowHours: '统计窗口 {n} 小时',
     refreshEvery: '每 {n} 秒重新聚合',
     successRate: '成功率',
     avgGenTime: '平均生图时间',
-    requests: '成功请求',
-    failures: '失败请求',
     models: '模型明细',
     modelCol: '模型',
-    requestsCol: '成功',
-    failuresCol: '失败',
     successRateCol: '成功率',
     avgGenCol: '平均耗时',
     timeline: '近 {n} 小时',
@@ -491,8 +490,7 @@ export default {
     disabledDesc: '管理员可在后台「系统设置 → 渠道状态统计」中开启。',
     loadFailed: '加载失败，请稍后重试',
     retry: '重试',
-    preparing: '首轮统计聚合进行中，请稍候再试…',
-    legend: '状态说明'
+    preparing: '首轮统计聚合进行中，请稍候再试…'
   },
 
   // Dashboard

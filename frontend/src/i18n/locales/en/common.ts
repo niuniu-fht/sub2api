@@ -463,26 +463,25 @@ export default {
   // Channel status public page (/status)
   statusPage: {
     title: 'Service Status',
-    subtitle: 'Per-channel availability aggregated from real generation records (passive, no probing)',
-    overallOperational: 'All channels operational',
-    overallDegraded: 'Some channels degraded',
-    overallDown: 'Some channels down',
+    subtitle: 'Per-group availability aggregated from real generation records (passive, no probing)',
+    overallOperational: 'All groups operational',
+    overallDegraded: 'Some groups degraded',
+    overallDown: 'Some groups down',
     overallUnknown: 'No statistics yet',
     statusOperational: 'Operational',
     statusDegraded: 'Degraded',
     statusDown: 'Down',
     statusUnknown: 'No data',
+    tabAll: 'All',
+    searchPlaceholder: 'Search groups…',
+    noMatch: 'No matching groups',
     updatedAt: 'Updated {time}',
     windowHours: '{n}-hour window',
     refreshEvery: 'Recomputed every {n}s',
     successRate: 'Success rate',
     avgGenTime: 'Avg. image time',
-    requests: 'Successes',
-    failures: 'Failures',
     models: 'Model details',
     modelCol: 'Model',
-    requestsCol: 'Success',
-    failuresCol: 'Failures',
     successRateCol: 'Success rate',
     avgGenCol: 'Avg. time',
     timeline: 'Last {n}h',
@@ -492,8 +491,7 @@ export default {
     disabledDesc: 'Enable it in Admin → Settings → Channel Status Statistics.',
     loadFailed: 'Failed to load, please try again later',
     retry: 'Retry',
-    preparing: 'First aggregation in progress, please check back shortly…',
-    legend: 'Legend'
+    preparing: 'First aggregation in progress, please check back shortly…'
   },
 
   // Dashboard

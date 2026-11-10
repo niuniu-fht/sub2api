@@ -196,7 +196,7 @@ export default {
       },
       channelStatus: {
         title: '渠道状态统计',
-        description: '基于真实生成记录（用量日志 + 错误日志）定时聚合成渠道/模型的成功率与平均生图时间，并通过公开 API（GET /api/v1/channel-status）提供给外部系统。',
+        description: '基于真实生成记录（用量日志 + 错误日志）定时聚合成分组/模型的成功率与平均生图时间，内置公开状态页（/status），并通过公开 API（GET /api/v1/channel-status）提供给外部系统。',
         enabled: '启用渠道状态统计',
         windowHours: '统计窗口（小时）',
         refreshSeconds: '刷新间隔（秒）',

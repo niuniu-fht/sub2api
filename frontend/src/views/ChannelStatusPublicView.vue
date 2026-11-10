@@ -30,7 +30,7 @@
         <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('statusPage.loadFailed') }}</p>
         <button
           type="button"
-          class="mt-4 inline-flex items-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+          class="mt-4 inline-flex items-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700"
           @click="load"
         >
           {{ t('statusPage.retry') }}
@@ -40,12 +40,22 @@
       <template v-else-if="snapshot">
         <!-- 整体状态横幅 -->
         <section
-          class="mb-6 flex flex-col gap-4 rounded-2xl border p-5 sm:flex-row sm:items-center sm:justify-between"
+          class="mb-5 flex flex-col gap-4 rounded-2xl border p-5 transition-colors sm:flex-row sm:items-center sm:justify-between"
           :class="overallCardClass"
           data-testid="status-overall"
         >
           <div class="flex items-center gap-3">
-            <span class="h-3 w-3 flex-shrink-0 rounded-full" :class="STATUS_DOT[snapshot.overall]"></span>
+            <span class="relative flex h-3 w-3 flex-shrink-0">
+              <span
+                v-if="snapshot.overall !== 'unknown'"
+                class="absolute inline-flex h-full w-full rounded-full opacity-30"
+                :class="STATUS_DOT[snapshot.overall]"
+              ></span>
+              <span
+                class="relative inline-flex h-3 w-3 rounded-full"
+                :class="STATUS_DOT[snapshot.overall]"
+              ></span>
+            </span>
             <div>
               <div class="text-lg font-semibold text-gray-900 dark:text-white">
                 {{ overallLabel }}
@@ -69,118 +79,167 @@
 
         <!-- 首轮聚合未完成 -->
         <EmptyState
-          v-if="snapshot.channels.length === 0"
+          v-if="snapshot.groups.length === 0"
           :title="t('statusPage.preparing')"
         />
 
         <template v-else>
-          <!-- 图例 -->
-          <div class="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-            <span class="font-medium">{{ t('statusPage.legend') }}</span>
-            <span v-for="s in LEGEND_STATUSES" :key="s" class="inline-flex items-center gap-1.5">
-              <span class="h-2 w-2 rounded-full" :class="STATUS_DOT[s]"></span>
-              {{ statusLabel(s) }}
-            </span>
+          <!-- 状态筛选 + 搜索 -->
+          <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div
+              class="inline-flex flex-wrap items-center gap-1 rounded-xl border border-gray-200 bg-white p-1 dark:border-dark-700 dark:bg-dark-800"
+              data-testid="status-filter-tabs"
+            >
+              <button
+                v-for="tab in filterTabs"
+                :key="tab.value"
+                type="button"
+                class="rounded-lg px-3 py-1.5 text-xs font-medium transition-all duration-200"
+                :class="filter === tab.value
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700'"
+                :data-testid="`status-filter-${tab.value}`"
+                @click="filter = tab.value"
+              >
+                {{ tab.label }}
+              </button>
+            </div>
+            <div class="relative w-full sm:w-64">
+              <svg
+                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                v-model="search"
+                type="text"
+                :placeholder="t('statusPage.searchPlaceholder')"
+                class="input h-9 pl-9 text-sm"
+                data-testid="status-search"
+              />
+            </div>
           </div>
 
-          <!-- 渠道列表 -->
-          <div class="space-y-4" data-testid="status-channel-list">
+          <!-- 无匹配 -->
+          <EmptyState
+            v-if="filteredGroups.length === 0"
+            :title="t('statusPage.noMatch')"
+          />
+
+          <!-- 分组列表 -->
+          <div class="space-y-4" data-testid="status-group-list">
             <article
-              v-for="channel in sortedChannels"
-              :key="channel.id"
-              class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-800"
+              v-for="group in filteredGroups"
+              :key="group.id"
+              class="group cursor-pointer rounded-2xl border bg-white p-5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg dark:bg-dark-800"
+              :class="hoverBorderClass(group.status)"
+              :data-testid="`status-group-${group.id}`"
+              @click="toggleModels(group.id)"
             >
               <!-- 头部：名称/平台 + 状态 + 成功率 -->
               <div class="flex items-start justify-between gap-3">
                 <div class="flex min-w-0 items-center gap-2.5">
-                  <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gray-100 ring-1 ring-black/5 dark:bg-dark-700 dark:ring-white/10">
-                    <PlatformIcon :platform="channel.platform as GroupPlatform" size="sm" />
+                  <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-gray-100 ring-1 ring-black/5 transition-colors group-hover:bg-gray-200/70 dark:bg-dark-700 dark:ring-white/10 dark:group-hover:bg-dark-600">
+                    <PlatformIcon :platform="group.platform as GroupPlatform" size="sm" />
                   </span>
                   <div class="min-w-0">
                     <div class="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
-                      {{ channel.name }}
+                      {{ group.name }}
                     </div>
                     <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('statusPage.requests') }} {{ channel.requests }}
-                      · {{ t('statusPage.failures') }} {{ channel.failures }}
+                      {{ t('statusPage.avgGenTime') }}
+                      <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(group.avg_gen_ms) }}</span>
                     </div>
                   </div>
                 </div>
                 <div class="flex flex-shrink-0 flex-col items-end gap-1">
                   <span
-                    class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
-                    :class="STATUS_CHIP[channel.status]"
+                    class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors"
+                    :class="STATUS_CHIP[group.status]"
                   >
-                    <span class="h-1.5 w-1.5 rounded-full" :class="STATUS_DOT[channel.status]"></span>
-                    {{ statusLabel(channel.status) }}
+                    <span class="h-1.5 w-1.5 rounded-full" :class="STATUS_DOT[group.status]"></span>
+                    {{ statusLabel(group.status) }}
                   </span>
-                  <span class="text-sm font-semibold tabular-nums text-gray-700 dark:text-gray-200">
-                    {{ t('statusPage.successRate') }}
-                    {{ formatRate(channel.success_rate) }}
+                  <span
+                    class="text-lg font-bold tabular-nums"
+                    :class="rateTextClass(group.success_rate)"
+                  >
+                    {{ formatRate(group.success_rate) }}
                   </span>
                 </div>
-              </div>
-
-              <!-- 关键指标 -->
-              <div class="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-                <span>{{ t('statusPage.avgGenTime') }}: <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(channel.avg_gen_ms) }}</span></span>
               </div>
 
               <!-- 时间线（最旧在左，最新在右） -->
               <div class="mt-4 pt-3 border-t border-gray-100 dark:border-dark-700/60">
                 <div class="mb-2 flex justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-400">
                   <span>{{ t('statusPage.timeline', { n: snapshot.window_hours }) }}</span>
-                  <span class="tabular-nums">{{ t('statusPage.updatedAt', { time: updatedLabel }) }}</span>
+                  <span>{{ t('statusPage.past') }} → {{ t('statusPage.now') }}</span>
                 </div>
-                <div class="flex h-5 w-full items-stretch gap-[2px]">
+                <div class="flex h-5 w-full items-stretch gap-[3px]">
                   <div
-                    v-for="(bucket, idx) in orderedTimeline(channel)"
+                    v-for="(bucket, idx) in orderedTimeline(group)"
                     :key="idx"
-                    class="min-w-0 flex-1 rounded-sm"
+                    class="min-w-0 flex-1 rounded-sm transition-all duration-200 hover:scale-y-110"
                     :class="STATUS_BAR[bucket.status] ?? STATUS_BAR.unknown"
                     :title="bucketTitle(bucket)"
                   ></div>
                 </div>
-                <div class="mt-1 flex justify-between text-[9px] uppercase tracking-widest text-gray-400">
-                  <span>{{ t('statusPage.past') }}</span>
-                  <span>{{ t('statusPage.now') }}</span>
-                </div>
               </div>
 
-              <!-- 模型明细（可展开） -->
-              <div v-if="channel.models.length > 0" class="mt-3">
+              <!-- 模型明细（可展开，带过渡） -->
+              <div v-if="group.models.length > 0" class="mt-3">
                 <button
                   type="button"
-                  class="text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-                  :data-testid="`status-models-toggle-${channel.id}`"
-                  @click="toggleModels(channel.id)"
+                  class="inline-flex items-center gap-1 text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                  :data-testid="`status-models-toggle-${group.id}`"
+                  @click.stop="toggleModels(group.id)"
                 >
-                  {{ expanded[channel.id]
-                    ? t('common.collapse')
-                    : t('statusPage.models') }}
+                  <svg
+                    class="h-3.5 w-3.5 transition-transform duration-200"
+                    :class="expanded[group.id] ? 'rotate-90' : ''"
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                  {{ t('statusPage.models') }}
                 </button>
-                <div v-if="expanded[channel.id]" class="mt-2 overflow-x-auto">
-                  <table class="w-full text-left text-xs">
-                    <thead>
-                      <tr class="text-[10px] uppercase tracking-widest text-gray-400">
-                        <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.modelCol') }}</th>
-                        <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.requestsCol') }}</th>
-                        <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.failuresCol') }}</th>
-                        <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.successRateCol') }}</th>
-                        <th class="py-1.5 font-semibold">{{ t('statusPage.avgGenCol') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
-                      <tr v-for="m in channel.models" :key="m.model">
-                        <td class="py-1.5 pr-4 font-mono text-gray-800 dark:text-gray-200">{{ m.model }}</td>
-                        <td class="py-1.5 pr-4 tabular-nums text-gray-600 dark:text-gray-300">{{ m.requests }}</td>
-                        <td class="py-1.5 pr-4 tabular-nums text-gray-600 dark:text-gray-300">{{ m.failures }}</td>
-                        <td class="py-1.5 pr-4 tabular-nums text-gray-600 dark:text-gray-300">{{ formatRate(m.success_rate) }}</td>
-                        <td class="py-1.5 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.avg_gen_ms) }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                <Transition
+                  enter-active-class="transition-all duration-300 ease-out"
+                  enter-from-class="max-h-0 opacity-0"
+                  enter-to-class="max-h-96 opacity-100"
+                  leave-active-class="transition-all duration-200 ease-in"
+                  leave-from-class="max-h-96 opacity-100"
+                  leave-to-class="max-h-0 opacity-0"
+                >
+                  <div v-if="expanded[group.id]" class="overflow-hidden">
+                    <div class="mt-2 overflow-x-auto">
+                      <table class="w-full text-left text-xs">
+                        <thead>
+                          <tr class="text-[10px] uppercase tracking-widest text-gray-400">
+                            <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.modelCol') }}</th>
+                            <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.successRateCol') }}</th>
+                            <th class="py-1.5 font-semibold">{{ t('statusPage.avgGenCol') }}</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
+                          <tr
+                            v-for="m in group.models"
+                            :key="m.model"
+                            class="transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/40"
+                          >
+                            <td class="py-1.5 pr-4 font-mono text-gray-800 dark:text-gray-200">{{ m.model }}</td>
+                            <td
+                              class="py-1.5 pr-4 tabular-nums font-medium"
+                              :class="rateTextClass(m.success_rate)"
+                            >{{ formatRate(m.success_rate) }}</td>
+                            <td class="py-1.5 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.avg_gen_ms) }}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </Transition>
               </div>
             </article>
           </div>
@@ -198,7 +257,7 @@ import AutoRefreshButton from '@/components/common/AutoRefreshButton.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
-import { getChannelStatus, type ChannelHealthStatus, type ChannelStatusBucket, type ChannelStatusChannel, type ChannelStatusSnapshot } from '@/api/channelStatus'
+import { getChannelStatus, type ChannelHealthStatus, type ChannelStatusBucket, type ChannelStatusGroup, type ChannelStatusSnapshot } from '@/api/channelStatus'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { useAppStore } from '@/stores/app'
 import { formatDateTimeToMinute } from '@/utils/format'
@@ -212,10 +271,10 @@ const loading = ref(true)
 const disabled = ref(false)
 const loadFailed = ref(false)
 const expanded = ref<Record<number, boolean>>({})
+const filter = ref<'all' | ChannelHealthStatus>('all')
+const search = ref('')
 
-const LEGEND_STATUSES: ChannelHealthStatus[] = ['operational', 'degraded', 'down', 'unknown']
-
-// 状态 → 展示样式（点/胶囊/条块）。静态配色，无动画。
+// 状态 → 展示样式（点/胶囊/条块）。配色 + transition，无自写动画。
 const STATUS_DOT: Record<ChannelHealthStatus, string> = {
   operational: 'bg-emerald-500',
   degraded: 'bg-amber-500',
@@ -237,6 +296,22 @@ const STATUS_BAR: Record<ChannelHealthStatus, string> = {
   unknown: 'bg-gray-200 dark:bg-dark-700'
 }
 
+// hover 时的边框强调色：跟随分组状态。
+function hoverBorderClass(status: ChannelHealthStatus): string {
+  if (status === 'down') return 'border-gray-200 hover:border-red-300 dark:border-dark-700 dark:hover:border-red-500/40'
+  if (status === 'degraded') return 'border-gray-200 hover:border-amber-300 dark:border-dark-700 dark:hover:border-amber-500/40'
+  if (status === 'operational') return 'border-gray-200 hover:border-emerald-300 dark:border-dark-700 dark:hover:border-emerald-500/40'
+  return 'border-gray-200 hover:border-gray-300 dark:border-dark-700 dark:hover:border-dark-600'
+}
+
+// 成功率数字着色：正常绿 / 降级黄 / 故障红 / 无数据灰。
+function rateTextClass(rate: number): string {
+  if (rate < 0) return 'text-gray-400'
+  if (rate >= 99) return 'text-emerald-600 dark:text-emerald-400'
+  if (rate >= 90) return 'text-amber-600 dark:text-amber-400'
+  return 'text-red-600 dark:text-red-400'
+}
+
 // 故障优先展示：down > degraded > operational > unknown，同档按成功率升序。
 const STATUS_SEVERITY: Record<ChannelHealthStatus, number> = {
   down: 0,
@@ -245,14 +320,31 @@ const STATUS_SEVERITY: Record<ChannelHealthStatus, number> = {
   unknown: 3
 }
 
-const sortedChannels = computed<ChannelStatusChannel[]>(() => {
-  const list = [...(snapshot.value?.channels ?? [])]
+const filterTabs = computed(() => [
+  { value: 'all' as const, label: t('statusPage.tabAll') },
+  { value: 'operational' as const, label: statusLabel('operational') },
+  { value: 'degraded' as const, label: statusLabel('degraded') },
+  { value: 'down' as const, label: statusLabel('down') },
+  { value: 'unknown' as const, label: statusLabel('unknown') }
+])
+
+const sortedGroups = computed<ChannelStatusGroup[]>(() => {
+  const list = [...(snapshot.value?.groups ?? [])]
   list.sort((a, b) => {
     const sev = STATUS_SEVERITY[a.status] - STATUS_SEVERITY[b.status]
     if (sev !== 0) return sev
     return a.success_rate - b.success_rate
   })
   return list
+})
+
+const filteredGroups = computed<ChannelStatusGroup[]>(() => {
+  const keyword = search.value.trim().toLowerCase()
+  return sortedGroups.value.filter((g) => {
+    if (filter.value !== 'all' && g.status !== filter.value) return false
+    if (keyword && !g.name.toLowerCase().includes(keyword)) return false
+    return true
+  })
 })
 
 const overallCardClass = computed(() => {
@@ -295,15 +387,15 @@ function formatGenMs(ms: number): string {
 }
 
 /** API 返回的桶为最旧在前，直接左→右渲染即为「过去 → 现在」。 */
-function orderedTimeline(channel: ChannelStatusChannel): ChannelStatusBucket[] {
-  return channel.timeline ?? []
+function orderedTimeline(group: ChannelStatusGroup): ChannelStatusBucket[] {
+  return group.timeline ?? []
 }
 
 function bucketTitle(bucket: ChannelStatusBucket): string {
   const time = formatDateTimeToMinute(new Date(bucket.bucket_start_ms))
   if (bucket.status === 'unknown') return `${time} · ${statusLabel('unknown')}`
   const rate = bucket.success_rate < 0 ? '—' : `${bucket.success_rate.toFixed(1)}%`
-  return `${time} · ${statusLabel(bucket.status)} · ${bucket.requests}✓/${bucket.failures}✗ · ${rate}`
+  return `${time} · ${statusLabel(bucket.status)} · ${rate}`
 }
 
 function toggleModels(id: number): void {

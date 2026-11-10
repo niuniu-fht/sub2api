@@ -19,7 +19,7 @@ import (
 
 // ChannelStatusService 渠道状态统计服务：
 // 定时聚合真实生成记录（usage_logs 成功请求 / ops_error_logs 失败记录），
-// 按「渠道（上游账号）× 模型」计算成功率与平均生图时间，结果刷入
+// 按「分组 × 模型」计算成功率与平均生图时间，结果刷入
 // Redis + 进程内存缓存，对外公开 API（GET /api/v1/channel-status）只读缓存。
 // 完全被动聚合，不发起任何探测请求；与 channel_monitor v1/v2 相互独立。
 type ChannelStatusService struct {
@@ -55,7 +55,7 @@ type ChannelStatusBucket struct {
 	Status        string  `json:"status"` // operational | degraded | down | unknown
 }
 
-type ChannelStatus struct {
+type GroupStatus struct {
 	ID          int64                      `json:"id"`
 	Name        string                     `json:"name"`
 	Platform    string                     `json:"platform"`
@@ -69,11 +69,11 @@ type ChannelStatus struct {
 }
 
 type ChannelStatusSnapshot struct {
-	GeneratedAtMs int64           `json:"generated_at_ms"`
-	WindowHours   int             `json:"window_hours"`
-	RefreshSec    int             `json:"refresh_seconds"`
-	Overall       string          `json:"overall"` // operational | degraded | down | unknown
-	Channels      []ChannelStatus `json:"channels"`
+	GeneratedAtMs int64         `json:"generated_at_ms"`
+	WindowHours   int           `json:"window_hours"`
+	RefreshSec    int           `json:"refresh_seconds"`
+	Overall       string        `json:"overall"` // operational | degraded | down | unknown
+	Groups        []GroupStatus `json:"groups"`
 }
 
 const channelStatusTimelineBuckets = 24
@@ -265,25 +265,25 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 
 	// 1) 成功请求（usage_logs）
 	usageRows, err := s.db.QueryContext(ctx, `
-		SELECT account_id,
-		       coalesce(nullif(trim(requested_model), ''), model) AS model,
+		SELECT group_id,
+		       coalesce(nullif(trim(requested_model), ''), model, '') AS model,
 		       count(*) AS requests,
 		       avg(duration_ms) AS avg_ms,
 		       max(created_at) AS last_at
 		FROM usage_logs
 		WHERE created_at >= $1
-		GROUP BY account_id, 2
+		GROUP BY group_id, 2
 	`, start)
 	if err != nil {
 		return nil, fmt.Errorf("query usage aggregation: %w", err)
 	}
 	for usageRows.Next() {
-		var accountID int64
+		var groupID int64
 		var model string
 		var requests int64
 		var avgMs *float64
 		var lastAt time.Time
-		if err := usageRows.Scan(&accountID, &model, &requests, &avgMs, &lastAt); err != nil {
+		if err := usageRows.Scan(&groupID, &model, &requests, &avgMs, &lastAt); err != nil {
 			_ = usageRows.Close()
 			return nil, fmt.Errorf("scan usage row: %w", err)
 		}
@@ -291,7 +291,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		if avgMs != nil {
 			durationMs = int64(*avgMs)
 		}
-		agg.addSuccess(accountID, model, durationMs, lastAt)
+		agg.addSuccess(groupID, model, durationMs, lastAt)
 	}
 	if err := usageRows.Err(); err != nil {
 		_ = usageRows.Close()
@@ -301,14 +301,14 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 
 	// 2) 失败请求（ops_error_logs，行级取回后在 Go 侧应用过滤规则）
 	errorRows, err := s.db.QueryContext(ctx, `
-		SELECT account_id,
-		       coalesce(nullif(trim(requested_model), ''), model) AS model,
+		SELECT group_id,
+		       coalesce(nullif(trim(requested_model), ''), model, '') AS model,
 		       coalesce(upstream_status_code, 0) AS upstream_status_code,
 		       coalesce(status_code, 0) AS status_code,
 		       coalesce(upstream_error_message, error_message, '') AS message,
 		       created_at
 		FROM ops_error_logs
-		WHERE created_at >= $1 AND account_id IS NOT NULL
+		WHERE created_at >= $1 AND group_id IS NOT NULL
 		ORDER BY created_at DESC
 		LIMIT 50000
 	`, start)
@@ -316,19 +316,19 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		return nil, fmt.Errorf("query error aggregation: %w", err)
 	}
 	for errorRows.Next() {
-		var accountID int64
+		var groupID int64
 		var model string
 		var upstreamStatus, clientStatus int
 		var message string
 		var createdAt time.Time
-		if err := errorRows.Scan(&accountID, &model, &upstreamStatus, &clientStatus, &message, &createdAt); err != nil {
+		if err := errorRows.Scan(&groupID, &model, &upstreamStatus, &clientStatus, &message, &createdAt); err != nil {
 			_ = errorRows.Close()
 			return nil, fmt.Errorf("scan error row: %w", err)
 		}
 		if MatchesChannelStatusFilterRules(config.FilterRules, upstreamStatus, clientStatus, message) {
 			continue // 命中过滤规则：不计入失败
 		}
-		agg.addFailure(accountID, model, createdAt)
+		agg.addFailure(groupID, model, createdAt)
 	}
 	if err := errorRows.Err(); err != nil {
 		_ = errorRows.Close()
@@ -336,30 +336,30 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	}
 	_ = errorRows.Close()
 
-	// 3) 渠道元信息（名称/平台）
-	channelMeta := map[int64]struct {
+	// 3) 分组元信息（名称/平台）
+	groupMeta := map[int64]struct {
 		Name     string
 		Platform string
 	}{}
-	metaRows, err := s.db.QueryContext(ctx, `SELECT id, name, coalesce(platform, '') FROM accounts`)
+	metaRows, err := s.db.QueryContext(ctx, `SELECT id, name, coalesce(platform, '') FROM groups`)
 	if err != nil {
-		return nil, fmt.Errorf("query accounts: %w", err)
+		return nil, fmt.Errorf("query groups: %w", err)
 	}
 	for metaRows.Next() {
 		var id int64
 		var name, platform string
 		if err := metaRows.Scan(&id, &name, &platform); err != nil {
 			_ = metaRows.Close()
-			return nil, fmt.Errorf("scan account row: %w", err)
+			return nil, fmt.Errorf("scan group row: %w", err)
 		}
-		channelMeta[id] = struct {
+		groupMeta[id] = struct {
 			Name     string
 			Platform string
 		}{Name: name, Platform: platform}
 	}
 	if err := metaRows.Err(); err != nil {
 		_ = metaRows.Close()
-		return nil, fmt.Errorf("iterate accounts: %w", err)
+		return nil, fmt.Errorf("iterate groups: %w", err)
 	}
 	_ = metaRows.Close()
 
@@ -375,16 +375,16 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 
-	channels := make([]ChannelStatus, 0, len(ids))
+	groups := make([]GroupStatus, 0, len(ids))
 	overallDown, overallDegraded := false, false
 	for _, id := range ids {
-		name := fmt.Sprintf("channel-%d", id)
+		name := fmt.Sprintf("group-%d", id)
 		platform := ""
-		if meta, ok := channelMeta[id]; ok {
+		if meta, ok := groupMeta[id]; ok {
 			name = strings.TrimSpace(meta.Name)
 			platform = meta.Platform
 		}
-		ch := ChannelStatus{ID: id, Name: name, Platform: platform}
+		gr := GroupStatus{ID: id, Name: name, Platform: platform}
 
 		modelSet := map[string]struct{}{}
 		for m := range agg.successRequests[id] {
@@ -393,8 +393,8 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		for m := range agg.failures[id] {
 			modelSet[m] = struct{}{}
 		}
-		var channelSumMs float64
-		var channelCntMs int64
+		var groupSumMs float64
+		var groupCntMs int64
 		for m := range modelSet {
 			requests := agg.successRequests[id][m]
 			failures := agg.failures[id][m]
@@ -402,22 +402,22 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 			var avgMs int64
 			if agg.successCntMs[id] != nil && agg.successCntMs[id][m] > 0 {
 				avgMs = int64(math.Round(agg.successSumMs[id][m] / float64(agg.successCntMs[id][m])))
-				channelSumMs += agg.successSumMs[id][m]
-				channelCntMs += agg.successCntMs[id][m]
+				groupSumMs += agg.successSumMs[id][m]
+				groupCntMs += agg.successCntMs[id][m]
 			}
-			ch.Models = append(ch.Models, ChannelStatusModelStatus{
+			gr.Models = append(gr.Models, ChannelStatusModelStatus{
 				Model: m, Requests: requests, Failures: failures,
 				SuccessRate: ratePercent(requests, total), AvgGenMs: avgMs,
 			})
-			ch.Requests += requests
-			ch.Failures += failures
+			gr.Requests += requests
+			gr.Failures += failures
 		}
-		sort.Slice(ch.Models, func(i, j int) bool { return ch.Models[i].Requests > ch.Models[j].Requests })
-		ch.SuccessRate = ratePercent(ch.Requests, ch.Requests+ch.Failures)
-		if channelCntMs > 0 {
-			ch.AvgGenMs = int64(math.Round(channelSumMs / float64(channelCntMs)))
+		sort.Slice(gr.Models, func(i, j int) bool { return gr.Models[i].Requests > gr.Models[j].Requests })
+		gr.SuccessRate = ratePercent(gr.Requests, gr.Requests+gr.Failures)
+		if groupCntMs > 0 {
+			gr.AvgGenMs = int64(math.Round(groupSumMs / float64(groupCntMs)))
 		}
-		ch.Status = classifyChannelStatus(ch.SuccessRate, ch.Requests+ch.Failures > 0, config.Thresholds)
+		gr.Status = classifyChannelStatus(gr.SuccessRate, gr.Requests+gr.Failures > 0, config.Thresholds)
 
 		// 时间线（桶数固定 24，桶宽 = 窗口/24）
 		bucketSeconds := int64(config.WindowHours*3600) / channelStatusTimelineBuckets
@@ -426,13 +426,13 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		}
 		requestsB := agg.bucketRequests[id]
 		failuresB := agg.bucketFailures[id]
-		ch.Timeline = make([]ChannelStatusBucket, 0, channelStatusTimelineBuckets)
+		gr.Timeline = make([]ChannelStatusBucket, 0, channelStatusTimelineBuckets)
 		for i := 0; i < channelStatusTimelineBuckets; i++ {
 			bStart := start.Add(time.Duration(i) * time.Duration(bucketSeconds) * time.Second)
 			requests := requestsB[i]
 			failures := failuresB[i]
 			total := requests + failures
-			ch.Timeline = append(ch.Timeline, ChannelStatusBucket{
+			gr.Timeline = append(gr.Timeline, ChannelStatusBucket{
 				BucketStartMs: bStart.UnixMilli(),
 				Requests:      requests,
 				Failures:      failures,
@@ -441,19 +441,19 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 			})
 		}
 
-		switch ch.Status {
+		switch gr.Status {
 		case "down":
 			overallDown = true
 		case "degraded":
 			overallDegraded = true
 		}
-		channels = append(channels, ch)
+		groups = append(groups, gr)
 	}
 
-	sort.Slice(channels, func(i, j int) bool { return channels[i].Requests > channels[j].Requests })
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Requests > groups[j].Requests })
 
 	overall := "unknown"
-	if len(channels) > 0 {
+	if len(groups) > 0 {
 		switch {
 		case overallDown:
 			overall = "down"
@@ -469,7 +469,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		WindowHours:   config.WindowHours,
 		RefreshSec:    config.RefreshSeconds,
 		Overall:       overall,
-		Channels:      channels,
+		Groups:        groups,
 	}, nil
 }
 
