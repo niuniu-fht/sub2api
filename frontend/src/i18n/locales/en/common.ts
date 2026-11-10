@@ -460,5 +460,41 @@ export default {
     adminApiKeyForbidden: 'Admin API keys cannot perform this operation. Use a two-factor verified admin session.'
   },
 
+  // Channel status public page (/status)
+  statusPage: {
+    title: 'Service Status',
+    subtitle: 'Per-channel availability aggregated from real generation records (passive, no probing)',
+    overallOperational: 'All channels operational',
+    overallDegraded: 'Some channels degraded',
+    overallDown: 'Some channels down',
+    overallUnknown: 'No statistics yet',
+    statusOperational: 'Operational',
+    statusDegraded: 'Degraded',
+    statusDown: 'Down',
+    statusUnknown: 'No data',
+    updatedAt: 'Updated {time}',
+    windowHours: '{n}-hour window',
+    refreshEvery: 'Recomputed every {n}s',
+    successRate: 'Success rate',
+    avgGenTime: 'Avg. image time',
+    requests: 'Successes',
+    failures: 'Failures',
+    models: 'Model details',
+    modelCol: 'Model',
+    requestsCol: 'Success',
+    failuresCol: 'Failures',
+    successRateCol: 'Success rate',
+    avgGenCol: 'Avg. time',
+    timeline: 'Last {n}h',
+    past: 'Past',
+    now: 'Now',
+    disabledTitle: 'Channel status page is disabled',
+    disabledDesc: 'Enable it in Admin → Settings → Channel Status Statistics.',
+    loadFailed: 'Failed to load, please try again later',
+    retry: 'Retry',
+    preparing: 'First aggregation in progress, please check back shortly…',
+    legend: 'Legend'
+  },
+
   // Dashboard
 }

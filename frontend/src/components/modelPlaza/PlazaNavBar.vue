@@ -31,7 +31,7 @@
       </RouterLink>
       <RouterLink
         v-else
-        :to="{ path: '/login', query: { redirect: '/model-plaza' } }"
+        :to="{ path: '/login', query: { redirect: loginRedirect } }"
         class="inline-flex flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition-all duration-200 hover:from-primary-600 hover:to-primary-700 hover:shadow-lg hover:shadow-primary-500/30 active:scale-[0.98] dark:shadow-primary-500/20"
       >
         {{ t('modelPlaza.nav.login') }}
@@ -50,6 +50,14 @@ import { useAuthStore } from '@/stores/auth'
 const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+
+withDefaults(
+  defineProps<{
+    /** 未登录时登录后跳转目标（默认模型广场）。 */
+    loginRedirect?: string
+  }>(),
+  { loginRedirect: '/model-plaza' }
+)
 
 const settings = computed(() => appStore.cachedPublicSettings)
 const siteName = computed(() => settings.value?.site_name || 'Sub2API')

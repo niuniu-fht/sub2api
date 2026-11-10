@@ -185,6 +185,16 @@ const routes: RouteRecordRaw[] = [
       titleKey: 'modelPlaza.title'
     }
   },
+  {
+    path: '/status',
+    name: 'ChannelStatusPage',
+    component: () => import('@/views/ChannelStatusPublicView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Service Status',
+      titleKey: 'statusPage.title'
+    }
+  },
 
   // ==================== User Routes ====================
   {
