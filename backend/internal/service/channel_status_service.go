@@ -375,6 +375,21 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 
+	// 展示白名单：配置了 display_group_ids 时只输出这些分组
+	if len(config.DisplayGroupIDs) > 0 {
+		allowed := make(map[int64]struct{}, len(config.DisplayGroupIDs))
+		for _, id := range config.DisplayGroupIDs {
+			allowed[id] = struct{}{}
+		}
+		filtered := ids[:0]
+		for _, id := range ids {
+			if _, ok := allowed[id]; ok {
+				filtered = append(filtered, id)
+			}
+		}
+		ids = filtered
+	}
+
 	groups := make([]GroupStatus, 0, len(ids))
 	overallDown, overallDegraded := false, false
 	for _, id := range ids {

@@ -1391,6 +1391,8 @@ export interface ChannelStatusConfigSettings {
     healthy: number;
     degraded: number;
   };
+  /** 状态页/公开 API 只展示这些分组（白名单）；空或缺失 = 展示全部分组。 */
+  display_group_ids?: number[];
 }
 
 export interface ChannelStatusSettings {

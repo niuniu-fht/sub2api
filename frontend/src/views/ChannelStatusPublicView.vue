@@ -170,21 +170,13 @@
                 </div>
               </div>
 
-              <!-- 时间线（最旧在左，最新在右） -->
+              <!-- 时间线（最旧在左，最新在右；悬浮显示气泡） -->
               <div class="mt-4 pt-3 border-t border-gray-100 dark:border-dark-700/60">
                 <div class="mb-2 flex justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-400">
                   <span>{{ t('statusPage.timeline', { n: snapshot.window_hours }) }}</span>
                   <span>{{ t('statusPage.past') }} → {{ t('statusPage.now') }}</span>
                 </div>
-                <div class="flex h-5 w-full items-stretch gap-[3px]">
-                  <div
-                    v-for="(bucket, idx) in orderedTimeline(group)"
-                    :key="idx"
-                    class="min-w-0 flex-1 rounded-sm transition-all duration-200 hover:scale-y-110"
-                    :class="STATUS_BAR[bucket.status] ?? STATUS_BAR.unknown"
-                    :title="bucketTitle(bucket)"
-                  ></div>
-                </div>
+                <StatusTimeline :buckets="orderedTimeline(group)" />
               </div>
 
               <!-- 模型明细（可展开，带过渡） -->
@@ -257,6 +249,7 @@ import AutoRefreshButton from '@/components/common/AutoRefreshButton.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
+import StatusTimeline from '@/components/channelStatus/StatusTimeline.vue'
 import { getChannelStatus, type ChannelHealthStatus, type ChannelStatusBucket, type ChannelStatusGroup, type ChannelStatusSnapshot } from '@/api/channelStatus'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { useAppStore } from '@/stores/app'
@@ -287,13 +280,6 @@ const STATUS_CHIP: Record<ChannelHealthStatus, string> = {
   degraded: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
   down: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400',
   unknown: 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400'
-}
-
-const STATUS_BAR: Record<ChannelHealthStatus, string> = {
-  operational: 'bg-emerald-500',
-  degraded: 'bg-amber-500',
-  down: 'bg-red-500',
-  unknown: 'bg-gray-200 dark:bg-dark-700'
 }
 
 // hover 时的边框强调色：跟随分组状态。
@@ -389,13 +375,6 @@ function formatGenMs(ms: number): string {
 /** API 返回的桶为最旧在前，直接左→右渲染即为「过去 → 现在」。 */
 function orderedTimeline(group: ChannelStatusGroup): ChannelStatusBucket[] {
   return group.timeline ?? []
-}
-
-function bucketTitle(bucket: ChannelStatusBucket): string {
-  const time = formatDateTimeToMinute(new Date(bucket.bucket_start_ms))
-  if (bucket.status === 'unknown') return `${time} · ${statusLabel('unknown')}`
-  const rate = bucket.success_rate < 0 ? '—' : `${bucket.success_rate.toFixed(1)}%`
-  return `${time} · ${statusLabel(bucket.status)} · ${rate}`
 }
 
 function toggleModels(id: number): void {

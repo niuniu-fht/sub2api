@@ -90,5 +90,6 @@ GET /api/v1/channel-status
 ## 管理端配置
 
 - `GET /api/v1/admin/settings/channel-status` / `PUT`（管理员 JWT）：开关 `enabled` + 配置
-  `config`（`window_hours` / `refresh_seconds` / `filter_rules[{status_codes,keywords}]` / `thresholds`）
+  `config`（`window_hours` / `refresh_seconds` / `filter_rules[{status_codes,keywords}]` / `thresholds` / `display_group_ids`）
+- `display_group_ids`：展示白名单（只聚合输出这些分组）；空数组或不传 = 展示全部分组。
 - 保存配置后服务端立即触发一轮聚合（无需等刷新间隔）。

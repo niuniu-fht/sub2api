@@ -41,6 +41,8 @@ type ChannelStatusConfig struct {
 	RefreshSeconds int                       `json:"refresh_seconds"`
 	FilterRules    []ChannelStatusFilterRule `json:"filter_rules"`
 	Thresholds     ChannelStatusThresholds   `json:"thresholds"`
+	// DisplayGroupIDs 状态页/公开 API 只展示这些分组（白名单）；空 = 展示全部分组。
+	DisplayGroupIDs []int64 `json:"display_group_ids"`
 }
 
 const (
@@ -53,6 +55,7 @@ const (
 	maxChannelStatusStatusCodes    = 20
 	maxChannelStatusKeywords       = 50
 	maxChannelStatusKeywordLen     = 200
+	maxChannelStatusDisplayGroups  = 200
 	MaxChannelStatusWindowHours    = 24 * 30
 	MinChannelStatusWindowHours    = 1
 	MaxChannelStatusRefreshSeconds = 3600
@@ -130,6 +133,24 @@ func NormalizeChannelStatusConfig(raw ChannelStatusConfig) (ChannelStatusConfig,
 	}
 	if cfg.Thresholds.Healthy < cfg.Thresholds.Degraded || cfg.Thresholds.Healthy > 100 || cfg.Thresholds.Degraded < 0 {
 		return cfg, infraerrors.New(400, "INVALID_CHANNEL_STATUS_CONFIG", "thresholds must satisfy 100 >= healthy >= degraded >= 0")
+	}
+
+	if raw.DisplayGroupIDs != nil {
+		if len(raw.DisplayGroupIDs) > maxChannelStatusDisplayGroups {
+			return cfg, infraerrors.Newf(400, "INVALID_CHANNEL_STATUS_CONFIG", "display_group_ids supports at most %d entries", maxChannelStatusDisplayGroups)
+		}
+		seen := make(map[int64]struct{}, len(raw.DisplayGroupIDs))
+		cfg.DisplayGroupIDs = make([]int64, 0, len(raw.DisplayGroupIDs))
+		for _, id := range raw.DisplayGroupIDs {
+			if id <= 0 {
+				continue
+			}
+			if _, dup := seen[id]; dup {
+				continue
+			}
+			seen[id] = struct{}{}
+			cfg.DisplayGroupIDs = append(cfg.DisplayGroupIDs, id)
+		}
 	}
 	return cfg, nil
 }

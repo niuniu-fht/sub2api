@@ -2095,6 +2095,43 @@
                 </div>
               </div>
 
+              <!-- 显示的分组（白名单；空=全部） -->
+              <div data-testid="channel-status-display-groups">
+                <div class="mb-2 flex items-center justify-between">
+                  <label class="input-label mb-0">{{ t("admin.settings.channelStatus.displayGroups") }}</label>
+                  <div class="flex gap-2">
+                    <button
+                      type="button"
+                      class="rounded-lg bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
+                      data-testid="channel-status-groups-all"
+                      @click="channelStatusForm.config.display_group_ids = []"
+                    >
+                      {{ t("admin.settings.channelStatus.allGroups") }}
+                    </button>
+                  </div>
+                </div>
+                <p class="mb-2 text-xs text-gray-400 dark:text-gray-500">
+                  {{ t("admin.settings.channelStatus.displayGroupsHint") }}
+                </p>
+                <div v-if="channelStatusGroupOptions.length > 0" class="max-h-40 space-y-1.5 overflow-y-auto rounded-xl border border-gray-200 p-3 dark:border-dark-600">
+                  <label
+                    v-for="option in channelStatusGroupOptions"
+                    :key="option.id"
+                    class="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/60"
+                  >
+                    <input
+                      v-model="channelStatusSelectedGroupIds"
+                      type="checkbox"
+                      :value="option.id"
+                      class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500"
+                    />
+                    <span class="truncate text-gray-700 dark:text-gray-200">{{ option.name }}</span>
+                    <span class="ml-auto flex-shrink-0 text-xs text-gray-400">{{ option.platform }}</span>
+                  </label>
+                </div>
+                <div v-else class="text-xs text-gray-400">{{ t("common.loading") }}</div>
+              </div>
+
               <div>
                 <div class="mb-2 flex items-center justify-between">
                   <label class="input-label mb-0">{{ t("admin.settings.channelStatus.filterRules") }}</label>
@@ -9380,6 +9417,15 @@ const channelStatusForm = reactive({
     refresh_seconds: 60,
     filter_rules: [] as Array<{ status_codes: number[]; keywords: string[] }>,
     thresholds: { healthy: 99, degraded: 90 },
+    display_group_ids: [] as number[],
+  },
+});
+// 显示分组多选：空数组 = 全部展示（白名单语义见后端 display_group_ids）。
+const channelStatusGroupOptions = ref<Array<{ id: number; name: string; platform: string }>>([]);
+const channelStatusSelectedGroupIds = computed({
+  get: () => channelStatusForm.config.display_group_ids,
+  set: (ids: number[]) => {
+    channelStatusForm.config.display_group_ids = ids;
   },
 });
 // 规则行的文本输入形态（逗号分隔）
@@ -12408,6 +12454,7 @@ async function loadChannelStatusSettings() {
         refresh_seconds: settings.config.refresh_seconds,
         filter_rules: settings.config.filter_rules || [],
         thresholds: settings.config.thresholds,
+        display_group_ids: settings.config.display_group_ids || [],
       };
     }
     channelStatusRuleRows.value = (channelStatusForm.config.filter_rules || []).map(
@@ -12420,6 +12467,17 @@ async function loadChannelStatusSettings() {
     // Silent fail - settings will use defaults
   } finally {
     channelStatusLoading.value = false;
+  }
+  // 分组选项（含停用分组，供白名单勾选）；失败时静默，仅影响选择列表展示
+  try {
+    const groups = await adminAPI.groups.getAllIncludingInactive();
+    channelStatusGroupOptions.value = groups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      platform: g.platform,
+    }));
+  } catch (_error: unknown) {
+    channelStatusGroupOptions.value = [];
   }
 }
 
@@ -12445,6 +12503,7 @@ function buildChannelStatusPayload() {
       refresh_seconds: channelStatusForm.config.refresh_seconds,
       filter_rules: rules,
       thresholds: channelStatusForm.config.thresholds,
+      display_group_ids: channelStatusForm.config.display_group_ids,
     },
   };
 }
@@ -12461,7 +12520,10 @@ async function saveChannelStatusSettings() {
     }
     const updated = await adminAPI.settings.updateChannelStatusSettings(payload);
     channelStatusForm.enabled = updated.enabled;
-    channelStatusForm.config = updated.config;
+    channelStatusForm.config = {
+      ...updated.config,
+      display_group_ids: updated.config.display_group_ids || [],
+    };
     channelStatusRuleRows.value = (updated.config.filter_rules || []).map(
       (rule) => ({
         status_codes: (rule.status_codes || []).join(", "),
