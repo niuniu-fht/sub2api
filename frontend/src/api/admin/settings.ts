@@ -1374,6 +1374,47 @@ export async function updatePanelRateLimitSettings(
   return data;
 }
 
+// ==================== Channel Status Settings ====================
+
+/** 渠道状态统计：单条过滤规则（命中的失败不计入统计） */
+export interface ChannelStatusFilterRule {
+  status_codes: number[];
+  keywords: string[];
+}
+
+/** 渠道状态统计配置（settings key: channel_status_config） */
+export interface ChannelStatusConfigSettings {
+  window_hours: number;
+  refresh_seconds: number;
+  filter_rules: ChannelStatusFilterRule[];
+  thresholds: {
+    healthy: number;
+    degraded: number;
+  };
+}
+
+export interface ChannelStatusSettings {
+  enabled: boolean;
+  config: ChannelStatusConfigSettings;
+}
+
+export async function getChannelStatusSettings(): Promise<ChannelStatusSettings> {
+  const { data } = await apiClient.get<ChannelStatusSettings>(
+    "/admin/settings/channel-status",
+  );
+  return data;
+}
+
+export async function updateChannelStatusSettings(
+  settings: ChannelStatusSettings,
+): Promise<ChannelStatusSettings> {
+  const { data } = await apiClient.put<ChannelStatusSettings>(
+    "/admin/settings/channel-status",
+    settings,
+  );
+  return data;
+}
+
 // ==================== Stream Timeout Settings ====================
 
 /**
@@ -1703,6 +1744,8 @@ export const settingsAPI = {
   updateRateLimit429CooldownSettings,
   getPanelRateLimitSettings,
   updatePanelRateLimitSettings,
+  getChannelStatusSettings,
+  updateChannelStatusSettings,
   getStreamTimeoutSettings,
   updateStreamTimeoutSettings,
   getRectifierSettings,

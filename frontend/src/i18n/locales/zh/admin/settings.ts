@@ -194,6 +194,25 @@ export default {
         auditRetention: '操作日志保留天数',
         auditRetentionHint: '超过该天数的操作日志将被自动清理；填 0 表示永久保留（仅支持手动清空）。'
       },
+      channelStatus: {
+        title: '渠道状态统计',
+        description: '基于真实生成记录（用量日志 + 错误日志）定时聚合成渠道/模型的成功率与平均生图时间，并通过公开 API（GET /api/v1/channel-status）提供给外部系统。',
+        enabled: '启用渠道状态统计',
+        windowHours: '统计窗口（小时）',
+        refreshSeconds: '刷新间隔（秒）',
+        healthy: '健康阈值（%）',
+        degraded: '降级阈值（%）',
+        filterRules: '失败过滤规则',
+        filterRulesHint: '命中的失败不计入失败数（如：参数错误、内容审核类失败）。规则内状态码与关键词需同时命中，多条规则任一命中即可。',
+        ruleIndex: '规则 #{index}',
+        ruleStatusCodes: '状态码',
+        ruleStatusCodesPlaceholder: '例如 400, 429',
+        ruleKeywords: '错误关键词',
+        ruleKeywordsPlaceholder: '例如 content_policy, 每次只能生成',
+        addRule: '添加规则',
+        saved: '渠道状态统计配置已保存',
+        saveFailed: '保存渠道状态统计配置失败'
+      },
       panelRateLimit: {
         title: '面板接口限流',
         description: '限制面板 API 的请求频率，防止高频刷接口（如用量统计、仪表盘查询）打爆数据库',

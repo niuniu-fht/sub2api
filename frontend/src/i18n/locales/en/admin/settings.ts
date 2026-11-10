@@ -194,6 +194,25 @@ export default {
         auditRetention: 'Audit Log Retention (days)',
         auditRetentionHint: 'Audit logs older than this are cleaned up automatically. Set to 0 to keep them forever (manual clear only).'
       },
+      channelStatus: {
+        title: 'Channel Status Statistics',
+        description: 'Periodically aggregates real generation records (usage logs + error logs) into per-channel/model success rates and average generation times, exposed via a public API (GET /api/v1/channel-status) for external systems.',
+        enabled: 'Enable channel status statistics',
+        windowHours: 'Window (hours)',
+        refreshSeconds: 'Refresh interval (seconds)',
+        healthy: 'Healthy threshold (%)',
+        degraded: 'Degraded threshold (%)',
+        filterRules: 'Failure filter rules',
+        filterRulesHint: 'Failures matching a rule are excluded from the failure count (e.g. invalid-parameter or content-moderation failures). Within a rule, status codes and keywords must both match; any rule matching triggers the filter.',
+        ruleIndex: 'Rule #{index}',
+        ruleStatusCodes: 'Status codes',
+        ruleStatusCodesPlaceholder: 'e.g. 400, 429',
+        ruleKeywords: 'Error keywords',
+        ruleKeywordsPlaceholder: 'e.g. content_policy, quota exceeded',
+        addRule: 'Add rule',
+        saved: 'Channel status settings saved',
+        saveFailed: 'Failed to save channel status settings'
+      },
       panelRateLimit: {
         title: 'Panel API Rate Limiting',
         description: 'Throttle panel API requests to keep high-frequency polling (usage stats, dashboard queries) from overwhelming the database',

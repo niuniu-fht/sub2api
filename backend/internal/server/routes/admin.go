@@ -598,6 +598,9 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// 图片计费阈值配置
 		adminSettings.GET("/image-billing-thresholds", h.Admin.Setting.GetImageBillingThresholdSettings)
 		adminSettings.PUT("/image-billing-thresholds", h.Admin.Setting.UpdateImageBillingThresholdSettings)
+		// 渠道状态统计配置
+		adminSettings.GET("/channel-status", h.ChannelStatus.GetChannelStatusSettings)
+		adminSettings.PUT("/channel-status", h.ChannelStatus.UpdateChannelStatusSettings)
 		// 图片档位账号调度配置
 		adminSettings.GET("/image-billing-account-routing", h.Admin.Setting.GetImageBillingAccountRoutingSettings)
 		adminSettings.PUT("/image-billing-account-routing", h.Admin.Setting.UpdateImageBillingAccountRoutingSettings)

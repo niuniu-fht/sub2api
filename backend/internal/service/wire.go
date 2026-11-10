@@ -550,6 +550,18 @@ func ProvideOpsAggregationService(
 	return svc
 }
 
+// ProvideChannelStatusService creates and starts ChannelStatusService (passive
+// aggregation of usage/error records into a cached channel status snapshot).
+func ProvideChannelStatusService(
+	settingService *SettingService,
+	db *sql.DB,
+	redisClient *redis.Client,
+) *ChannelStatusService {
+	svc := NewChannelStatusService(settingService, db, redisClient)
+	svc.Start()
+	return svc
+}
+
 // ProvideOpsAlertEvaluatorService creates and starts OpsAlertEvaluatorService.
 func ProvideOpsAlertEvaluatorService(
 	opsService *OpsService,
@@ -922,6 +934,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAuditLogService,
 	ProvideOpsMetricsCollector,
 	ProvideOpsAggregationService,
+	ProvideChannelStatusService,
 	ProvideOpsAlertEvaluatorService,
 	ProvideOpsCleanupService,
 	ProvideOpsScheduledReportService,

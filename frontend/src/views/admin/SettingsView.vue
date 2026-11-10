@@ -2033,6 +2033,127 @@
             </div>
           </div>
 
+          <!-- 渠道状态统计 Settings -->
+          <div class="card" data-testid="channel-status-settings">
+            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+              <div class="flex items-center gap-2">
+                <Icon
+                  name="chart"
+                  size="md"
+                  class="text-primary-500"
+                />
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                  {{ t("admin.settings.channelStatus.title") }}
+                </h2>
+              </div>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t("admin.settings.channelStatus.description") }}
+              </p>
+            </div>
+            <div v-if="channelStatusLoading" class="px-6 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+              {{ t("common.loading") }}
+            </div>
+            <div v-else class="space-y-5 px-6 py-5">
+              <div class="flex items-center justify-between">
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-200">
+                  {{ t("admin.settings.channelStatus.enabled") }}
+                </span>
+                <button
+                  type="button"
+                  data-testid="channel-status-enabled"
+                  @click="channelStatusForm.enabled = !channelStatusForm.enabled"
+                  :class="[
+                    'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
+                    channelStatusForm.enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600',
+                  ]"
+                >
+                  <span
+                    :class="[
+                      'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                      channelStatusForm.enabled ? 'translate-x-5' : 'translate-x-0',
+                    ]"
+                  />
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                <div>
+                  <label class="input-label">{{ t("admin.settings.channelStatus.windowHours") }}</label>
+                  <input v-model.number="channelStatusForm.config.window_hours" type="number" min="1" class="input" />
+                </div>
+                <div>
+                  <label class="input-label">{{ t("admin.settings.channelStatus.refreshSeconds") }}</label>
+                  <input v-model.number="channelStatusForm.config.refresh_seconds" type="number" min="15" class="input" />
+                </div>
+                <div>
+                  <label class="input-label">{{ t("admin.settings.channelStatus.healthy") }}</label>
+                  <input v-model.number="channelStatusForm.config.thresholds.healthy" type="number" class="input" />
+                </div>
+                <div>
+                  <label class="input-label">{{ t("admin.settings.channelStatus.degraded") }}</label>
+                  <input v-model.number="channelStatusForm.config.thresholds.degraded" type="number" class="input" />
+                </div>
+              </div>
+
+              <div>
+                <div class="mb-2 flex items-center justify-between">
+                  <label class="input-label mb-0">{{ t("admin.settings.channelStatus.filterRules") }}</label>
+                  <button
+                    type="button"
+                    class="rounded-lg bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
+                    @click="addChannelStatusRule"
+                  >
+                    + {{ t("admin.settings.channelStatus.addRule") }}
+                  </button>
+                </div>
+                <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.channelStatus.filterRulesHint") }}
+                </p>
+                <div v-if="channelStatusRuleRows.length > 0" class="space-y-3">
+                  <div
+                    v-for="(rule, index) in channelStatusRuleRows"
+                    :key="index"
+                    class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"
+                  >
+                    <div class="mb-2 flex items-center justify-between">
+                      <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                        {{ t("admin.settings.channelStatus.ruleIndex", { index: index + 1 }) }}
+                      </span>
+                      <button
+                        type="button"
+                        @click="removeChannelStatusRule(index)"
+                        class="rounded p-1 text-red-500 transition-colors hover:text-red-600"
+                      >
+                        <Icon name="x" size="sm" :stroke-width="2" />
+                      </button>
+                    </div>
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label class="input-label">{{ t("admin.settings.channelStatus.ruleStatusCodes") }}</label>
+                        <input v-model="rule.status_codes" type="text" class="input" :placeholder="t('admin.settings.channelStatus.ruleStatusCodesPlaceholder')" />
+                      </div>
+                      <div>
+                        <label class="input-label">{{ t("admin.settings.channelStatus.ruleKeywords") }}</label>
+                        <input v-model="rule.keywords" type="text" class="input" :placeholder="t('admin.settings.channelStatus.ruleKeywordsPlaceholder')" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="flex justify-end border-t border-gray-100 px-6 py-4 dark:border-dark-700">
+              <button
+                type="button"
+                data-testid="channel-status-save"
+                @click="saveChannelStatusSettings"
+                :disabled="channelStatusSaving"
+                class="btn btn-primary btn-sm"
+              >
+                {{ channelStatusSaving ? t("common.saving") : t("common.save") }}
+              </button>
+            </div>
+          </div>
+
           <!-- 人机验证 Settings -->
           <div class="card">
             <div
@@ -9249,6 +9370,29 @@ const panelRateLimitForm = reactive({
   public_ip_rpm: 300,
 });
 
+// 渠道状态统计状态
+const channelStatusLoading = ref(true);
+const channelStatusSaving = ref(false);
+const channelStatusForm = reactive({
+  enabled: false,
+  config: {
+    window_hours: 24,
+    refresh_seconds: 60,
+    filter_rules: [] as Array<{ status_codes: number[]; keywords: string[] }>,
+    thresholds: { healthy: 99, degraded: 90 },
+  },
+});
+// 规则行的文本输入形态（逗号分隔）
+const channelStatusRuleRows = ref<Array<{ status_codes: string; keywords: string }>>([]);
+
+const addChannelStatusRule = () => {
+  channelStatusRuleRows.value.push({ status_codes: "", keywords: "" });
+};
+
+const removeChannelStatusRule = (index: number) => {
+  channelStatusRuleRows.value.splice(index, 1);
+};
+
 // Stream Timeout 状态
 const streamTimeoutLoading = ref(true);
 const streamTimeoutSaving = ref(false);
@@ -12252,6 +12396,91 @@ async function savePanelRateLimitSettings() {
   }
 }
 
+// 渠道状态统计方法
+async function loadChannelStatusSettings() {
+  channelStatusLoading.value = true;
+  try {
+    const settings = await adminAPI.settings.getChannelStatusSettings();
+    channelStatusForm.enabled = settings.enabled;
+    if (settings.config) {
+      channelStatusForm.config = {
+        window_hours: settings.config.window_hours,
+        refresh_seconds: settings.config.refresh_seconds,
+        filter_rules: settings.config.filter_rules || [],
+        thresholds: settings.config.thresholds,
+      };
+    }
+    channelStatusRuleRows.value = (channelStatusForm.config.filter_rules || []).map(
+      (rule) => ({
+        status_codes: (rule.status_codes || []).join(", "),
+        keywords: (rule.keywords || []).join(", "),
+      }),
+    );
+  } catch (_error: unknown) {
+    // Silent fail - settings will use defaults
+  } finally {
+    channelStatusLoading.value = false;
+  }
+}
+
+function buildChannelStatusPayload() {
+  const rules = channelStatusRuleRows.value
+    .map((row) => ({
+      status_codes: row.status_codes
+        .split(/[,，\s]+/)
+        .map((part) => Number(part.trim()))
+        .filter((code) => Number.isFinite(code) && code >= 100 && code <= 599),
+      keywords: row.keywords
+        .split(/[,，;；]+/)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0),
+    }))
+    .filter(
+      (rule) => rule.status_codes.length > 0 || rule.keywords.length > 0,
+    );
+  return {
+    enabled: channelStatusForm.enabled,
+    config: {
+      window_hours: channelStatusForm.config.window_hours,
+      refresh_seconds: channelStatusForm.config.refresh_seconds,
+      filter_rules: rules,
+      thresholds: channelStatusForm.config.thresholds,
+    },
+  };
+}
+
+async function saveChannelStatusSettings() {
+  channelStatusSaving.value = true;
+  try {
+    const payload = buildChannelStatusPayload();
+    if (
+      payload.enabled &&
+      payload.config.filter_rules.length === 0
+    ) {
+      // 允许开启但无规则：不过滤任何失败，直接保存
+    }
+    const updated = await adminAPI.settings.updateChannelStatusSettings(payload);
+    channelStatusForm.enabled = updated.enabled;
+    channelStatusForm.config = updated.config;
+    channelStatusRuleRows.value = (updated.config.filter_rules || []).map(
+      (rule) => ({
+        status_codes: (rule.status_codes || []).join(", "),
+        keywords: (rule.keywords || []).join(", "),
+      }),
+    );
+    appStore.showSuccess(t("admin.settings.channelStatus.saved"));
+  } catch (error: unknown) {
+    appStore.showError(
+      extractApiErrorMessage(
+        error,
+        t("admin.settings.channelStatus.saveFailed"),
+      ),
+    );
+  } finally {
+    channelStatusSaving.value = false;
+  }
+}
+
 // Rate Limit Cooldown (429) 方法
 async function loadRateLimit429CooldownSettings() {
   rateLimit429CooldownLoading.value = true;
@@ -12935,6 +13164,7 @@ onMounted(() => {
   loadOverloadCooldownSettings();
   loadRateLimit429CooldownSettings();
   loadPanelRateLimitSettings();
+  loadChannelStatusSettings();
   loadStreamTimeoutSettings();
   loadRectifierSettings();
   loadBetaPolicySettings();
