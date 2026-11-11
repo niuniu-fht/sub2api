@@ -12468,14 +12468,16 @@ async function loadChannelStatusSettings() {
   } finally {
     channelStatusLoading.value = false;
   }
-  // 分组选项（含停用分组，供白名单勾选）；失败时静默，仅影响选择列表展示
+  // 分组选项（含停用分组，供白名单勾选）；专属分组不参与统计，不在列表中。失败时静默，仅影响选择列表展示
   try {
     const groups = await adminAPI.groups.getAllIncludingInactive();
-    channelStatusGroupOptions.value = groups.map((g) => ({
-      id: g.id,
-      name: g.name,
-      platform: g.platform,
-    }));
+    channelStatusGroupOptions.value = groups
+      .filter((g) => !g.is_exclusive)
+      .map((g) => ({
+        id: g.id,
+        name: g.name,
+        platform: g.platform,
+      }));
   } catch (_error: unknown) {
     channelStatusGroupOptions.value = [];
   }

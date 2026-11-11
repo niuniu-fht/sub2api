@@ -336,26 +336,29 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	}
 	_ = errorRows.Close()
 
-	// 3) 分组元信息（名称/平台）
+	// 3) 分组元信息（名称/平台/是否专属）
 	groupMeta := map[int64]struct {
-		Name     string
-		Platform string
+		Name      string
+		Platform  string
+		Exclusive bool
 	}{}
-	metaRows, err := s.db.QueryContext(ctx, `SELECT id, name, coalesce(platform, '') FROM groups`)
+	metaRows, err := s.db.QueryContext(ctx, `SELECT id, name, coalesce(platform, ''), coalesce(is_exclusive, false) FROM groups`)
 	if err != nil {
 		return nil, fmt.Errorf("query groups: %w", err)
 	}
 	for metaRows.Next() {
 		var id int64
 		var name, platform string
-		if err := metaRows.Scan(&id, &name, &platform); err != nil {
+		var exclusive bool
+		if err := metaRows.Scan(&id, &name, &platform, &exclusive); err != nil {
 			_ = metaRows.Close()
 			return nil, fmt.Errorf("scan group row: %w", err)
 		}
 		groupMeta[id] = struct {
-			Name     string
-			Platform string
-		}{Name: name, Platform: platform}
+			Name      string
+			Platform  string
+			Exclusive bool
+		}{Name: name, Platform: platform, Exclusive: exclusive}
 	}
 	if err := metaRows.Err(); err != nil {
 		_ = metaRows.Close()
@@ -374,6 +377,17 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		}
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	// 只统计公开（非专属）分组：专属分组不进快照；已删除的分组（无元信息）同样跳过
+	publicIDs := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		meta, ok := groupMeta[id]
+		if !ok || meta.Exclusive {
+			continue
+		}
+		publicIDs = append(publicIDs, id)
+	}
+	ids = publicIDs
 
 	// 展示白名单：配置了 display_group_ids 时只输出这些分组
 	if len(config.DisplayGroupIDs) > 0 {

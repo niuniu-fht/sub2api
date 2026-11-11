@@ -204,7 +204,7 @@ export default {
         degraded: '降级阈值（%）',
         displayGroups: '显示的分组',
         allGroups: '全部',
-        displayGroupsHint: '勾选后状态页与公开 API 只展示所选分组；不勾选（全部）= 展示所有分组。',
+        displayGroupsHint: '勾选后状态页与公开 API 只展示所选分组；不勾选（全部）= 展示所有公开分组。专属分组不参与统计。',
         filterRules: '失败过滤规则',
         filterRulesHint: '命中的失败不计入失败数（如：参数错误、内容审核类失败）。规则内状态码与关键词需同时命中，多条规则任一命中即可。',
         ruleIndex: '规则 #{index}',

@@ -84,6 +84,7 @@ GET /api/v1/channel-status
 ### 统计口径
 
 - **聚合维度**：`usage_logs.group_id`（成功）+ `ops_error_logs.group_id`（失败），分组名称/平台取自 `groups` 表
+- **仅统计公开分组**：专属分组（`is_exclusive`）与已删除的分组不进快照；`display_group_ids` 白名单在公开分组范围内进一步筛选
 - 过滤语义：失败记录的上游状态码命中 `status_codes`（或上游状态码为 0 时回退客户端状态码）且/或错误消息包含任一
   `keywords`（不区分大小写）→ 该次失败不计入。规则内维度 AND，规则间 OR。
 
