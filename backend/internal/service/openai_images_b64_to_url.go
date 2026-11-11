@@ -46,29 +46,37 @@ func imagesHideB64Enabled(account *Account) bool {
 	return account != nil && account.getExtraBool(AccountExtraImagesHideB64)
 }
 
+// b64ToURLRetryAttempts 下载/转存的可重试次数（含首次）。网络抖动重试一次；
+// 超限/数据损坏这类确定性错误重试也会失败，代价仅为重复读一次。
+const b64ToURLRetryAttempts = 2
+
 // rewriteOpenAIImagesB64ToURL 对 Images 端点的非流式响应做「b64→图床 URL」改写:
 // 每张图(b64_json 或 url 任一存在)转存到对象存储,url 字段以图床地址覆盖;
-// images_hide_b64 开启时同时移除 b64_json。单项失败记日志并保留该项原样。
+// images_hide_b64 开启时同时移除 b64_json。
+//
+// 失败语义：功能开关关闭或对象存储未启用时原样透传（此时本就不承诺转存）；
+// 开关开启后转存是硬性承诺——下载/上传经重试仍失败的项会让整个响应以错误返回,
+// 绝不把上游 URL 原样透给客户端（上游 URL 有时效，泄露出去图会失效）。
 func (s *OpenAIGatewayService) rewriteOpenAIImagesB64ToURL(
 	ctx context.Context,
 	account *Account,
 	parsed *OpenAIImagesRequest,
 	body []byte,
-) []byte {
+) ([]byte, error) {
 	if !imagesB64ToURLEnabled(account) {
-		return body
+		return body, nil
 	}
 	uploader := syncImageUploader()
 	if uploader == nil || uploader.storage == nil {
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url skipped account_id=%d: image storage disabled", account.ID)
-		return body
+		return body, nil
 	}
 	if len(body) == 0 || !gjson.ValidBytes(body) {
-		return body
+		return body, nil
 	}
 	items := gjson.GetBytes(body, "data")
 	if !items.IsArray() {
-		return body
+		return body, nil
 	}
 	hideB64 := imagesHideB64Enabled(account)
 	syncRewriteRequestID := strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
@@ -89,23 +97,30 @@ func (s *OpenAIGatewayService) rewriteOpenAIImagesB64ToURL(
 		if b64 != "" {
 			payload, err = base64.StdEncoding.DecodeString(b64)
 			if err != nil {
-				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url skipped account_id=%d index=%d err=decode b64: %s", account.ID, index, err.Error())
-				continue
+				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url failed account_id=%d index=%d err=decode b64: %s", account.ID, index, err.Error())
+				return nil, fmt.Errorf("image re-host failed: decode b64 (index %d)", index)
 			}
 			contentType = sniffImageContentType(payload)
 		} else {
 			// 上游只给了 url:复用回填功能的下载管线(校验/代理/私网拦截),再解码为字节。
 			// 大小上限跟随图片存储设置的单图下载上限(max_download_bytes),而非回填的固定 20MiB,
-			// 避免大图(4K/High)在这里被拒后原样返回上游 URL。
-			encoded, fetchErr := s.fetchOpenAIImageURLBase64WithLimit(ctx, account, rawURL, uploader.maxDownloadBytes)
+			// 避免大图(4K/High)在这里被拒。
+			var encoded string
+			var fetchErr error
+			for attempt := 0; attempt < b64ToURLRetryAttempts; attempt++ {
+				encoded, fetchErr = s.fetchOpenAIImageURLBase64WithLimit(ctx, account, rawURL, uploader.maxDownloadBytes)
+				if fetchErr == nil {
+					break
+				}
+			}
 			if fetchErr != nil {
-				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url skipped account_id=%d index=%d err=%s", account.ID, index, fetchErr.Error())
-				continue
+				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url failed account_id=%d index=%d attempts=%d err=%s", account.ID, index, b64ToURLRetryAttempts, fetchErr.Error())
+				return nil, fmt.Errorf("image re-host failed: download upstream image (index %d)", index)
 			}
 			payload, err = base64.StdEncoding.DecodeString(encoded)
 			if err != nil {
-				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url skipped account_id=%d index=%d err=decode fetched: %s", account.ID, index, err.Error())
-				continue
+				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url failed account_id=%d index=%d err=decode fetched: %s", account.ID, index, err.Error())
+				return nil, fmt.Errorf("image re-host failed: decode downloaded image (index %d)", index)
 			}
 			contentType = sniffImageContentType(payload)
 		}
@@ -113,26 +128,34 @@ func (s *OpenAIGatewayService) rewriteOpenAIImagesB64ToURL(
 		// 每次改写调用生成随机 ID:键必须请求间唯一,否则并发请求互相覆盖(串图),
 		// 且确定性键可被枚举遍历他人图片。
 		key := uploader.buildKey(fmt.Sprintf("sync-%s-%d", syncRewriteRequestID, index), index, contentType)
-		storedURL, saveErr := uploader.storage.Save(ctx, key, contentType, payload)
+		var storedURL string
+		var saveErr error
+		for attempt := 0; attempt < b64ToURLRetryAttempts; attempt++ {
+			storedURL, saveErr = uploader.storage.Save(ctx, key, contentType, payload)
+			if saveErr == nil {
+				break
+			}
+		}
 		if saveErr != nil {
-			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url skipped account_id=%d index=%d err=upload: %s", account.ID, index, saveErr.Error())
-			continue
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url failed account_id=%d index=%d attempts=%d err=upload: %s", account.ID, index, b64ToURLRetryAttempts, saveErr.Error())
+			return nil, fmt.Errorf("image re-host failed: store image (index %d)", index)
 		}
 
 		var setErr error
 		body, setErr = sjson.SetBytes(body, fmt.Sprintf("data.%d.url", index), storedURL)
 		if setErr != nil {
-			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url account_id=%d index=%d err=set url: %s", account.ID, index, setErr.Error())
-			continue
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url failed account_id=%d index=%d err=set url: %s", account.ID, index, setErr.Error())
+			return nil, fmt.Errorf("image re-host failed: rewrite response (index %d)", index)
 		}
 		if hideB64 && b64 != "" {
 			body, setErr = sjson.DeleteBytes(body, fmt.Sprintf("data.%d.b64_json", index))
 			if setErr != nil {
+				// 转存已完成,仅隐藏 b64 失败不影响"必须走图床"的承诺,记日志继续。
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images hide b64 account_id=%d index=%d err=%s", account.ID, index, setErr.Error())
 			}
 		}
 	}
-	return body
+	return body, nil
 }
 
 func sniffImageContentType(payload []byte) string {

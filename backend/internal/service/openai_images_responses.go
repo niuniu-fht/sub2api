@@ -1396,7 +1396,12 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 	}
 	// 账号级「b64→图床 URL / 隐藏 b64」改写,与 apikey 直连路径同语义。
 	if account != nil {
-		responseBody = s.rewriteOpenAIImagesB64ToURL(c.Request.Context(), account, nil, responseBody)
+		rewritten, rewriteErr := s.rewriteOpenAIImagesB64ToURL(c.Request.Context(), account, nil, responseBody)
+		if rewriteErr != nil {
+			// 转存是硬性承诺：失败即报错,不把未转存的响应返回给客户端。
+			return OpenAIUsage{}, 0, nil, rewriteErr
+		}
+		responseBody = rewritten
 	}
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	c.Data(resp.StatusCode, "application/json; charset=utf-8", responseBody)

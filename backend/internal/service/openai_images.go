@@ -1270,7 +1270,12 @@ func (s *OpenAIGatewayService) handleOpenAIImagesNonStreamingResponse(
 		return OpenAIUsage{}, 0, nil, err
 	}
 	body = s.backfillOpenAIImagesB64JSON(ctx, account, parsed, body)
-	body = s.rewriteOpenAIImagesB64ToURL(ctx, account, parsed, body)
+	rewritten, rewriteErr := s.rewriteOpenAIImagesB64ToURL(ctx, account, parsed, body)
+	if rewriteErr != nil {
+		// 转存是硬性承诺：任一图重试后仍失败,让请求以错误结束,绝不把上游 URL 原样返回。
+		return OpenAIUsage{}, 0, nil, rewriteErr
+	}
+	body = rewritten
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := "application/json"
 	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {

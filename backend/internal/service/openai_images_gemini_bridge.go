@@ -415,7 +415,12 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesViaGemini(
 	if err != nil {
 		return nil, &OpenAIImagesUpstreamError{StatusCode: http.StatusInternalServerError, Message: err.Error()}
 	}
-	responseBody = s.rewriteOpenAIImagesB64ToURL(ctx, account, parsed, responseBody)
+	rewritten, rewriteErr := s.rewriteOpenAIImagesB64ToURL(ctx, account, parsed, responseBody)
+	if rewriteErr != nil {
+		// 转存是硬性承诺：失败即报错,不把未转存的响应返回给客户端。
+		return nil, &OpenAIImagesUpstreamError{StatusCode: http.StatusBadGateway, Message: rewriteErr.Error()}
+	}
+	responseBody = rewritten
 
 	c.Data(http.StatusOK, "application/json", responseBody)
 	firstToken := int(time.Since(startTime).Milliseconds())
