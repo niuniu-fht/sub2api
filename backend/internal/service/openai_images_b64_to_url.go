@@ -95,7 +95,9 @@ func (s *OpenAIGatewayService) rewriteOpenAIImagesB64ToURL(
 			contentType = sniffImageContentType(payload)
 		} else {
 			// 上游只给了 url:复用回填功能的下载管线(校验/代理/私网拦截),再解码为字节。
-			encoded, fetchErr := s.fetchOpenAIImageURLBase64(ctx, account, rawURL)
+			// 大小上限跟随图片存储设置的单图下载上限(max_download_bytes),而非回填的固定 20MiB,
+			// 避免大图(4K/High)在这里被拒后原样返回上游 URL。
+			encoded, fetchErr := s.fetchOpenAIImageURLBase64WithLimit(ctx, account, rawURL, uploader.maxDownloadBytes)
 			if fetchErr != nil {
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Images b64->url skipped account_id=%d index=%d err=%s", account.ID, index, fetchErr.Error())
 				continue

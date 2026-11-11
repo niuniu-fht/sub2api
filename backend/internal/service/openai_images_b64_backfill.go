@@ -91,11 +91,21 @@ func (s *OpenAIGatewayService) backfillOpenAIImagesB64JSON(
 	return body
 }
 
-// fetchOpenAIImageURLBase64 取得图片 url 内容的标准 base64 编码。
+// fetchOpenAIImageURLBase64 取得图片 url 内容的标准 base64 编码（回填路径，固定 20MiB 上限）。
 // data: 形式的 url 直接取其 base64 载荷；其余 url 先沿用 base_url 的出站 URL 策略校验，
 // 再无条件拒绝回环、私网、链路本地等目的地（含重定向的每一跳），经账户代理下载，
 // 大小上限与 OAuth 路径的单图下载一致，且前 512 字节须嗅探为 png/jpeg/webp/gif。
 func (s *OpenAIGatewayService) fetchOpenAIImageURLBase64(ctx context.Context, account *Account, rawURL string) (string, error) {
+	return s.fetchOpenAIImageURLBase64WithLimit(ctx, account, rawURL, openAIImageMaxDownloadBytes)
+}
+
+// fetchOpenAIImageURLBase64WithLimit 同上，但大小上限由调用方指定：
+// b64→图床 URL 改写路径传入图片存储设置的单图下载上限（max_download_bytes），
+// 保证后台配置对该路径生效。
+func (s *OpenAIGatewayService) fetchOpenAIImageURLBase64WithLimit(ctx context.Context, account *Account, rawURL string, maxBytes int64) (string, error) {
+	if maxBytes <= 0 {
+		maxBytes = openAIImageMaxDownloadBytes
+	}
 	if strings.HasPrefix(strings.ToLower(rawURL), "data:") {
 		if encoded := normalizeOpenAIImageBase64(rawURL); encoded != "" {
 			return encoded, nil
@@ -131,12 +141,12 @@ func (s *OpenAIGatewayService) fetchOpenAIImageURLBase64(ctx context.Context, ac
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return "", fmt.Errorf("download image: unexpected status %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, openAIImageMaxDownloadBytes+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("read image body: %w", err)
 	}
-	if int64(len(data)) > openAIImageMaxDownloadBytes {
-		return "", fmt.Errorf("downloaded image exceeds %d bytes", openAIImageMaxDownloadBytes)
+	if int64(len(data)) > maxBytes {
+		return "", fmt.Errorf("downloaded image exceeds %d bytes", maxBytes)
 	}
 	if len(data) == 0 {
 		return "", errors.New("download image: empty body")
