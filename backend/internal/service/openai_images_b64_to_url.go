@@ -103,12 +103,12 @@ func (s *OpenAIGatewayService) rewriteOpenAIImagesB64ToURL(
 			contentType = sniffImageContentType(payload)
 		} else {
 			// 上游只给了 url:复用回填功能的下载管线(校验/代理/私网拦截),再解码为字节。
-			// 大小上限跟随图片存储设置的单图下载上限(max_download_bytes),而非回填的固定 20MiB,
-			// 避免大图(4K/High)在这里被拒。
+			// 转存不设大小上限(maxBytes<=0):任意尺寸的图(4K/High 等)都必须转存成功,
+			// 由 60s 下载超时与图片内容嗅探兜底;回填路径仍固定 20MiB。
 			var encoded string
 			var fetchErr error
 			for attempt := 0; attempt < b64ToURLRetryAttempts; attempt++ {
-				encoded, fetchErr = s.fetchOpenAIImageURLBase64WithLimit(ctx, account, rawURL, uploader.maxDownloadBytes)
+				encoded, fetchErr = s.fetchOpenAIImageURLBase64WithLimit(ctx, account, rawURL, 0)
 				if fetchErr == nil {
 					break
 				}

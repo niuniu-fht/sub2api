@@ -100,12 +100,10 @@ func (s *OpenAIGatewayService) fetchOpenAIImageURLBase64(ctx context.Context, ac
 }
 
 // fetchOpenAIImageURLBase64WithLimit 同上，但大小上限由调用方指定：
-// b64→图床 URL 改写路径传入图片存储设置的单图下载上限（max_download_bytes），
-// 保证后台配置对该路径生效。
+// b64→图床 URL 改写路径传入 maxBytes<=0 表示不设上限（大图 4K/High 也要转存成功）；
+// 回填路径传 openAIImageMaxDownloadBytes 固定 20MiB 以控制响应体大小。
 func (s *OpenAIGatewayService) fetchOpenAIImageURLBase64WithLimit(ctx context.Context, account *Account, rawURL string, maxBytes int64) (string, error) {
-	if maxBytes <= 0 {
-		maxBytes = openAIImageMaxDownloadBytes
-	}
+	unlimited := maxBytes <= 0
 	if strings.HasPrefix(strings.ToLower(rawURL), "data:") {
 		if encoded := normalizeOpenAIImageBase64(rawURL); encoded != "" {
 			return encoded, nil
@@ -141,11 +139,17 @@ func (s *OpenAIGatewayService) fetchOpenAIImageURLBase64WithLimit(ctx context.Co
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return "", fmt.Errorf("download image: unexpected status %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	var data []byte
+	if unlimited {
+		// 不设上限：图片字节一次性读入内存（仅同步生图路径，并发低），受 60s 下载超时保护。
+		data, err = io.ReadAll(resp.Body)
+	} else {
+		data, err = io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	}
 	if err != nil {
 		return "", fmt.Errorf("read image body: %w", err)
 	}
-	if int64(len(data)) > maxBytes {
+	if !unlimited && int64(len(data)) > maxBytes {
 		return "", fmt.Errorf("downloaded image exceeds %d bytes", maxBytes)
 	}
 	if len(data) == 0 {
