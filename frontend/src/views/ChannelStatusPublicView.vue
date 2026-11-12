@@ -180,7 +180,7 @@
               </div>
 
               <!-- 模型明细（可展开，带过渡） -->
-              <div v-if="group.models.length > 0" class="mt-3">
+              <div v-if="namedModels(group).length > 0" class="mt-3">
                 <button
                   type="button"
                   class="inline-flex items-center gap-1 text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
@@ -216,11 +216,11 @@
                         </thead>
                         <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
                           <tr
-                            v-for="m in group.models"
+                            v-for="m in namedModels(group)"
                             :key="m.model"
                             class="transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/40"
                           >
-                            <td class="py-1.5 pr-4 font-mono text-gray-800 dark:text-gray-200">{{ m.model }}</td>
+                            <td class="py-1.5 pr-4 font-mono text-gray-800 dark:text-gray-200">{{ m.model || t('statusPage.unknownModel') }}</td>
                             <td
                               class="py-1.5 pr-4 tabular-nums font-medium"
                               :class="rateTextClass(m.success_rate)"
@@ -250,7 +250,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import StatusTimeline from '@/components/channelStatus/StatusTimeline.vue'
-import { getChannelStatus, type ChannelHealthStatus, type ChannelStatusBucket, type ChannelStatusGroup, type ChannelStatusSnapshot } from '@/api/channelStatus'
+import { getChannelStatus, type ChannelHealthStatus, type ChannelStatusBucket, type ChannelStatusGroup, type ChannelStatusModelStat, type ChannelStatusSnapshot } from '@/api/channelStatus'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { useAppStore } from '@/stores/app'
 import { formatDateTimeToMinute } from '@/utils/format'
@@ -370,6 +370,11 @@ function formatGenMs(ms: number): string {
   if (!ms || ms <= 0) return '—'
   if (ms < 1000) return `${Math.round(ms)}ms`
   return `${(ms / 1000).toFixed(1)}s`
+}
+
+/** 模型明细只展示有名字的条目;空名条目是早期阶段失败(无模型归属),避免出现空行。 */
+function namedModels(group: ChannelStatusGroup): ChannelStatusModelStat[] {
+  return (group.models || []).filter((m) => m.model !== '')
 }
 
 /** API 返回的桶为最旧在前，直接左→右渲染即为「过去 → 现在」。 */

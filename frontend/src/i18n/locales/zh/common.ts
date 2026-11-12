@@ -481,6 +481,7 @@ export default {
     successRate: '成功率',
     avgGenTime: '平均生图时间',
     models: '模型明细',
+    unknownModel: '未知模型',
     modelCol: '模型',
     successRateCol: '成功率',
     avgGenCol: '平均耗时',

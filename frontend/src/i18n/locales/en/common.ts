@@ -482,6 +482,7 @@ export default {
     successRate: 'Success rate',
     avgGenTime: 'Avg. image time',
     models: 'Model details',
+    unknownModel: 'Unknown model',
     modelCol: 'Model',
     successRateCol: 'Success rate',
     avgGenCol: 'Avg. time',
