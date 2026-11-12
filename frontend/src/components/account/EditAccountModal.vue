@@ -6810,11 +6810,11 @@ const handleSubmit = async () => {
         } else {
           delete newExtra.images_b64_to_url
           delete newExtra.images_hide_b64
+        }
         if (webSearchEmulationMode.value === 'default') {
           delete newExtra.web_search_emulation
         } else {
           newExtra.web_search_emulation = webSearchEmulationMode.value
-
         }
 		}
 		applyOpenAIImageSizeTiersToExtra(newExtra, openAIImageSizeTiers.value)
