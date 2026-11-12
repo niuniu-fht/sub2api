@@ -338,6 +338,29 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				var imageUpstreamErr *service.OpenAIImagesUpstreamError
 				if errors.As(err, &imageUpstreamErr) {
 					retryableServerError := service.IsOpenAIImagesRetryableUpstreamError(imageUpstreamErr)
+					// 可重试的 5xx（上游网关 5xx/200+错误体等）与 failover 同语义：
+					// 只要还没向客户端写出内容、切换预算未耗尽,就换下一个账号继续,
+					// 而不是直接终止(否则路由规则里的后续账号永远不会被尝试)。
+					if retryableServerError &&
+						switchCount < maxAccountSwitches &&
+						service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) == writerSizeBeforeForward &&
+						!failoverClientGone(c) {
+						h.gatewayService.RecordOpenAIAccountSwitch()
+						failedAccountIDs[account.ID] = struct{}{}
+						lastFailoverErr = &service.UpstreamFailoverError{
+							StatusCode:  imageUpstreamErr.StatusCode,
+							ResponseBody: nil,
+						}
+						switchCount++
+						reqLog.Warn("openai.images.upstream_server_error_switching",
+							zap.Int64("account_id", account.ID),
+							zap.Int("status_code", imageUpstreamErr.StatusCode),
+							zap.Int("switch_count", switchCount),
+							zap.Int("max_switches", maxAccountSwitches),
+							zap.Error(err),
+						)
+						continue
+					}
 					if retryableServerError {
 						h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, requestModel, false, result), false, nil, err)
 					} else {
