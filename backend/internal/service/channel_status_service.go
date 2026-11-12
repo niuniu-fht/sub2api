@@ -331,6 +331,11 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		if MatchesChannelStatusFilterRules(config.FilterRules, upstreamStatus, clientStatus, message) {
 			continue // 命中过滤规则：不计入失败
 		}
+		// 客户端误配模型名的请求(分组内无任何账号支持该模型):网关在路由阶段直接拒绝,
+		// 不属于渠道故障,不计入统计。
+		if strings.Contains(message, "is not supported by any configured account in this group") {
+			continue
+		}
 		agg.addFailure(groupID, model, createdAt)
 	}
 	if err := errorRows.Err(); err != nil {
