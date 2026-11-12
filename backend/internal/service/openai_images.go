@@ -844,15 +844,19 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
-		// 账号级图片错误自动切换策略：命中即换下一个账号，不惩罚该账号（优先于全局透传规则）。
+		// 账号级图片错误自动切换策略：命中即换下一个账号，不惩罚该账号（优先于一切，含 400）。
 		if failoverErr := s.matchImageErrorFailoverPolicy(account, resp.StatusCode, resp.Header, respBody); failoverErr != nil {
 			return nil, failoverErr
 		}
-		// 错误透传规则：命中即按规则原样返回，不再切换账号。
-		if ptStatus, _, ptErrMsg, ptMatched := applyErrorPassthroughRule(c, PlatformOpenAI, resp.StatusCode, respBody, resp.StatusCode, "upstream_error", upstreamMsg); ptMatched {
-			upErr := &OpenAIImagesUpstreamError{StatusCode: ptStatus, ErrorType: "upstream_error", Message: ptErrMsg}
-			writeOpenAIImagesUpstreamErrorResponse(c, upErr)
-			return nil, upErr
+		// 路由切换语义：除 400 外一律换下一个账号（除非规则内无账号可选）。
+		// 400 = 客户端参数/内容类错误，唯一不换号的状态码：透传规则与真实上游错误原样返回。
+		if resp.StatusCode == http.StatusBadRequest {
+			if ptStatus, _, ptErrMsg, ptMatched := applyErrorPassthroughRule(c, PlatformOpenAI, resp.StatusCode, respBody, resp.StatusCode, "upstream_error", upstreamMsg); ptMatched {
+				upErr := &OpenAIImagesUpstreamError{StatusCode: ptStatus, ErrorType: "upstream_error", Message: ptErrMsg}
+				writeOpenAIImagesUpstreamErrorResponse(c, upErr)
+				return nil, upErr
+			}
+			return s.handleOpenAIImagesErrorResponse(upstreamCtx, resp, c, account, upstreamModel)
 		}
 		if isOpenAIImagesInsufficientBalance(respBody) {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -870,7 +874,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			s.coolOpenAIImagesInsufficientBalance(upstreamCtx, account)
 			return nil, newOpenAIImagesInsufficientBalanceFailoverError(resp.StatusCode, resp.Header, respBody)
 		}
-		if s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody) {
+		{
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				ProxyID:            opsUpstreamProxyID(account),
 				ProxyName:          opsUpstreamProxyName(account),
@@ -893,7 +897,6 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 			}
 			return nil, &UpstreamFailoverError{StatusCode: resp.StatusCode, ResponseBody: respBody, RetryableOnSameAccount: retryableOnSameAccount}
 		}
-		return s.handleOpenAIImagesErrorResponse(upstreamCtx, resp, c, account, upstreamModel)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

@@ -337,11 +337,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				}
 				var imageUpstreamErr *service.OpenAIImagesUpstreamError
 				if errors.As(err, &imageUpstreamErr) {
-					retryableServerError := service.IsOpenAIImagesRetryableUpstreamError(imageUpstreamErr)
-					// 可重试的 5xx（上游网关 5xx/200+错误体等）与 failover 同语义：
-					// 只要还没向客户端写出内容、切换预算未耗尽,就换下一个账号继续,
-					// 而不是直接终止(否则路由规则里的后续账号永远不会被尝试)。
-					if retryableServerError &&
+					// 路由切换语义（除 400 外一律换号）：只要还没向客户端写出内容、
+					// 切换预算未耗尽,就换下一个账号继续,而不是直接终止
+					// (否则路由规则里的后续账号永远不会被尝试)。
+					notBadRequest := imageUpstreamErr.StatusCode != http.StatusBadRequest
+					if notBadRequest &&
 						switchCount < maxAccountSwitches &&
 						service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) == writerSizeBeforeForward &&
 						!failoverClientGone(c) {
@@ -361,6 +361,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						)
 						continue
 					}
+					// 终止路径（400、或已写出内容/预算耗尽）：保持原有上报与日志语义。
+					retryableServerError := service.IsOpenAIImagesRetryableUpstreamError(imageUpstreamErr)
 					if retryableServerError {
 						h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, requestModel, false, result), false, nil, err)
 					} else {
