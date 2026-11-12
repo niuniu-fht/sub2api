@@ -182,6 +182,8 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
+	// 兜底账号同账号重试计数(图片计费路由规则 fallback_account_id/fallback_retry_count)。
+	imageBillingFallbackRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	stopJSONKeepalive := func() {}
 	jsonKeepaliveStarted := false
@@ -308,6 +310,41 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					zap.Error(err),
 				)
 			} else {
+				// 兜底账号同账号重试(图片计费路由规则 fallback_account_id):当前失败账号
+				// 即规则兜底账号时,原地重试 fallback_retry_count 次(递增退避,不占切换
+				// 预算、不排除该账号);重试耗尽后才进入正常换号流程。
+				// 400(终端错误)、已写出内容、客户端断开时不重试。
+				var fallbackRetryStatus int
+				var fallbackImageErr *service.OpenAIImagesUpstreamError
+				var fallbackFailoverErr *service.UpstreamFailoverError
+				switch {
+				case errors.As(err, &fallbackImageErr):
+					fallbackRetryStatus = fallbackImageErr.StatusCode
+				case errors.As(err, &fallbackFailoverErr):
+					fallbackRetryStatus = fallbackFailoverErr.StatusCode
+				}
+				if fbID, fbN := selection.ImageBillingFallbackAccountID, selection.ImageBillingFallbackRetryCount; fbID > 0 && fbN > 0 &&
+					account.ID == fbID && fallbackRetryStatus != http.StatusBadRequest &&
+					imageBillingFallbackRetryCount[account.ID] < fbN &&
+					service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) == writerSizeBeforeForward &&
+					!failoverClientGone(c) {
+					imageBillingFallbackRetryCount[account.ID]++
+					fallbackRetryDelay := time.Duration(imageBillingFallbackRetryCount[account.ID]) * time.Second
+					reqLog.Warn("openai.images.fallback_same_account_retry",
+						zap.Int64("account_id", account.ID),
+						zap.Int("retry_count", imageBillingFallbackRetryCount[account.ID]),
+						zap.Int("retry_limit", fbN),
+						zap.Int("upstream_status", fallbackRetryStatus),
+						zap.Duration("retry_delay", fallbackRetryDelay),
+						zap.Error(err),
+					)
+					select {
+					case <-requestCtx.Done():
+						return
+					case <-time.After(fallbackRetryDelay):
+					}
+					continue
+				}
 				// 轮询链(image_billing 路由 mode=round_robin):任意上游错误
 				// (含 400/内容审核/连接错误)都切换下一个账号,上限 3 次切换;
 				// 仅当错误尚未向客户端写出任何内容时才切换。

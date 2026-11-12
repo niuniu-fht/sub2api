@@ -544,6 +544,37 @@
           </div>
         </div>
 
+        <!-- 兜底账号(仅 OpenAI) -->
+        <div v-if="editorPlatform === 'openai'">
+          <div class="text-sm font-medium text-gray-700 dark:text-gray-200">{{ t('admin.imageBilling.routing.editor.fallback.title') }}</div>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.routing.editor.fallback.hint') }}</p>
+          <div class="mt-2 grid gap-3 sm:grid-cols-2">
+            <div>
+              <label class="mb-1 block text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.routing.editor.fallback.account') }}</label>
+              <select
+                v-model.number="editorDraft.fallback_account_id"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
+              >
+                <option :value="0">{{ t('admin.imageBilling.routing.editor.fallback.none') }}</option>
+                <option v-for="accountId in editorDraft.account_ids" :key="accountId" :value="accountId">
+                  {{ accountName(accountId) }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.routing.editor.fallback.retries') }}</label>
+              <input
+                v-model.number="editorDraft.fallback_retry_count"
+                type="number"
+                min="0"
+                max="10"
+                :disabled="editorDraft.fallback_account_id === 0"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
+              />
+            </div>
+          </div>
+        </div>
+
         <!-- 账号链 -->
         <div>
           <div class="text-sm font-medium text-gray-700 dark:text-gray-200">{{ t('admin.imageBilling.routing.editor.accounts') }}</div>
@@ -686,6 +717,8 @@ type OpenAIRule = {
   image_counts: number[]
   mode: RoutingMode
   account_ids: number[]
+  fallback_account_id?: number
+  fallback_retry_count?: number
 }
 
 type GeminiRule = {
@@ -777,6 +810,8 @@ const editorDraft = reactive<{
   aspect_ratios: string[]
   mode: RoutingMode
   account_ids: number[]
+  fallback_account_id: number
+  fallback_retry_count: number
 }>({
   qualities: [],
   tiers: [],
@@ -784,6 +819,8 @@ const editorDraft = reactive<{
   aspect_ratios: [],
   mode: 'priority',
   account_ids: [],
+  fallback_account_id: 0,
+  fallback_retry_count: 0,
 })
 
 const deleteConfirmShow = ref(false)
@@ -968,7 +1005,7 @@ type ImageBillingRoutingSettingsInput = {
     two_k_account_id?: number
     four_k_account_id?: number
     tier_modes?: Record<string, string>
-    rules?: Array<{ quality?: string; tier?: string; image_counts?: number[]; mode?: string; account_ids?: number[] }>
+    rules?: Array<{ quality?: string; tier?: string; image_counts?: number[]; mode?: string; account_ids?: number[]; fallback_account_id?: number; fallback_retry_count?: number }>
   }>
 }
 
@@ -992,10 +1029,12 @@ function applyOpenAIRouting(settings: ImageBillingRoutingSettingsInput): void {
       if (accountIDs.length === 0) continue
       const counts = normalizeImageCounts(rule.image_counts)
       const countKey = counts.length > 0 ? counts.join(',') : 'any'
-      const key = `${mode}:${countKey}:${accountIDs.join(',')}`
+      const fallbackAccountID = Math.trunc(Number(rule.fallback_account_id) || 0)
+      const fallbackRetryCount = fallbackAccountID ? Math.max(0, Math.min(10, Math.trunc(Number(rule.fallback_retry_count) || 0))) : 0
+      const key = `${mode}:${countKey}:${accountIDs.join(',')}:${fallbackAccountID}:${fallbackRetryCount}`
       let target = index.get(key)
       if (!target) {
-        target = { qualities: [], tiers: [], image_counts: counts, mode, account_ids: accountIDs }
+        target = { qualities: [], tiers: [], image_counts: counts, mode, account_ids: accountIDs, fallback_account_id: fallbackAccountID, fallback_retry_count: fallbackRetryCount }
         index.set(key, target)
         merged.push(target)
       }
@@ -1105,7 +1144,10 @@ function buildOpenAIRoutingPayload(): ImageBillingRoutingPayload {
           const key = `${quality}:${tier}:${countsKey}`
           if (seen.has(key)) continue
           seen.add(key)
-          rules.push({ quality, tier, image_counts: normalizeImageCounts(rule.image_counts), mode: rule.mode, account_ids: accountIDs })
+          const fb = rule.fallback_account_id && accountIDs.includes(rule.fallback_account_id)
+            ? { fallback_account_id: rule.fallback_account_id, fallback_retry_count: Math.max(0, Math.min(10, rule.fallback_retry_count || 0)) }
+            : {}
+          rules.push({ quality, tier, image_counts: normalizeImageCounts(rule.image_counts), mode: rule.mode, account_ids: accountIDs, ...fb })
         }
       }
     }
@@ -1178,6 +1220,8 @@ function openRuleEditor(ruleIndex?: number): void {
       editorDraft.qualities = [...rule.qualities]
       editorDraft.image_counts = [...(rule.image_counts || [])]
       editorDraft.mode = rule.mode
+      editorDraft.fallback_account_id = rule.fallback_account_id || 0
+      editorDraft.fallback_retry_count = rule.fallback_retry_count || 0
     } else {
       const rule = source as GeminiRule
       editorDraft.aspect_ratios = [...rule.aspect_ratios]
@@ -1192,6 +1236,8 @@ function openRuleEditor(ruleIndex?: number): void {
     editorDraft.aspect_ratios = ['*']
     editorDraft.mode = 'priority'
     editorDraft.account_ids = []
+    editorDraft.fallback_account_id = 0
+    editorDraft.fallback_retry_count = 0
   }
   editorOpen.value = true
 }
@@ -1249,6 +1295,10 @@ function addEditorAccount(accountId: number): void {
 function removeEditorAccount(accountId: number): void {
   const index = editorDraft.account_ids.indexOf(accountId)
   if (index !== -1) editorDraft.account_ids.splice(index, 1)
+  if (editorDraft.fallback_account_id === accountId) {
+    editorDraft.fallback_account_id = 0
+    editorDraft.fallback_retry_count = 0
+  }
 }
 
 function moveEditorAccount(index: number, direction: -1 | 1): void {
@@ -1286,6 +1336,8 @@ function confirmRuleEditor(): void {
       image_counts: [...editorDraft.image_counts],
       mode: editorDraft.mode,
       account_ids: [...editorDraft.account_ids],
+      fallback_account_id: editorDraft.fallback_account_id || 0,
+      fallback_retry_count: editorDraft.fallback_account_id ? Math.max(0, Math.min(10, editorDraft.fallback_retry_count || 0)) : 0,
     }
     if (editorIndex.value === null) openAIRules[key].push(rule)
     else openAIRules[key].splice(editorIndex.value, 1, rule)

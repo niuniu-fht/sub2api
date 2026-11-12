@@ -80,6 +80,11 @@ type OpenAIImageBillingRoutingRule struct {
 	// ImageCounts 参考图数量约束(空=不限)。请求携带的参考图张数在列表内才命中,
 	// 用于把请求路由到只支持特定参考图数量的号池。
 	ImageCounts []int `json:"image_counts,omitempty"`
+	// FallbackAccountID 兜底账号(可选,必须在 AccountIDs 内):链路中该账号失败时
+	// 可原地重试 FallbackRetryCount 次(不占切换预算、不排除该账号)后才继续换号。
+	FallbackAccountID int64 `json:"fallback_account_id,omitempty"`
+	// FallbackRetryCount 兜底账号同账号重试次数(0=失败立即换号;上限 10)。
+	FallbackRetryCount int `json:"fallback_retry_count,omitempty"`
 }
 
 const GeminiImageBillingAspectRatioAny = "*"
@@ -183,6 +188,27 @@ func normalizeOpenAIImageBillingRoutingRules(rules []OpenAIImageBillingRoutingRu
 		copied.Tier = tier
 		copied.Mode = mode
 		copied.AccountIDs = ids
+		// 兜底账号校验:必须在规则账号列表内,重试次数夹取 [0,10];兜底账号未设置/非法时清零。
+		fallbackID := rule.FallbackAccountID
+		inList := false
+		for _, id := range ids {
+			if id == fallbackID {
+				inList = true
+				break
+			}
+		}
+		if !inList {
+			fallbackID = 0
+		}
+		copied.FallbackAccountID = fallbackID
+		copied.FallbackRetryCount = rule.FallbackRetryCount
+		if fallbackID == 0 {
+			copied.FallbackRetryCount = 0
+		} else if copied.FallbackRetryCount > 10 {
+			copied.FallbackRetryCount = 10
+		} else if copied.FallbackRetryCount < 0 {
+			copied.FallbackRetryCount = 0
+		}
 		merged[key] = &copied
 		order = append(order, key)
 	}
@@ -337,6 +363,18 @@ func (s ImageBillingAccountRoutingSettings) AccountIDsAndModeFor(groupID int64, 
 		return legacy, ImageBillingRoutingModePriority
 	}
 	return nil, ImageBillingRoutingModePriority
+}
+
+// FallbackRetryFor 返回命中规则的兜底账号与同账号重试次数(0=未配置)。
+// 匹配顺序与 AccountIDsAndModeFor 完全一致:具体质量 → unmatched 兜底;旧版单账号链不支持。
+func (s ImageBillingAccountRoutingSettings) FallbackRetryFor(groupID int64, quality string, tier string, imageCount int) (int64, int) {
+	if rule := s.qualityRoutingRule(groupID, quality, tier, imageCount); rule != nil {
+		return rule.FallbackAccountID, rule.FallbackRetryCount
+	}
+	if rule := s.qualityRoutingRule(groupID, ImageQualityUnmatched, tier, imageCount); rule != nil {
+		return rule.FallbackAccountID, rule.FallbackRetryCount
+	}
+	return 0, 0
 }
 
 func (s ImageBillingAccountRoutingSettings) RoutingModeForQuality(groupID int64, quality string, tier string, imageCount int) string {

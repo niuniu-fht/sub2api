@@ -63,6 +63,13 @@ tierHintGemini: 'Pick which size tiers this rule applies to; Any matches request
         modePriorityHint: 'Try in order, fail over to the next on error',
         modeRoundRobin: 'Round robin',
         modeRoundRobinHint: 'Distribute across selected accounts',
+        fallback: {
+          title: 'Fallback Account (optional)',
+          hint: 'When this account fails in the chain, retry it in place for the configured times (with increasing delay) before rotating to the next account. Useful for accounts with intermittent failures.',
+          account: 'Fallback account',
+          retries: 'Same-account retries after failure (0 = never)',
+          none: 'No fallback',
+        },
         accounts: 'Account Chain (multi-select, ordered failover)',
         accountsHint: 'Tried top-down; use move up / down to adjust priority',
         save: 'Save Rule',

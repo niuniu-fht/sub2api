@@ -28,6 +28,15 @@ func (s *OpenAIGatewayService) imageBillingForcedAccountIDs(ctx context.Context,
 	return accountIDs, tier, quality, mode, len(accountIDs) > 0
 }
 
+// imageBillingFallbackFor 返回命中规则的兜底账号与同账号重试次数(0=未配置)。
+func (s *OpenAIGatewayService) imageBillingFallbackFor(ctx context.Context, groupID *int64, quality, tier string) (int64, int) {
+	if s == nil || s.settingService == nil || groupID == nil || *groupID <= 0 {
+		return 0, 0
+	}
+	imageCount := ImageBillingSchedulingImageCountFromContext(ctx)
+	return s.settingService.GetImageBillingAccountRoutingSettingsCached(ctx).FallbackRetryFor(*groupID, quality, tier, imageCount)
+}
+
 func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
@@ -76,9 +85,15 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 					"acquired", true,
 				)
 				selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
-				if selection != nil && mode == ImageBillingRoutingModeRoundRobin {
-					selection.ImageBillingRoundRobin = true
-					selection.SwitchLimit = imageBillingRoundRobinMaxSwitches
+				if selection != nil {
+					if mode == ImageBillingRoutingModeRoundRobin {
+						selection.ImageBillingRoundRobin = true
+						selection.SwitchLimit = imageBillingRoundRobinMaxSwitches
+					}
+					if fbID, fbN := s.imageBillingFallbackFor(ctx, req.GroupID, quality, tier); fbID > 0 && fbN > 0 {
+						selection.ImageBillingFallbackAccountID = fbID
+						selection.ImageBillingFallbackRetryCount = fbN
+					}
 				}
 				return selection, true, selectErr
 			}
@@ -131,10 +146,16 @@ func (s *OpenAIGatewayService) selectForcedOpenAIImageBillingAccount(
 				"acquired", true,
 			)
 			selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
-			if selection != nil && mode == ImageBillingRoutingModeRoundRobin {
-				// 轮询链:任意上游错误(含 400/连接错误)都切换下一个账号,最多 3 次。
-				selection.ImageBillingRoundRobin = true
-				selection.SwitchLimit = imageBillingRoundRobinMaxSwitches
+			if selection != nil {
+				if mode == ImageBillingRoutingModeRoundRobin {
+					// 轮询链:任意上游错误(含 400/连接错误)都切换下一个账号,最多 3 次。
+					selection.ImageBillingRoundRobin = true
+					selection.SwitchLimit = imageBillingRoundRobinMaxSwitches
+				}
+				if fbID, fbN := s.imageBillingFallbackFor(ctx, req.GroupID, quality, tier); fbID > 0 && fbN > 0 {
+					selection.ImageBillingFallbackAccountID = fbID
+					selection.ImageBillingFallbackRetryCount = fbN
+				}
 			}
 			return selection, true, selectErr
 		}

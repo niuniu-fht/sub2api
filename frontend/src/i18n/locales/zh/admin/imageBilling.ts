@@ -65,6 +65,13 @@ tierHintGemini: '选择此规则生效的出图档位;选「全部」则对任�
         modePriorityHint: '按顺序尝试,失败自动切换下一个',
         modeRoundRobin: '轮询',
         modeRoundRobinHint: '在选中账号间轮流分配',
+        fallback: {
+          title: '兜底账号(可选)',
+          hint: '链路中该账号失败时,先原地重试指定次数(带递增延迟,不占用切换次数)再切换下一个账号。适合对"失败原因不稳定"的账号兜底。',
+          account: '兜底账号',
+          retries: '失败后同账号重试次数(0=不重试)',
+          none: '不设置兜底',
+        },
         accounts: '账号链(可多选,按顺序容错)',
         accountsHint: '按从上到下的顺序尝试调度,支持上移 / 下移调整优先级',
         save: '保存规则',

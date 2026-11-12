@@ -586,6 +586,11 @@ type AccountSelectionResult struct {
 	// 错误(含 400/连接错误)都切换下一个账号,SwitchLimit 为切换次数上限。
 	ImageBillingRoundRobin bool
 	SwitchLimit            int
+	// ImageBillingFallbackAccountID/FallbackRetryCount 兜底账号同账号重试:
+	// 命中的图片计费规则配置了兜底账号时携带。链路中兜底账号失败时,handler
+	// 原地重试 FallbackRetryCount 次(不占切换预算、不排除该账号)后才继续换号。
+	ImageBillingFallbackAccountID  int64
+	ImageBillingFallbackRetryCount int
 	// stickySessionHit 标记账号来自会话粘性绑定命中，供非高级调度路径回填决策标签。
 	stickySessionHit bool
 	// profitGate 携带本次选号真实生效的利润门（无门为 nil）。门安装在调度栈的
