@@ -65,7 +65,7 @@ tierHintGemini: 'Pick which size tiers this rule applies to; Any matches request
         modeRoundRobinHint: 'Distribute across selected accounts',
         fallback: {
           title: 'Fallback Account (optional)',
-          hint: 'When this account fails in the chain, retry it in place for the configured times (with increasing delay) before rotating to the next account. Useful for accounts with intermittent failures.',
+          hint: 'When this account fails in the chain, retry it in place for the configured times (fixed 1-second interval, does not consume switch budget) before rotating to the next account. Useful for accounts with intermittent failures.',
           account: 'Fallback account',
           retries: 'Same-account retries after failure (0 = never)',
           none: 'No fallback',

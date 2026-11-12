@@ -329,7 +329,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c) == writerSizeBeforeForward &&
 					!failoverClientGone(c) {
 					imageBillingFallbackRetryCount[account.ID]++
-					fallbackRetryDelay := time.Duration(imageBillingFallbackRetryCount[account.ID]) * time.Second
+					fallbackRetryDelay := time.Second
 					reqLog.Warn("openai.images.fallback_same_account_retry",
 						zap.Int64("account_id", account.ID),
 						zap.Int("retry_count", imageBillingFallbackRetryCount[account.ID]),
