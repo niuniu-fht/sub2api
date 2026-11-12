@@ -146,19 +146,22 @@ func (a *channelStatusAgg) bucketIndexAt(t time.Time) int {
 	return idx
 }
 
-func (a *channelStatusAgg) addSuccess(accountID int64, model string, durationMs int64, at time.Time) {
+// addSuccess 累计一组成功聚合行:requests 是 SQL GROUP BY 合并后的真实请求数
+// (count(*)),durationMs 是该组的平均耗时(avg(duration_ms));两者都必须使用,
+// 逐行 ++ 会把整组 N 次成功只计成 1 次,导致成功率被严重低估。
+func (a *channelStatusAgg) addSuccess(accountID int64, model string, requests int64, durationMs int64, at time.Time) {
 	if a.successRequests[accountID] == nil {
 		a.successRequests[accountID] = map[string]int64{}
 		a.successSumMs[accountID] = map[string]float64{}
 		a.successCntMs[accountID] = map[string]int64{}
 	}
-	a.successRequests[accountID][model]++
+	a.successRequests[accountID][model] += requests
 	if durationMs > 0 {
-		a.successSumMs[accountID][model] += float64(durationMs)
-		a.successCntMs[accountID][model]++
+		a.successSumMs[accountID][model] += float64(durationMs) * float64(requests)
+		a.successCntMs[accountID][model] += requests
 	}
 	a.ensureBucket(accountID)
-	a.bucketRequests[accountID][a.bucketIndexAt(at)]++
+	a.bucketRequests[accountID][a.bucketIndexAt(at)] += requests
 }
 
 func (a *channelStatusAgg) addFailure(accountID int64, model string, at time.Time) {
@@ -291,7 +294,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		if avgMs != nil {
 			durationMs = int64(*avgMs)
 		}
-		agg.addSuccess(groupID, model, durationMs, lastAt)
+		agg.addSuccess(groupID, model, requests, durationMs, lastAt)
 	}
 	if err := usageRows.Err(); err != nil {
 		_ = usageRows.Close()
