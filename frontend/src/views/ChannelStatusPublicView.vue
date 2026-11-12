@@ -372,9 +372,10 @@ function formatGenMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-/** 模型明细只展示有名字的条目;空名条目是早期阶段失败(无模型归属),避免出现空行。 */
+/** 模型明细只展示有成功记录的有名条目:空名行(早期阶段失败无模型归属)与
+ * 从未成功过的模型(客户端误配模型名,全部失败)不显示,避免噪音行。 */
 function namedModels(group: ChannelStatusGroup): ChannelStatusModelStat[] {
-  return (group.models || []).filter((m) => m.model !== '')
+  return (group.models || []).filter((m) => m.model !== '' && m.requests > 0)
 }
 
 /** API 返回的桶为最旧在前，直接左→右渲染即为「过去 → 现在」。 */
