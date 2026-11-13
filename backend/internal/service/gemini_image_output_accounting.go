@@ -89,26 +89,49 @@ func resolveGeminiImageCount(c *gin.Context, originalModel, mappedModel string) 
 	return 0
 }
 
-// countGeminiImageOutputs 统计一段 Gemini 响应 JSON 里的图片 part。
+// countGeminiImageOutputs 统计一段 Gemini 响应 JSON 里的图片张数。
 // 同时识别 inlineData、fileData 及 SDK/中转使用的 snake_case 字段。
+//
+// 同一响应里 inline 与 file 载体并存时只按 inline 份数计：部分中转（如 geekcloud
+// 对带 responseModalities 的请求）会把同一张图交付两份——inline_data base64 一份 +
+// file_data URL 一份，两份字节完全一致；逐 part 累加会把一张图计费成两张。
+// 纯 fileData 交付（无 inline）的响应仍按 file 份数计，纯 URL 引用语义不受影响。
 func countGeminiImageOutputs(payload []byte) int {
 	if len(payload) == 0 || !gjson.ValidBytes(payload) {
 		return 0
 	}
-	count := 0
+	inlineCount := 0
+	fileCount := 0
 	gjson.GetBytes(payload, "candidates").ForEach(func(_, candidate gjson.Result) bool {
 		candidate.Get("content.parts").ForEach(func(_, part gjson.Result) bool {
-			if geminiPartIsImage(part) {
-				count++
+			switch geminiImagePartCarrier(part) {
+			case geminiImageCarrierInline:
+				inlineCount++
+			case geminiImageCarrierFile:
+				fileCount++
 			}
 			return true
 		})
 		return true
 	})
-	return count
+	if inlineCount > 0 {
+		return inlineCount
+	}
+	return fileCount
 }
 
-func geminiPartIsImage(part gjson.Result) bool {
+// geminiImageCarrier 图片 part 的交付载体分类。
+type geminiImageCarrier int
+
+const (
+	geminiImageCarrierNone geminiImageCarrier = iota
+	geminiImageCarrierInline
+	geminiImageCarrierFile
+)
+
+// geminiImagePartCarrier 判断一个 part 是否为带实际数据/URI 的图片交付，并区分载体：
+// inline（base64 内联）或 file（URL 引用）。无数据或非图片 MIME 返回 none。
+func geminiImagePartCarrier(part gjson.Result) geminiImageCarrier {
 	for _, key := range []string{"inlineData", "inline_data", "fileData", "file_data"} {
 		image := part.Get(key)
 		mimeType := image.Get("mimeType")
@@ -127,8 +150,11 @@ func geminiPartIsImage(part gjson.Result) bool {
 		}
 		// 只认带有实际数据或 URI 的图片 part；同一个 part 最多计费一次。
 		if data.Type == gjson.String && strings.TrimSpace(data.String()) != "" {
-			return true
+			if key == "inlineData" || key == "inline_data" {
+				return geminiImageCarrierInline
+			}
+			return geminiImageCarrierFile
 		}
 	}
-	return false
+	return geminiImageCarrierNone
 }

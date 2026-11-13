@@ -93,8 +93,27 @@ func TestCountGeminiImageOutputs(t *testing.T) {
 			want:    1,
 		},
 		{
-			name:    "mixed inline and referenced images",
+			// 中转双交付（geekcloud 对带 responseModalities 的请求把同一张图
+			// 以 inline base64 + file URL 各回一份，字节一致）：并存只按 inline 计。
+			name:    "inline and file double delivery counts once",
 			payload: geminiImageResponse(`{"inlineData":{"mimeType":"image/png","data":"` + geminiTestPNG + `"}},{"fileData":{"mimeType":"image/webp","fileUri":"https://example.test/image.webp"}}`),
+			want:    1,
+		},
+		{
+			name: "two inline images still count two",
+			payload: geminiImageResponse(`{"inlineData":{"mimeType":"image/png","data":"` + geminiTestPNG + `"}},` +
+				`{"inlineData":{"mimeType":"image/jpeg","data":"` + geminiTestPNG + `"}}`),
+			want: 2,
+		},
+		{
+			name: "file only delivery counts by file parts",
+			payload: geminiImageResponse(`{"fileData":{"mimeType":"image/png","fileUri":"https://example.test/one.png"}},{"fileData":{"mimeType":"image/jpeg","fileUri":"https://example.test/two.jpg"}}`),
+			want:    2,
+		},
+		{
+			// inline 与 file 并存时，file 不抬高分子：2 份 inline + 1 份 file = 2 张。
+			name:    "file parts do not add to inline count",
+			payload: geminiImageResponse(`{"inlineData":{"mimeType":"image/png","data":"` + geminiTestPNG + `"}},{"inlineData":{"mimeType":"image/webp","data":"` + geminiTestPNG + `"}},{"fileData":{"mimeType":"image/png","fileUri":"https://example.test/image.png"}}`),
 			want:    2,
 		},
 		{

@@ -2,15 +2,15 @@
   <AppLayout>
     <div class="mx-auto max-w-7xl space-y-6">
       <!-- 页头 -->
-      <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-800">
-        <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ t('admin.imageBilling.title') }}</h1>
-            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.description') }}</p>
+      <div class="rounded-2xl border border-gray-200 bg-white px-5 py-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="min-w-0">
+            <h1 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('admin.imageBilling.title') }}</h1>
+            <p class="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.description') }}</p>
           </div>
           <button
             type="button"
-            class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-dark-600 dark:text-gray-200 dark:hover:bg-dark-700"
+            class="shrink-0 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-dark-600 dark:text-gray-200 dark:hover:bg-dark-700"
             :disabled="loading || savingRouting || savingPricing || savingThresholds"
             @click="loadAll"
           >
@@ -22,7 +22,7 @@
       <!-- 主体:左分组 / 右配置 -->
       <div class="grid gap-6 lg:grid-cols-[300px_1fr] lg:items-start">
         <!-- 分组列表 -->
-        <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
+        <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm lg:sticky lg:top-6 dark:border-dark-700 dark:bg-dark-800">
           <div class="flex flex-wrap gap-2 rounded-xl bg-gray-100 p-1 dark:bg-dark-900">
             <button
               v-for="tab in platformTabs"
@@ -95,7 +95,7 @@
               :class="activeTab === tab ? 'bg-primary-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
               @click="activeTab = tab"
             >
-              {{ tab === 'routing' ? t('admin.imageBilling.routing.tab') : t('admin.imageBilling.pricing.tab') }}
+              {{ tab === 'routing' ? t('admin.imageBilling.routing.tab') : tab === 'pricing' ? t('admin.imageBilling.pricing.tab') : t('admin.imageBilling.accounts.tab') }}
             </button>
           </div>
 
@@ -199,8 +199,9 @@
                           :key="accountId"
                           class="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-xs text-gray-700 dark:border-dark-600 dark:bg-dark-900 dark:text-gray-200"
                         >
-                          <span class="font-semibold text-primary-600 dark:text-primary-300">{{ accountIndex + 1 }}</span>
-                          {{ accountName(accountId) }}
+                          <span class="font-semibold" :class="isRuleAccountDisabled(rule, accountId) ? 'text-gray-400 dark:text-gray-500' : 'text-primary-600 dark:text-primary-300'">{{ accountIndex + 1 }}</span>
+                          <span :class="isRuleAccountDisabled(rule, accountId) ? 'text-gray-400 line-through dark:text-gray-500' : ''">{{ accountName(accountId) }}</span>
+                          <span v-if="isRuleAccountDisabled(rule, accountId)" class="rounded bg-red-50 px-1 py-0.5 text-[10px] font-medium text-red-600 dark:bg-red-900/30 dark:text-red-300">{{ t('admin.imageBilling.accounts.disabledBadge') }}</span>
                         </span>
                         <span v-if="rule.account_ids.length > 6" class="text-xs text-gray-400">+{{ rule.account_ids.length - 6 }}</span>
                       </div>
@@ -236,7 +237,7 @@
           </div>
 
           <!-- 计费价格 -->
-          <div v-else class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-800">
+          <div v-else-if="activeTab === 'pricing'" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-800">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.imageBilling.pricing.title') }}</h2>
@@ -326,6 +327,136 @@
 
             <p class="mt-4 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.pricing.openAIOnly') }}</p>
           </div>
+
+          <!-- 账号统计 -->
+          <div v-else-if="activeTab === 'accounts'" class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-800" data-testid="account-stats-panel">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.imageBilling.accounts.title') }}</h2>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.accounts.subtitle') }}</p>
+              </div>
+              <div class="flex shrink-0 items-center gap-2">
+                <span class="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 dark:bg-dark-900 dark:text-gray-300">{{ t('admin.imageBilling.accounts.window24') }}</span>
+                <button
+                  type="button"
+                  class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-dark-600 dark:text-gray-200 dark:hover:bg-dark-700"
+                  :disabled="accountStatsLoading"
+                  @click="loadAccountStats(true)"
+                >
+                  {{ t('admin.imageBilling.refresh') }}
+                </button>
+              </div>
+            </div>
+
+            <!-- 汇总 -->
+            <div v-if="accountStats.length > 0" class="mt-4 grid gap-3 sm:grid-cols-3">
+              <div class="rounded-xl bg-gray-50 px-4 py-3 dark:bg-dark-900/60">
+                <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.accounts.totalRequests') }}</div>
+                <div class="mt-0.5 text-xl font-semibold tabular-nums text-gray-900 dark:text-white">{{ formatNumber(accountStatsTotals.requests) }}</div>
+              </div>
+              <div class="rounded-xl bg-gray-50 px-4 py-3 dark:bg-dark-900/60">
+                <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.accounts.totalFailures') }}</div>
+                <div class="mt-0.5 text-xl font-semibold tabular-nums text-gray-900 dark:text-white">{{ formatNumber(accountStatsTotals.failures) }}</div>
+              </div>
+              <div class="rounded-xl bg-gray-50 px-4 py-3 dark:bg-dark-900/60">
+                <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.accounts.avgRate') }}</div>
+                <div class="mt-0.5 text-xl font-semibold tabular-nums" :class="rateColorClass(accountStatsTotals.rate)">{{ formatRateValue(accountStatsTotals.rate) }}</div>
+              </div>
+            </div>
+
+            <!-- 明细表 -->
+            <div v-if="accountStats.length > 0" class="mt-4 overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-dark-700">
+                <thead>
+                  <tr class="text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <th class="px-3 py-2">{{ t('admin.imageBilling.accounts.accountCol') }}</th>
+                    <th class="px-3 py-2 text-right">{{ t('admin.imageBilling.accounts.requestsCol') }}</th>
+                    <th class="px-3 py-2 text-right">{{ t('admin.imageBilling.accounts.failuresCol') }}</th>
+                    <th class="px-3 py-2">{{ t('admin.imageBilling.accounts.rateCol') }}</th>
+                    <th class="px-3 py-2 text-right">{{ t('admin.imageBilling.accounts.avgCol') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
+                  <template v-for="stat in accountStats" :key="stat.account_id">
+                    <tr
+                      class="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/40"
+                      :data-testid="`account-stats-row-${stat.account_id}`"
+                      @click="toggleAccountStatsRow(stat.account_id)"
+                    >
+                      <td class="px-3 py-2.5">
+                        <div class="flex items-center gap-2">
+                          <svg
+                            class="h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform duration-200"
+                            :class="expandedAccounts[stat.account_id] ? 'rotate-90' : ''"
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
+                          >
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                          </svg>
+                          <span class="min-w-0 max-w-[280px] truncate font-medium text-gray-900 dark:text-white">{{ accountName(stat.account_id) }}</span>
+                          <span class="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-dark-700 dark:text-gray-400">#{{ stat.account_id }}</span>
+                        </div>
+                      </td>
+                      <td class="px-3 py-2.5 text-right tabular-nums text-gray-800 dark:text-gray-200">{{ formatNumber(stat.requests) }}</td>
+                      <td class="px-3 py-2.5 text-right tabular-nums" :class="stat.failures > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'">{{ formatNumber(stat.failures) }}</td>
+                      <td class="px-3 py-2.5">
+                        <div class="flex items-center gap-2">
+                          <span class="w-14 shrink-0 tabular-nums text-sm font-medium" :class="rateColorClass(stat.success_rate)">{{ formatRateValue(stat.success_rate) }}</span>
+                          <div class="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
+                            <div
+                              class="h-full rounded-full transition-all duration-300"
+                              :class="stat.success_rate >= 99 ? 'bg-emerald-500' : stat.success_rate >= 90 ? 'bg-amber-500' : stat.success_rate >= 0 ? 'bg-red-500' : 'bg-gray-300 dark:bg-dark-600'"
+                              :style="{ width: stat.success_rate >= 0 ? `${Math.min(100, stat.success_rate)}%` : '0%' }"
+                            ></div>
+                          </div>
+                        </div>
+                      </td>
+                      <td class="px-3 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ formatDurationMs(stat.avg_gen_ms) }}</td>
+                    </tr>
+                    <tr v-if="expandedAccounts[stat.account_id]">
+                      <td colspan="5" class="bg-gray-50/60 px-3 py-2 dark:bg-dark-900/40">
+                        <div class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.accounts.hourlyTitle') }}</div>
+                        <table class="w-full text-left text-xs">
+                          <thead>
+                            <tr class="text-[10px] uppercase tracking-wide text-gray-400">
+                              <th class="py-1 pr-4 font-semibold">{{ t('admin.imageBilling.accounts.hourCol') }}</th>
+                              <th class="py-1 pr-4 text-right font-semibold">{{ t('admin.imageBilling.accounts.requestsCol') }}</th>
+                              <th class="py-1 pr-4 text-right font-semibold">{{ t('admin.imageBilling.accounts.failuresCol') }}</th>
+                              <th class="py-1 pr-4 font-semibold">{{ t('admin.imageBilling.accounts.rateCol') }}</th>
+                              <th class="py-1 pr-4 text-right font-semibold">{{ t('admin.imageBilling.accounts.avgCol') }}</th>
+                              <th class="py-1 font-semibold">{{ t('admin.imageBilling.accounts.statusCol') }}</th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
+                            <tr v-for="(hour, hIdx) in stat.hourly || []" :key="hIdx" class="hover:bg-gray-100/60 dark:hover:bg-dark-700/40">
+                              <td class="py-1 pr-4 font-mono text-gray-700 dark:text-gray-300">{{ hourRangeLabel(hour.hour_start_ms) }}</td>
+                              <td class="py-1 pr-4 text-right tabular-nums text-gray-700 dark:text-gray-300">{{ formatNumber(hour.requests) }}</td>
+                              <td class="py-1 pr-4 text-right tabular-nums" :class="hour.failures > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500 dark:text-gray-400'">{{ formatNumber(hour.failures) }}</td>
+                              <td class="py-1 pr-4 tabular-nums" :class="rateColorClass(hour.success_rate)">{{ formatRateValue(hour.success_rate) }}</td>
+                              <td class="py-1 pr-4 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ formatDurationMs(hour.avg_gen_ms) }}</td>
+                              <td class="py-1">
+                                <span class="inline-flex items-center gap-1.5">
+                                  <span class="h-1.5 w-1.5 rounded-full" :class="hourlyStatusDot(hour.status)"></span>
+                                  <span class="text-gray-600 dark:text-gray-300">{{ hourlyStatusLabel(hour.status) }}</span>
+                                </span>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+
+            <div
+              v-if="!accountStatsLoading && accountStats.length === 0"
+              class="mt-4 rounded-xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400"
+            >
+              {{ t('admin.imageBilling.accounts.empty') }}
+            </div>
+            <p v-if="accountStats.length > 0" class="mt-3 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.imageBilling.accounts.note') }}</p>
+          </div>
         </div>
 
         <!-- 未选择分组 -->
@@ -334,7 +465,8 @@
         </div>
       </div>
 
-      <!-- 阈值 -->
+      <!-- 阈值 + 快速验证（并排） -->
+      <div class="grid gap-6 xl:grid-cols-2 xl:items-start">
       <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-800">
         <div>
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.imageBilling.thresholds.title') }}</h2>
@@ -429,6 +561,7 @@
             </tbody>
           </table>
         </div>
+      </div>
       </div>
     </div>
 
@@ -610,6 +743,15 @@
                       {{ t('admin.imageBilling.routing.editor.remove') }}
                     </button>
                   </div>
+                  <div class="mt-1.5 flex items-center justify-between gap-2 border-t border-gray-100 pt-1.5 dark:border-dark-700/60">
+                    <span class="text-[11px]" :class="isEditorAccountDisabled(accountId) ? 'text-red-500 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'">
+                      {{ isEditorAccountDisabled(accountId) ? t('admin.imageBilling.routing.editor.accountDisabled') : t('admin.imageBilling.routing.editor.accountEnabled') }}
+                    </span>
+                    <Toggle
+                      :model-value="!isEditorAccountDisabled(accountId)"
+                      @update:model-value="(v: boolean) => toggleEditorAccountDisabled(accountId, v)"
+                    />
+                  </div>
                 </div>
                 <div
                   v-if="editorDraft.account_ids.length === 0"
@@ -690,12 +832,14 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import { accountsAPI, groupsAPI } from '@/api/admin'
 import {
+  getChannelStatusAccountStats,
   getGeminiImageBillingRoutingSettings,
   getImageBillingAccountRoutingSettings,
   getImageBillingThresholdSettings,
   updateGeminiImageBillingRoutingSettings,
   updateImageBillingAccountRoutingSettings,
-  updateImageBillingThresholdSettings
+  updateImageBillingThresholdSettings,
+  type AccountSuccessStat
 } from '@/api/admin/settings'
 import { useAppStore } from '@/stores'
 import type { Account, AdminGroup, ImageQualityPrices, UpdateGroupRequest } from '@/types'
@@ -717,6 +861,7 @@ type OpenAIRule = {
   image_counts: number[]
   mode: RoutingMode
   account_ids: number[]
+  disabled_account_ids?: number[]
   fallback_account_id?: number
   fallback_retry_count?: number
 }
@@ -726,6 +871,7 @@ type GeminiRule = {
   aspect_ratios: string[]
   image_counts: number[]
   account_ids: number[]
+  disabled_account_ids?: number[]
 }
 
 const billingTiers: BillingTier[] = ['1K', '2K', '4K']
@@ -744,7 +890,8 @@ const geminiAspectRatioOptions = [
 ]
 
 const platformTabs: Array<{ key: 'openai' | 'gemini' }> = [{ key: 'openai' }, { key: 'gemini' }]
-const configTabs: Array<'routing' | 'pricing'> = ['routing', 'pricing']
+const configTabs: Array<'routing' | 'pricing' | 'accounts'> = ['routing', 'pricing', 'accounts']
+
 
 // ===================== 全局状态 =====================
 const loading = ref(false)
@@ -756,7 +903,94 @@ const groups = ref<AdminGroup[]>([])
 const accounts = ref<Account[]>([])
 const activePlatform = ref<'openai' | 'gemini'>('openai')
 const selectedGroupId = ref<number | null>(null)
-const activeTab = ref<'routing' | 'pricing'>('routing')
+const activeTab = ref<'routing' | 'pricing' | 'accounts'>('routing')
+
+// ===================== 账号统计（成功率/请求数） =====================
+const accountStats = ref<AccountSuccessStat[]>([])
+const accountStatsLoading = ref(false)
+const accountStatsLoadedFor = ref('')
+// 统计口径固定为近 24 小时（用户确认只需 24h）。
+const expandedAccounts = ref<Record<number, boolean>>({})
+
+const accountStatsTotals = computed(() => {
+  const requests = accountStats.value.reduce((sum, s) => sum + s.requests, 0)
+  const failures = accountStats.value.reduce((sum, s) => sum + s.failures, 0)
+  const rate = requests + failures > 0 ? (requests / (requests + failures)) * 100 : -1
+  return { requests, failures, rate }
+})
+
+async function loadAccountStats(force = false): Promise<void> {
+  if (!selectedGroupId.value) {
+    accountStats.value = []
+    accountStatsLoadedFor.value = ''
+    return
+  }
+  const key = `${selectedGroupId.value}:24`
+  if (!force && accountStatsLoadedFor.value === key) return
+  accountStatsLoading.value = true
+  try {
+    const res = await getChannelStatusAccountStats(selectedGroupId.value, 24)
+    accountStats.value = res.accounts || []
+    accountStatsLoadedFor.value = key
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.imageBilling.accounts.loadFailed'))
+    accountStats.value = []
+  } finally {
+    accountStatsLoading.value = false
+  }
+}
+
+watch([activeTab, selectedGroupId], () => {
+  if (activeTab.value === 'accounts') {
+    expandedAccounts.value = {}
+    void loadAccountStats()
+  }
+})
+
+function toggleAccountStatsRow(accountId: number): void {
+  expandedAccounts.value = { ...expandedAccounts.value, [accountId]: !expandedAccounts.value[accountId] }
+}
+
+/** 小时桶时间范围文案（HH:MM ~ HH:MM）。 */
+function hourRangeLabel(hourStartMs: number): string {
+  const fmt = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const start = new Date(hourStartMs)
+  const end = new Date(hourStartMs + 60 * 60 * 1000)
+  return `${fmt(start)} ~ ${fmt(end)}`
+}
+
+/** 小时状态点配色（阈值同状态页）。 */
+function hourlyStatusDot(status: string): string {
+  if (status === 'operational') return 'bg-emerald-500'
+  if (status === 'degraded') return 'bg-amber-500'
+  if (status === 'down') return 'bg-red-500'
+  return 'bg-gray-300 dark:bg-dark-600'
+}
+
+function hourlyStatusLabel(status: string): string {
+  const known = ['operational', 'degraded', 'down', 'unknown']
+  if (!known.includes(status)) return status
+  return t(`admin.imageBilling.accounts.status${status.charAt(0).toUpperCase()}${status.slice(1)}`)
+}
+
+function formatRateValue(rate: number): string {
+  if (rate < 0) return '—'
+  return `${Math.round(rate * 100) / 100}%`
+}
+
+function rateColorClass(rate: number): string {
+  if (rate < 0) return 'text-gray-400'
+  if (rate >= 99) return 'text-emerald-600 dark:text-emerald-400'
+  if (rate >= 90) return 'text-amber-600 dark:text-amber-400'
+  return 'text-red-600 dark:text-red-400'
+}
+
+function formatDurationMs(ms: number): string {
+  if (!ms || ms <= 0) return '—'
+  if (ms < 1000) return `${Math.round(ms)}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}
+
 const groupSearch = ref('')
 
 const thresholdForm = reactive({
@@ -810,6 +1044,7 @@ const editorDraft = reactive<{
   aspect_ratios: string[]
   mode: RoutingMode
   account_ids: number[]
+  disabled_account_ids: number[]
   fallback_account_id: number
   fallback_retry_count: number
 }>({
@@ -819,6 +1054,7 @@ const editorDraft = reactive<{
   aspect_ratios: [],
   mode: 'priority',
   account_ids: [],
+  disabled_account_ids: [],
   fallback_account_id: 0,
   fallback_retry_count: 0,
 })
@@ -1005,12 +1241,12 @@ type ImageBillingRoutingSettingsInput = {
     two_k_account_id?: number
     four_k_account_id?: number
     tier_modes?: Record<string, string>
-    rules?: Array<{ quality?: string; tier?: string; image_counts?: number[]; mode?: string; account_ids?: number[]; fallback_account_id?: number; fallback_retry_count?: number }>
+    rules?: Array<{ quality?: string; tier?: string; image_counts?: number[]; mode?: string; account_ids?: number[]; disabled_account_ids?: number[]; fallback_account_id?: number; fallback_retry_count?: number }>
   }>
 }
 
 type GeminiRoutingSettingsInput = {
-  groups?: Record<string, { rules?: Array<{ tier?: string; aspect_ratio?: string; image_counts?: number[]; account_ids?: number[] }> }>;
+  groups?: Record<string, { rules?: Array<{ tier?: string; aspect_ratio?: string; image_counts?: number[]; account_ids?: number[]; disabled_account_ids?: number[] }> }>;
 }
 
 function applyOpenAIRouting(settings: ImageBillingRoutingSettingsInput): void {
@@ -1031,10 +1267,12 @@ function applyOpenAIRouting(settings: ImageBillingRoutingSettingsInput): void {
       const countKey = counts.length > 0 ? counts.join(',') : 'any'
       const fallbackAccountID = Math.trunc(Number(rule.fallback_account_id) || 0)
       const fallbackRetryCount = fallbackAccountID ? Math.max(0, Math.min(10, Math.trunc(Number(rule.fallback_retry_count) || 0))) : 0
-      const key = `${mode}:${countKey}:${accountIDs.join(',')}:${fallbackAccountID}:${fallbackRetryCount}`
+      const disabledIDs = normalizeAccountIDs(rule.disabled_account_ids).filter((id) => accountIDs.includes(id))
+      const disabledKey = disabledIDs.join(',')
+      const key = `${mode}:${countKey}:${accountIDs.join(',')}:${disabledKey}:${fallbackAccountID}:${fallbackRetryCount}`
       let target = index.get(key)
       if (!target) {
-        target = { qualities: [], tiers: [], image_counts: counts, mode, account_ids: accountIDs, fallback_account_id: fallbackAccountID, fallback_retry_count: fallbackRetryCount }
+        target = { qualities: [], tiers: [], image_counts: counts, mode, account_ids: accountIDs, disabled_account_ids: disabledIDs, fallback_account_id: fallbackAccountID, fallback_retry_count: fallbackRetryCount }
         index.set(key, target)
         merged.push(target)
       }
@@ -1074,10 +1312,12 @@ function applyGeminiRouting(settings: GeminiRoutingSettingsInput): void {
       // 是不同的路由意图(数量专用规则优先),合并会导致不限规则被吞。
       const counts = rule.image_counts ?? []
       const countsKey = counts.length > 0 ? counts.join('-') : 'any'
-      const key = accountIDs.join(',') + '|' + countsKey
+      const disabledIDs = normalizeAccountIDs(rule.disabled_account_ids).filter((id) => accountIDs.includes(id))
+      const disabledKey = disabledIDs.join(',')
+      const key = accountIDs.join(',') + '|' + countsKey + '|' + disabledKey
       let target = index.get(key)
       if (!target) {
-        target = { tiers: [], aspect_ratios: [], image_counts: rule.image_counts ?? [], account_ids: accountIDs }
+        target = { tiers: [], aspect_ratios: [], image_counts: rule.image_counts ?? [], account_ids: accountIDs, disabled_account_ids: disabledIDs }
         index.set(key, target)
         merged.push(target)
       }
@@ -1113,12 +1353,12 @@ function pruneRoutingToEnabledAccounts(): void {
 // ===================== 路由:保存 =====================
 type ImageBillingRoutingPayload = {
   groups: Record<string, {
-    rules: Array<{ quality: ImageQuality; tier: string; image_counts?: number[]; mode: RoutingMode; account_ids: number[] }>
+    rules: Array<{ quality: ImageQuality; tier: string; image_counts?: number[]; mode: RoutingMode; account_ids: number[]; disabled_account_ids?: number[] }>
   }>
 }
 
 type GeminiRoutingPayload = {
-  groups: Record<string, { rules: Array<{ tier: string; aspect_ratio: string; image_counts?: number[]; account_ids: number[] }> }>
+  groups: Record<string, { rules: Array<{ tier: string; aspect_ratio: string; image_counts?: number[]; account_ids: number[]; disabled_account_ids?: number[] }> }>
 }
 
 function buildOpenAIRoutingPayload(): ImageBillingRoutingPayload {
@@ -1147,7 +1387,8 @@ function buildOpenAIRoutingPayload(): ImageBillingRoutingPayload {
           const fb = rule.fallback_account_id && accountIDs.includes(rule.fallback_account_id)
             ? { fallback_account_id: rule.fallback_account_id, fallback_retry_count: Math.max(0, Math.min(10, rule.fallback_retry_count || 0)) }
             : {}
-          rules.push({ quality, tier, image_counts: normalizeImageCounts(rule.image_counts), mode: rule.mode, account_ids: accountIDs, ...fb })
+          const disabled = (rule.disabled_account_ids || []).filter((id) => accountIDs.includes(id))
+          rules.push({ quality, tier, image_counts: normalizeImageCounts(rule.image_counts), mode: rule.mode, account_ids: accountIDs, disabled_account_ids: disabled.length > 0 ? disabled : undefined, ...fb })
         }
       }
     }
@@ -1175,9 +1416,15 @@ function buildGeminiRoutingPayload(): GeminiRoutingPayload {
           const existing = merged.get(key)
           if (existing) {
             existing.account_ids = normalizeAccountIDs([...existing.account_ids, ...accountIDs])
+            existing.disabled_account_ids = normalizeAccountIDs([
+              ...(existing.disabled_account_ids || []),
+              ...(rule.disabled_account_ids || []),
+            ]).filter((id) => existing.account_ids.includes(id))
           } else {
             const entry: GeminiRoutingPayload['groups'][string]['rules'][number] = { tier, aspect_ratio: ratio, account_ids: accountIDs }
             if (rule.image_counts.length > 0) entry.image_counts = [...rule.image_counts]
+            const disabled = (rule.disabled_account_ids || []).filter((id) => accountIDs.includes(id))
+            if (disabled.length > 0) entry.disabled_account_ids = disabled
             merged.set(key, entry)
           }
         }
@@ -1229,10 +1476,12 @@ function openRuleEditor(ruleIndex?: number): void {
     }
     editorDraft.tiers = [...source.tiers]
     editorDraft.account_ids = [...source.account_ids]
+    editorDraft.disabled_account_ids = [...(source.disabled_account_ids || [])]
   } else {
     editorDraft.qualities = ['high']
     editorDraft.tiers = ['1K']
     editorDraft.image_counts = []
+    editorDraft.disabled_account_ids = []
     editorDraft.aspect_ratios = ['*']
     editorDraft.mode = 'priority'
     editorDraft.account_ids = []
@@ -1292,9 +1541,31 @@ function addEditorAccount(accountId: number): void {
   if (id > 0 && !editorDraft.account_ids.includes(id)) editorDraft.account_ids.push(id)
 }
 
+function isRuleAccountDisabled(rule: unknown, accountId: number): boolean {
+  const disabled = (rule as { disabled_account_ids?: number[] } | null)?.disabled_account_ids
+  return Array.isArray(disabled) && disabled.includes(accountId)
+}
+
+function isEditorAccountDisabled(accountId: number): boolean {
+  return editorDraft.disabled_account_ids.includes(accountId)
+}
+
+function toggleEditorAccountDisabled(accountId: number, enabled: boolean): void {
+  const index = editorDraft.disabled_account_ids.indexOf(accountId)
+  if (!enabled && index === -1) {
+    editorDraft.disabled_account_ids.push(accountId)
+    return
+  }
+  if (enabled && index !== -1) {
+    editorDraft.disabled_account_ids.splice(index, 1)
+  }
+}
+
 function removeEditorAccount(accountId: number): void {
-  const index = editorDraft.account_ids.indexOf(accountId)
-  if (index !== -1) editorDraft.account_ids.splice(index, 1)
+  const index = editorDraft.disabled_account_ids.indexOf(accountId)
+  if (index !== -1) editorDraft.disabled_account_ids.splice(index, 1)
+  const ids = editorDraft.account_ids.indexOf(accountId)
+  if (ids !== -1) editorDraft.account_ids.splice(ids, 1)
   if (editorDraft.fallback_account_id === accountId) {
     editorDraft.fallback_account_id = 0
     editorDraft.fallback_retry_count = 0

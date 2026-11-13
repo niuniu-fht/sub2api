@@ -2703,6 +2703,8 @@ func createGeminiTestPayload(modelID string, prompt string) []byte {
 // processGeminiStream processes SSE stream from Gemini API
 func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader) error {
 	reader := bufio.NewReader(body)
+	// 首个含内容的 SSE chunk 的原始 JSON（截断后）推给前端控制台。
+	responseJSONEmitted := false
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -2737,6 +2739,10 @@ func (s *AccountTestService) processGeminiStream(c *gin.Context, body io.Reader)
 			data = resp
 		}
 		if candidates, ok := data["candidates"].([]any); ok && len(candidates) > 0 {
+			if !responseJSONEmitted {
+				responseJSONEmitted = true
+				s.sendEvent(c, TestEvent{Type: "response_json", Data: truncateJSONForConsole([]byte(jsonStr))})
+			}
 			if candidate, ok := candidates[0].(map[string]any); ok {
 				// Extract content first (before checking completion)
 				if content, ok := candidate["content"].(map[string]any); ok {
@@ -3096,6 +3102,9 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 
+	// 原始响应 JSON（长字符串如 b64_json 截断）推给前端控制台展示。
+	s.sendEvent(c, TestEvent{Type: "response_json", Data: truncateJSONForConsole(body)})
+
 	// Parse {"data": [{"b64_json": "...", "revised_prompt": "..."}]}
 	var result struct {
 		Data []struct {
@@ -3126,6 +3135,54 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 
 	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
 	return nil
+}
+
+// truncateJSONForConsole 把上游响应 JSON 转成适合控制台展示的形式：
+// 超长字符串（b64_json 图片数据等）截断并标注省略字节数，整体再兜底截断。
+func truncateJSONForConsole(body []byte) string {
+	const maxStringLength = 160
+	const maxTotalLength = 8 * 1024
+	compact := strings.TrimSpace(string(body))
+	if compact == "" {
+		return "(empty response body)"
+	}
+	// 逐字符串截断：解析重打包失败（非 JSON）时退回整体截断。
+	var generic any
+	if err := json.Unmarshal([]byte(compact), &generic); err == nil {
+		trimmed := truncateStringsInValue(generic, maxStringLength)
+		if out, err := json.MarshalIndent(trimmed, "", "  "); err == nil {
+			compact = string(out)
+		}
+	}
+	if len(compact) > maxTotalLength {
+		compact = compact[:maxTotalLength] + fmt.Sprintf("\n…[total truncated, %d more bytes]", len(compact)-maxTotalLength)
+	}
+	return compact
+}
+
+// truncateStringsInValue 递归截断 JSON 值里的超长字符串（base64 图片数据等）。
+func truncateStringsInValue(value any, maxLen int) any {
+	switch typed := value.(type) {
+	case string:
+		if len(typed) <= maxLen {
+			return typed
+		}
+		return typed[:maxLen] + fmt.Sprintf("…[truncated %d chars]", len(typed)-maxLen)
+	case []any:
+		out := make([]any, len(typed))
+		for i, item := range typed {
+			out[i] = truncateStringsInValue(item, maxLen)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			out[key] = truncateStringsInValue(item, maxLen)
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 // OAuth 图片测试与正式转发共用 Codex Images / Responses 分流规则。
@@ -3242,6 +3299,9 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to read image response: %s", err.Error()))
 	}
 	body = redactAgentIdentitySensitiveBodyForAccount(ctx, s.accountRepo, credentialAccount, body)
+
+	// 原始响应 JSON（长字符串如 b64_json 截断）推给前端控制台展示。
+	s.sendEvent(c, TestEvent{Type: "response_json", Data: truncateJSONForConsole(body)})
 
 	var results []openAIResponsesImageResult
 	if direct {

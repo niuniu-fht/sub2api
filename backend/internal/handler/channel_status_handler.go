@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -111,5 +112,34 @@ func (h *ChannelStatusHandler) UpdateChannelStatusSettings(c *gin.Context) {
 	response.Success(c, gin.H{
 		"enabled": enabled,
 		"config":  normalized,
+	})
+}
+
+// GetAccountSuccessStats 管理端：分组内每个账号的成功率/请求数/平均生图耗时。
+// 图片计费控制台「账号统计」页签用；失败口径与状态页一致（应用过滤规则、
+// 排除模型误配的路由拒绝）。渠道状态功能未开启时也可用。
+// GET /api/v1/admin/settings/channel-status/account-stats?group_id=15&hours=24
+func (h *ChannelStatusHandler) GetAccountSuccessStats(c *gin.Context) {
+	if h.statusService == nil {
+		response.ErrorFrom(c, errors.New("channel status service is not ready"))
+		return
+	}
+	groupID, err := strconv.ParseInt(c.Query("group_id"), 10, 64)
+	if err != nil || groupID <= 0 {
+		response.BadRequest(c, "group_id is required")
+		return
+	}
+	hours := 24
+	if v, convErr := strconv.Atoi(c.Query("hours")); convErr == nil && v > 0 {
+		hours = v
+	}
+	accounts, windowHours, err := h.statusService.AccountSuccessStats(c.Request.Context(), groupID, hours)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"window_hours": windowHours,
+		"accounts":     accounts,
 	})
 }

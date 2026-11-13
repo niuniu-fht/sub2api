@@ -53,6 +53,9 @@ type ChannelStatusBucket struct {
 	Failures      int64   `json:"failures"`
 	SuccessRate   float64 `json:"success_rate"`
 	Status        string  `json:"status"` // operational | degraded | down | unknown
+	// 该小时桶内的按模型明细（成功率/平均耗时只统计本桶），供前端点击时间线
+	// 下钻展示；桶内无请求时为空。
+	Models []ChannelStatusModelStatus `json:"models,omitempty"`
 }
 
 type GroupStatus struct {
@@ -111,28 +114,103 @@ type channelStatusAgg struct {
 	bucketSeconds  float64
 	bucketRequests map[int64][]int64
 	bucketFailures map[int64][]int64
+	// 每桶 × 模型的成功/失败计数与成功耗时样本，支撑「点击时间线桶查看该小时
+	// 模型成功率」。桶宽固定 24 个；内层 map 按需创建。
+	bucketModelRequests map[int64][]map[string]int64
+	bucketModelFailures map[int64][]map[string]int64
+	bucketModelSumMs    map[int64][]map[string]float64
+	bucketModelCntMs    map[int64][]map[string]int64
 }
 
 func newChannelStatusAgg(start time.Time, windowHours int) *channelStatusAgg {
 	return &channelStatusAgg{
-		successRequests: map[int64]map[string]int64{},
-		successSumMs:    map[int64]map[string]float64{},
-		successCntMs:    map[int64]map[string]int64{},
-		failures:        map[int64]map[string]int64{},
-		bucketStart:     start,
-		bucketSeconds:   float64(windowHours*3600) / float64(channelStatusTimelineBuckets),
-		bucketRequests:  map[int64][]int64{},
-		bucketFailures:  map[int64][]int64{},
+		successRequests:     map[int64]map[string]int64{},
+		successSumMs:        map[int64]map[string]float64{},
+		successCntMs:        map[int64]map[string]int64{},
+		failures:            map[int64]map[string]int64{},
+		bucketStart:         start,
+		bucketSeconds:       float64(windowHours*3600) / float64(channelStatusTimelineBuckets),
+		bucketRequests:      map[int64][]int64{},
+		bucketFailures:      map[int64][]int64{},
+		bucketModelRequests: map[int64][]map[string]int64{},
+		bucketModelFailures: map[int64][]map[string]int64{},
+		bucketModelSumMs:    map[int64][]map[string]float64{},
+		bucketModelCntMs:    map[int64][]map[string]int64{},
 	}
 }
 
 func (a *channelStatusAgg) ensureBucket(accountID int64) {
 	if a.bucketRequests[accountID] == nil {
 		a.bucketRequests[accountID] = make([]int64, channelStatusTimelineBuckets)
-	}
-	if a.bucketFailures[accountID] == nil {
 		a.bucketFailures[accountID] = make([]int64, channelStatusTimelineBuckets)
+		a.bucketModelRequests[accountID] = make([]map[string]int64, channelStatusTimelineBuckets)
+		a.bucketModelFailures[accountID] = make([]map[string]int64, channelStatusTimelineBuckets)
+		a.bucketModelSumMs[accountID] = make([]map[string]float64, channelStatusTimelineBuckets)
+		a.bucketModelCntMs[accountID] = make([]map[string]int64, channelStatusTimelineBuckets)
 	}
+}
+
+// bucketModelMaps 返回指定账号指定桶的模型统计 map（按需初始化）。
+func (a *channelStatusAgg) bucketModelMaps(accountID int64, idx int) (requests, failures map[string]int64, sumMs map[string]float64, cntMs map[string]int64) {
+	requests = a.bucketModelRequests[accountID][idx]
+	if requests == nil {
+		requests = map[string]int64{}
+		a.bucketModelRequests[accountID][idx] = requests
+	}
+	failures = a.bucketModelFailures[accountID][idx]
+	if failures == nil {
+		failures = map[string]int64{}
+		a.bucketModelFailures[accountID][idx] = failures
+	}
+	sumMs = a.bucketModelSumMs[accountID][idx]
+	if sumMs == nil {
+		sumMs = map[string]float64{}
+		a.bucketModelSumMs[accountID][idx] = sumMs
+	}
+	cntMs = a.bucketModelCntMs[accountID][idx]
+	if cntMs == nil {
+		cntMs = map[string]int64{}
+		a.bucketModelCntMs[accountID][idx] = cntMs
+	}
+	return requests, failures, sumMs, cntMs
+}
+
+// bucketModels 汇总指定桶的模型明细（成功率/平均耗时按该桶数据计算，
+// 只含有请求的模型，按请求量降序），供时间线桶的下钻展示。
+func (a *channelStatusAgg) bucketModels(accountID int64, idx int) []ChannelStatusModelStatus {
+	if a.bucketModelRequests[accountID] == nil || idx < 0 || idx >= channelStatusTimelineBuckets {
+		return nil
+	}
+	requests := a.bucketModelRequests[accountID][idx]
+	failures := a.bucketModelFailures[accountID][idx]
+	sumMs := a.bucketModelSumMs[accountID][idx]
+	cntMs := a.bucketModelCntMs[accountID][idx]
+	models := make([]ChannelStatusModelStatus, 0, len(requests)+len(failures))
+	modelSet := map[string]struct{}{}
+	for m := range requests {
+		modelSet[m] = struct{}{}
+	}
+	for m := range failures {
+		modelSet[m] = struct{}{}
+	}
+	for m := range modelSet {
+		reqN := requests[m]
+		failN := failures[m]
+		total := reqN + failN
+		var avgMs int64
+		if cntMs != nil && cntMs[m] > 0 {
+			avgMs = int64(math.Round(sumMs[m] / float64(cntMs[m])))
+		}
+		models = append(models, ChannelStatusModelStatus{
+			Model:       m,
+			Requests:    reqN,
+			Failures:    failN,
+			SuccessRate: ratePercent(reqN, total),
+			AvgGenMs:    avgMs,
+		})
+	}
+	sort.Slice(models, func(i, j int) bool { return models[i].Requests > models[j].Requests })
+	return models
 }
 
 func (a *channelStatusAgg) bucketIndexAt(t time.Time) int {
@@ -161,7 +239,14 @@ func (a *channelStatusAgg) addSuccess(accountID int64, model string, requests in
 		a.successCntMs[accountID][model] += requests
 	}
 	a.ensureBucket(accountID)
-	a.bucketRequests[accountID][a.bucketIndexAt(at)] += requests
+	idx := a.bucketIndexAt(at)
+	a.bucketRequests[accountID][idx] += requests
+	bReq, _, bSumMs, bCntMs := a.bucketModelMaps(accountID, idx)
+	bReq[model] += requests
+	if durationMs > 0 {
+		bSumMs[model] += float64(durationMs) * float64(requests)
+		bCntMs[model] += requests
+	}
 }
 
 func (a *channelStatusAgg) addFailure(accountID int64, model string, at time.Time) {
@@ -170,7 +255,10 @@ func (a *channelStatusAgg) addFailure(accountID int64, model string, at time.Tim
 	}
 	a.failures[accountID][model]++
 	a.ensureBucket(accountID)
-	a.bucketFailures[accountID][a.bucketIndexAt(at)]++
+	idx := a.bucketIndexAt(at)
+	a.bucketFailures[accountID][idx]++
+	_, bFailures, _, _ := a.bucketModelMaps(accountID, idx)
+	bFailures[model]++
 }
 
 // ---- 服务实现 ----
@@ -267,15 +355,18 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	agg := newChannelStatusAgg(start, config.WindowHours)
 
 	// 1) 成功请求（usage_logs）
+	// 按「分组 × 模型 × 小时桶」分组：时间线的每个桶必须拿到自己小时内的成功数。
+	// 旧写法只按 (group_id, model) 聚合并取 max(created_at) 当桶时间戳，
+	// 会把整个窗口的成功请求全部堆进最近一小时的桶，历史小时桶只剩失败 → 成功率 0。
 	usageRows, err := s.db.QueryContext(ctx, `
 		SELECT group_id,
 		       coalesce(nullif(trim(requested_model), ''), model, '') AS model,
 		       count(*) AS requests,
 		       avg(duration_ms) AS avg_ms,
-		       max(created_at) AS last_at
+		       date_trunc('hour', created_at) AS bucket_hour
 		FROM usage_logs
 		WHERE created_at >= $1
-		GROUP BY group_id, 2
+		GROUP BY group_id, 2, date_trunc('hour', created_at)
 	`, start)
 	if err != nil {
 		return nil, fmt.Errorf("query usage aggregation: %w", err)
@@ -285,8 +376,8 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		var model string
 		var requests int64
 		var avgMs *float64
-		var lastAt time.Time
-		if err := usageRows.Scan(&groupID, &model, &requests, &avgMs, &lastAt); err != nil {
+		var bucketHour time.Time
+		if err := usageRows.Scan(&groupID, &model, &requests, &avgMs, &bucketHour); err != nil {
 			_ = usageRows.Close()
 			return nil, fmt.Errorf("scan usage row: %w", err)
 		}
@@ -294,7 +385,9 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		if avgMs != nil {
 			durationMs = int64(*avgMs)
 		}
-		agg.addSuccess(groupID, model, requests, durationMs, lastAt)
+		// 取小时桶中点作时间戳：整小时的请求全部落进覆盖该小时中点的同一个桶，
+		// 与失败侧行级时间戳的落桶口径一致，不会在桶边界上劈成两半。
+		agg.addSuccess(groupID, model, requests, durationMs, bucketHour.Add(30*time.Minute))
 	}
 	if err := usageRows.Err(); err != nil {
 		_ = usageRows.Close()
@@ -475,6 +568,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 				Failures:      failures,
 				SuccessRate:   ratePercent(requests, total),
 				Status:        classifyChannelStatus(ratePercent(requests, total), total > 0, config.Thresholds),
+				Models:        agg.bucketModels(id, i),
 			})
 		}
 
@@ -555,3 +649,216 @@ var (
 	ErrChannelStatusDisabled   = errors.New("channel status is disabled")
 	ErrChannelStatusNoSnapshot = errors.New("channel status snapshot not ready")
 )
+
+// ---- 管理端：分组内账号成功率/请求数（图片计费控制台） ----
+
+// AccountSuccessStat 单账号在窗口内的成功/失败统计。
+type AccountSuccessStat struct {
+	AccountID   int64               `json:"account_id"`
+	Requests    int64               `json:"requests"`
+	Failures    int64               `json:"failures"`
+	SuccessRate float64             `json:"success_rate"` // 百分比 0-100；无请求时 -1 表示 unknown
+	AvgGenMs    int64               `json:"avg_gen_ms"`
+	Hourly      []AccountHourlyStat `json:"hourly"` // 仅 24h 窗口时返回：逐小时明细
+}
+
+// AccountHourlyStat 单账号单小时的成功/失败统计（状态分级口径同状态页阈值）。
+type AccountHourlyStat struct {
+	HourStartMs int64   `json:"hour_start_ms"`
+	Requests    int64   `json:"requests"`
+	Failures    int64   `json:"failures"`
+	SuccessRate float64 `json:"success_rate"` // -1 表示该小时无请求
+	AvgGenMs    int64   `json:"avg_gen_ms"`
+	Status      string  `json:"status"` // operational | degraded | down | unknown
+}
+
+// AccountSuccessStats 统计指定分组在窗口内每个账号的成功率、请求数与平均生图耗时。
+// 失败口径与渠道状态页一致：应用后台过滤规则、排除「模型不被分组内任何账号支持」
+// 的误配请求。渠道状态功能未开启时仍可用（过滤规则读不到则视为不过滤）。
+// 返回值第二个参数为实际生效的窗口小时数（调用方超范围时被收敛）。
+func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID int64, windowHours int) ([]AccountSuccessStat, int, error) {
+	if s == nil || s.db == nil {
+		return nil, 0, errors.New("channel status service is not ready")
+	}
+	if groupID <= 0 {
+		return nil, 0, errors.New("group_id is required")
+	}
+	if windowHours <= 0 {
+		windowHours = 24
+	}
+	if windowHours > 24*30 {
+		windowHours = 24 * 30
+	}
+	start := timezone.Now().Add(-time.Duration(windowHours) * time.Hour)
+
+	var rules []ChannelStatusFilterRule
+	var thresholds ChannelStatusThresholds
+	if s.settingService != nil {
+		if _, cfg, err := s.settingService.GetChannelStatusSettings(ctx); err == nil {
+			rules = cfg.FilterRules
+			thresholds = cfg.Thresholds
+		}
+	}
+
+	requestsByAccount := map[int64]int64{}
+	sumMsByAccount := map[int64]float64{}
+	cntMsByAccount := map[int64]int64{}
+	failuresByAccount := map[int64]int64{}
+	// 逐小时明细（仅 24h 窗口）：account_id → hour index → 统计
+	const hourlyBuckets = 24
+	hourlyRequests := map[int64][]int64{}
+	hourlyFailures := map[int64][]int64{}
+	hourlySumMs := map[int64][]float64{}
+	hourlyCntMs := map[int64][]int64{}
+	ensureHourly := func(accountID int64) {
+		if hourlyRequests[accountID] == nil {
+			hourlyRequests[accountID] = make([]int64, hourlyBuckets)
+			hourlyFailures[accountID] = make([]int64, hourlyBuckets)
+			hourlySumMs[accountID] = make([]float64, hourlyBuckets)
+			hourlyCntMs[accountID] = make([]int64, hourlyBuckets)
+		}
+	}
+	hourIndex := func(at time.Time) int {
+		idx := int(at.Sub(start).Hours())
+		if idx < 0 {
+			return 0
+		}
+		if idx >= hourlyBuckets {
+			return hourlyBuckets - 1
+		}
+		return idx
+	}
+
+	usageRows, err := s.db.QueryContext(ctx, `
+		SELECT account_id,
+		       count(*) AS requests,
+		       avg(duration_ms) AS avg_ms,
+		       date_trunc('hour', created_at) AS bucket_hour
+		FROM usage_logs
+		WHERE group_id = $1 AND created_at >= $2 AND account_id IS NOT NULL
+		GROUP BY account_id, date_trunc('hour', created_at)
+	`, groupID, start)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query account usage: %w", err)
+	}
+	for usageRows.Next() {
+		var accountID int64
+		var requests int64
+		var avgMs *float64
+		var bucketHour time.Time
+		if err := usageRows.Scan(&accountID, &requests, &avgMs, &bucketHour); err != nil {
+			_ = usageRows.Close()
+			return nil, 0, fmt.Errorf("scan account usage row: %w", err)
+		}
+		requestsByAccount[accountID] += requests
+		if avgMs != nil {
+			sumMsByAccount[accountID] += *avgMs * float64(requests)
+			cntMsByAccount[accountID] += requests
+		}
+		ensureHourly(accountID)
+		idx := hourIndex(bucketHour.Add(30 * time.Minute))
+		hourlyRequests[accountID][idx] += requests
+		if avgMs != nil {
+			hourlySumMs[accountID][idx] += *avgMs * float64(requests)
+			hourlyCntMs[accountID][idx] += requests
+		}
+	}
+	if err := usageRows.Err(); err != nil {
+		_ = usageRows.Close()
+		return nil, 0, fmt.Errorf("iterate account usage rows: %w", err)
+	}
+	_ = usageRows.Close()
+
+	errorRows, err := s.db.QueryContext(ctx, `
+		SELECT account_id,
+		       coalesce(upstream_status_code, 0) AS upstream_status_code,
+		       coalesce(status_code, 0) AS status_code,
+		       coalesce(upstream_error_message, error_message, '') AS message,
+		       created_at
+		FROM ops_error_logs
+		WHERE group_id = $1 AND created_at >= $2 AND account_id IS NOT NULL
+		ORDER BY created_at DESC
+		LIMIT 50000
+	`, groupID, start)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query account errors: %w", err)
+	}
+	for errorRows.Next() {
+		var accountID int64
+		var upstreamStatus, clientStatus int
+		var message string
+		var createdAt time.Time
+		if err := errorRows.Scan(&accountID, &upstreamStatus, &clientStatus, &message, &createdAt); err != nil {
+			_ = errorRows.Close()
+			return nil, 0, fmt.Errorf("scan account error row: %w", err)
+		}
+		if MatchesChannelStatusFilterRules(rules, upstreamStatus, clientStatus, message) {
+			continue // 与状态页同口径：命中过滤规则的失败不计入
+		}
+		if strings.Contains(message, "is not supported by any configured account in this group") {
+			continue // 客户端误配模型名的路由拒绝，不属于渠道故障
+		}
+		failuresByAccount[accountID]++
+		if windowHours == hourlyBuckets {
+			ensureHourly(accountID)
+			hourlyFailures[accountID][hourIndex(createdAt)]++
+		}
+	}
+	if err := errorRows.Err(); err != nil {
+		_ = errorRows.Close()
+		return nil, 0, fmt.Errorf("iterate account error rows: %w", err)
+	}
+	_ = errorRows.Close()
+
+	accounts := make([]AccountSuccessStat, 0, len(requestsByAccount)+len(failuresByAccount))
+	seen := map[int64]struct{}{}
+	for accountID := range requestsByAccount {
+		seen[accountID] = struct{}{}
+	}
+	for accountID := range failuresByAccount {
+		seen[accountID] = struct{}{}
+	}
+	for accountID := range seen {
+		requests := requestsByAccount[accountID]
+		failures := failuresByAccount[accountID]
+		var avgMs int64
+		if cntMsByAccount[accountID] > 0 {
+			avgMs = int64(math.Round(sumMsByAccount[accountID] / float64(cntMsByAccount[accountID])))
+		}
+		stat := AccountSuccessStat{
+			AccountID:   accountID,
+			Requests:    requests,
+			Failures:    failures,
+			SuccessRate: ratePercent(requests, requests+failures),
+			AvgGenMs:    avgMs,
+		}
+		// 仅 24h 窗口输出逐小时明细；桶时间锚定在窗口起点，与账号表汇总同源。
+		if windowHours == hourlyBuckets && hourlyRequests[accountID] != nil {
+			for i := 0; i < hourlyBuckets; i++ {
+				hReq := hourlyRequests[accountID][i]
+				hFail := hourlyFailures[accountID][i]
+				hTotal := hReq + hFail
+				var hAvgMs int64
+				if hourlyCntMs[accountID][i] > 0 {
+					hAvgMs = int64(math.Round(hourlySumMs[accountID][i] / float64(hourlyCntMs[accountID][i])))
+				}
+				stat.Hourly = append(stat.Hourly, AccountHourlyStat{
+					HourStartMs: start.Add(time.Duration(i) * time.Hour).UnixMilli(),
+					Requests:    hReq,
+					Failures:    hFail,
+					SuccessRate: ratePercent(hReq, hTotal),
+					AvgGenMs:    hAvgMs,
+					Status:      classifyChannelStatus(ratePercent(hReq, hTotal), hTotal > 0, thresholds),
+				})
+			}
+		}
+		accounts = append(accounts, stat)
+	}
+	sort.Slice(accounts, func(i, j int) bool {
+		if accounts[i].Requests != accounts[j].Requests {
+			return accounts[i].Requests > accounts[j].Requests
+		}
+		return accounts[i].AccountID < accounts[j].AccountID
+	})
+	return accounts, windowHours, nil
+}

@@ -1,14 +1,15 @@
 <template>
   <div class="relative" @mouseleave="hovered = null">
-    <!-- 时间线条（最旧在左，最新在右） -->
+    <!-- 时间线条（最旧在左，最新在右）；点击可下钻该时段的模型明细 -->
     <div class="flex h-5 w-full items-stretch gap-[3px]">
       <div
         v-for="(bucket, idx) in buckets"
         :key="idx"
         class="min-w-0 flex-1 cursor-pointer rounded-sm transition-all duration-200 hover:scale-y-110"
-        :class="STATUS_BAR[bucket.status] ?? STATUS_BAR.unknown"
+        :class="[STATUS_BAR[bucket.status] ?? STATUS_BAR.unknown, selectedIndex === idx ? selectedRing : '']"
         :data-testid="`status-bar-${idx}`"
         @mouseenter="hovered = idx"
+        @click.stop="emit('select', idx)"
       ></div>
     </div>
 
@@ -48,10 +49,19 @@ import { formatDateTimeToMinute } from '@/utils/format'
 
 const props = defineProps<{
   buckets: ChannelStatusBucket[]
+  /** 当前被选中（下钻）的桶下标；null 表示未选中任何桶。 */
+  selectedIndex?: number | null
+}>()
+
+const emit = defineEmits<{
+  (e: 'select', index: number): void
 }>()
 
 const { t } = useI18n()
 const hovered = ref<number | null>(null)
+
+// 选中桶的高亮环：叠加在状态色之上，标示「模型明细当前展示的时段」。
+const selectedRing = 'ring-2 ring-gray-900 dark:ring-white/80 ring-offset-1 ring-offset-white dark:ring-offset-dark-800'
 
 const STATUS_DOT: Record<ChannelHealthStatus, string> = {
   operational: 'bg-emerald-500',

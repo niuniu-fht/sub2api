@@ -610,6 +610,8 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpA
 		// 渠道状态统计配置
 		adminSettings.GET("/channel-status", h.ChannelStatus.GetChannelStatusSettings)
 		adminSettings.PUT("/channel-status", h.ChannelStatus.UpdateChannelStatusSettings)
+		// 分组内账号成功率/请求数（图片计费控制台「账号统计」）
+		adminSettings.GET("/channel-status/account-stats", h.ChannelStatus.GetAccountSuccessStats)
 		// 图片档位账号调度配置
 		adminSettings.GET("/image-billing-account-routing", h.Admin.Setting.GetImageBillingAccountRoutingSettings)
 		adminSettings.PUT("/image-billing-account-routing", h.Admin.Setting.UpdateImageBillingAccountRoutingSettings)

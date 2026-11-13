@@ -56,7 +56,16 @@ GET /api/v1/channel-status
             "requests": 2,
             "failures": 5,
             "success_rate": 28.57,
-            "status": "down"
+            "status": "down",
+            "models": [
+              {
+                "model": "gpt-image-2",
+                "requests": 2,
+                "failures": 5,
+                "success_rate": 28.57,
+                "avg_gen_ms": 61000
+              }
+            ]
           }
         ]
       }
@@ -79,11 +88,14 @@ GET /api/v1/channel-status
 | `avg_gen_ms` | 成功请求的平均耗时（毫秒），即平均生图时间；0 表示窗口内无成功样本 |
 | `models[]` | 按模型细分的同口径统计，按请求量降序 |
 | `timeline[]` | 24 个时间桶（桶宽=窗口/24），供 uptime 条展示；`bucket_start_ms` 为桶起点 |
+| `timeline[].models[]` | 该桶时段内的按模型明细（成功率/平均耗时只统计本桶），供前端点击时间线下钻；桶内无请求时省略 |
 | 首轮聚合未完成时 | 返回 `ready:false` + 空 `groups`，消费方应轮询等待 |
 
 ### 统计口径
 
 - **聚合维度**：`usage_logs.group_id`（成功）+ `ops_error_logs.group_id`（失败），分组名称/平台取自 `groups` 表
+- **时间桶归属**：成功请求按「分组 × 模型 × 小时」聚合后落进各自小时对应的桶（取小时中点落桶），
+  失败请求按行级时间戳落桶；时间线任一桶的成功率都是该时段的真实成功率
 - **仅统计公开分组**：专属分组（`is_exclusive`）与已删除的分组不进快照；`display_group_ids` 白名单在公开分组范围内进一步筛选
 - 过滤语义：失败记录的上游状态码命中 `status_codes`（或上游状态码为 0 时回退客户端状态码）且/或错误消息包含任一
   `keywords`（不区分大小写）→ 该次失败不计入。规则内维度 AND，规则间 OR。

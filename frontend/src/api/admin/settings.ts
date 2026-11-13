@@ -1450,6 +1450,47 @@ export async function updateChannelStatusSettings(
   return data;
 }
 
+/** 单账号单小时的统计（24h 窗口逐小时明细）。 */
+export interface AccountHourlyStat {
+  hour_start_ms: number;
+  requests: number;
+  failures: number;
+  /** 百分比 0-100；-1 表示该小时无请求。 */
+  success_rate: number;
+  avg_gen_ms: number;
+  /** operational | degraded | down | unknown（阈值同状态页）。 */
+  status: string;
+}
+
+/** 单账号在窗口内的成功/失败统计（图片计费控制台「账号统计」页签）。 */
+export interface AccountSuccessStat {
+  account_id: number;
+  requests: number;
+  failures: number;
+  /** 百分比 0-100；-1 表示窗口内无请求。 */
+  success_rate: number;
+  avg_gen_ms: number;
+  /** 24h 窗口逐小时明细。 */
+  hourly?: AccountHourlyStat[];
+}
+
+export interface AccountSuccessStatsResponse {
+  window_hours: number;
+  accounts: AccountSuccessStat[];
+}
+
+/** 分组内账号成功率/请求数（失败口径与渠道状态页一致）。 */
+export async function getChannelStatusAccountStats(
+  groupId: number,
+  hours: number,
+): Promise<AccountSuccessStatsResponse> {
+  const { data } = await apiClient.get<AccountSuccessStatsResponse>(
+    "/admin/settings/channel-status/account-stats",
+    { params: { group_id: groupId, hours } },
+  );
+  return data;
+}
+
 // ==================== Stream Timeout Settings ====================
 
 /**

@@ -176,11 +176,15 @@
                   <span>{{ t('statusPage.timeline', { n: snapshot.window_hours }) }}</span>
                   <span>{{ t('statusPage.past') }} → {{ t('statusPage.now') }}</span>
                 </div>
-                <StatusTimeline :buckets="orderedTimeline(group)" />
+                <StatusTimeline
+                  :buckets="orderedTimeline(group)"
+                  :selected-index="selectedBuckets[group.id] ?? null"
+                  @select="(idx: number) => toggleBucket(group.id, idx)"
+                />
               </div>
 
-              <!-- 模型明细（可展开，带过渡） -->
-              <div v-if="namedModels(group).length > 0" class="mt-3">
+              <!-- 模型明细（可展开，带过渡）；点击时间线桶可下钻该时段数据 -->
+              <div v-if="namedModels(group).length > 0 || isBucketSelected(group)" class="mt-3">
                 <button
                   type="button"
                   class="inline-flex items-center gap-1 text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
@@ -204,31 +208,54 @@
                   leave-from-class="max-h-96 opacity-100"
                   leave-to-class="max-h-0 opacity-0"
                 >
-                  <div v-if="expanded[group.id]" class="overflow-hidden">
-                    <div class="mt-2 overflow-x-auto">
-                      <table class="w-full text-left text-xs">
-                        <thead>
-                          <tr class="text-[10px] uppercase tracking-widest text-gray-400">
-                            <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.modelCol') }}</th>
-                            <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.successRateCol') }}</th>
-                            <th class="py-1.5 font-semibold">{{ t('statusPage.avgGenCol') }}</th>
-                          </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
-                          <tr
-                            v-for="m in namedModels(group)"
-                            :key="m.model"
-                            class="transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/40"
-                          >
-                            <td class="py-1.5 pr-4 font-mono text-gray-800 dark:text-gray-200">{{ m.model || t('statusPage.unknownModel') }}</td>
-                            <td
-                              class="py-1.5 pr-4 tabular-nums font-medium"
-                              :class="rateTextClass(m.success_rate)"
-                            >{{ formatRate(m.success_rate) }}</td>
-                            <td class="py-1.5 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.avg_gen_ms) }}</td>
-                          </tr>
-                        </tbody>
-                      </table>
+                  <div v-if="expanded[group.id]" class="mt-1.5 overflow-hidden">
+                    <!-- 下钻提示条：显示当前选中时段 + 返回整窗入口 -->
+                    <div
+                      v-if="isBucketSelected(group)"
+                      class="mb-2 flex items-center justify-between gap-2 rounded-md bg-gray-50 px-2.5 py-1.5 text-[11px] text-gray-600 dark:bg-dark-700/60 dark:text-gray-300"
+                      data-testid="status-bucket-scope"
+                    >
+                      <span class="truncate">
+                        {{ t('statusPage.drilldownTitle', { range: bucketRangeLabel(group, selectedBuckets[group.id] as number) }) }}
+                      </span>
+                      <button
+                        type="button"
+                        class="shrink-0 font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                        @click.stop="clearBucket(group.id)"
+                      >
+                        {{ t('statusPage.backToWindow') }}
+                      </button>
+                    </div>
+                    <div v-else class="mb-2 text-[11px] text-gray-400 dark:text-gray-500">
+                      {{ t('statusPage.drilldownHint') }}
+                    </div>
+                    <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                      <thead>
+                        <tr class="text-[10px] uppercase tracking-widest text-gray-400">
+                          <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.modelCol') }}</th>
+                          <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.successRateCol') }}</th>
+                          <th class="py-1.5 font-semibold">{{ t('statusPage.avgGenCol') }}</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
+                        <tr
+                          v-for="m in displayModels(group)"
+                          :key="m.model"
+                          class="transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/40"
+                        >
+                          <td class="py-1.5 pr-4 font-mono text-gray-800 dark:text-gray-200">{{ m.model || t('statusPage.unknownModel') }}</td>
+                          <td
+                            class="py-1.5 pr-4 tabular-nums font-medium"
+                            :class="rateTextClass(m.success_rate)"
+                          >{{ formatRate(m.success_rate) }}</td>
+                          <td class="py-1.5 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.avg_gen_ms) }}</td>
+                        </tr>
+                        <tr v-if="displayModels(group).length === 0">
+                          <td colspan="3" class="py-2 text-center text-gray-400">{{ t('statusPage.drilldownEmpty') }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                     </div>
                   </div>
                 </Transition>
@@ -385,6 +412,48 @@ function orderedTimeline(group: ChannelStatusGroup): ChannelStatusBucket[] {
 
 function toggleModels(id: number): void {
   expanded.value = { ...expanded.value, [id]: !expanded.value[id] }
+}
+
+// ---- 时间线下钻：点击某桶 → 模型明细切换为该时段数据；再点同一桶返回整窗 ----
+const selectedBuckets = ref<Record<number, number | null>>({})
+
+function isBucketSelected(group: ChannelStatusGroup): boolean {
+  return (selectedBuckets.value[group.id] ?? null) !== null
+}
+
+function toggleBucket(groupId: number, idx: number): void {
+  const current = selectedBuckets.value[groupId] ?? null
+  const next = current === idx ? null : idx
+  selectedBuckets.value = { ...selectedBuckets.value, [groupId]: next }
+  // 下钻时自动展开明细，用户不用再点一次展开按钮。
+  if (next !== null) expanded.value = { ...expanded.value, [groupId]: true }
+}
+
+function clearBucket(groupId: number): void {
+  selectedBuckets.value = { ...selectedBuckets.value, [groupId]: null }
+}
+
+/** 模型明细数据源：选中时间线桶时展示该桶的按小时统计，否则展示整窗统计。
+ * 下钻视图保留「该时段只有失败」的模型行（requests=0 也有诊断价值），只滤掉空名；
+ * 整窗视图维持原有过滤。 */
+function displayModels(group: ChannelStatusGroup): ChannelStatusModelStat[] {
+  const idx = selectedBuckets.value[group.id] ?? null
+  if (idx === null) return namedModels(group)
+  const bucket = orderedTimeline(group)[idx]
+  return (bucket?.models ?? []).filter((m) => m.model !== '')
+}
+
+/** 桶时间范围文案：起点取桶的 bucket_start_ms，终点按相邻桶间距推算。 */
+function bucketRangeLabel(group: ChannelStatusGroup, idx: number): string {
+  const timeline = orderedTimeline(group)
+  const bucket = timeline[idx]
+  if (!bucket) return ''
+  const spanMs = idx + 1 < timeline.length
+    ? timeline[idx + 1].bucket_start_ms - bucket.bucket_start_ms
+    : 60 * 60 * 1000
+  const start = new Date(bucket.bucket_start_ms)
+  const end = new Date(bucket.bucket_start_ms + spanMs)
+  return `${formatDateTimeToMinute(start)} ~ ${formatDateTimeToMinute(end)}`
 }
 
 async function load(): Promise<void> {

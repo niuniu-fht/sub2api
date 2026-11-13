@@ -80,6 +80,9 @@ type OpenAIImageBillingRoutingRule struct {
 	// ImageCounts 参考图数量约束(空=不限)。请求携带的参考图张数在列表内才命中,
 	// 用于把请求路由到只支持特定参考图数量的号池。
 	ImageCounts []int `json:"image_counts,omitempty"`
+	// DisabledAccountIDs 链内被手动禁用的账号(子集,顺序仍保留在 AccountIDs 中):
+	// 调度时直接跳过,不参与选择;重新启用只需从本列表移除。
+	DisabledAccountIDs []int64 `json:"disabled_account_ids,omitempty"`
 	// FallbackAccountID 兜底账号(可选,必须在 AccountIDs 内):链路中该账号失败时
 	// 可原地重试 FallbackRetryCount 次(不占切换预算、不排除该账号)后才继续换号。
 	FallbackAccountID int64 `json:"fallback_account_id,omitempty"`
@@ -119,6 +122,9 @@ type GeminiImageBillingRoutingRule struct {
 	// 为空表示不限参考图数量。
 	ImageCounts []int   `json:"image_counts,omitempty"`
 	AccountIDs  []int64 `json:"account_ids"`
+	// DisabledAccountIDs 链内被手动禁用的账号(AccountIDs 子集):调度时直接跳过,
+	// 不参与选择;重新启用只需从本列表移除。
+	DisabledAccountIDs []int64 `json:"disabled_account_ids,omitempty"`
 }
 
 type GeminiImageBillingGroupRouting struct {
@@ -181,6 +187,8 @@ func normalizeOpenAIImageBillingRoutingRules(rules []OpenAIImageBillingRoutingRu
 			if existing.Mode == "" && mode != "" {
 				existing.Mode = mode
 			}
+			existing.DisabledAccountIDs = normalizeDisabledImageBillingAccountIDs(
+				append(existing.DisabledAccountIDs, rule.DisabledAccountIDs...), existing.AccountIDs)
 			continue
 		}
 		copied := rule
@@ -209,6 +217,7 @@ func normalizeOpenAIImageBillingRoutingRules(rules []OpenAIImageBillingRoutingRu
 		} else if copied.FallbackRetryCount < 0 {
 			copied.FallbackRetryCount = 0
 		}
+		copied.DisabledAccountIDs = normalizeDisabledImageBillingAccountIDs(rule.DisabledAccountIDs, ids)
 		merged[key] = &copied
 		order = append(order, key)
 	}
@@ -354,15 +363,66 @@ func (s ImageBillingAccountRoutingSettings) AccountIDsForQuality(groupID int64, 
 // ① 具体 quality 规则 → ② unmatched(不匹配)规则(原兜底角色) → ③ 旧档位兜底字段(兼容历史数据)。
 func (s ImageBillingAccountRoutingSettings) AccountIDsAndModeFor(groupID int64, quality string, tier string, imageCount int) ([]int64, string) {
 	if rule := s.qualityRoutingRule(groupID, quality, tier, imageCount); rule != nil {
-		return append([]int64(nil), rule.AccountIDs...), normalizeImageBillingRoutingMode(rule.Mode)
+		return filterDisabledImageBillingAccountIDs(rule.AccountIDs, rule.DisabledAccountIDs), normalizeImageBillingRoutingMode(rule.Mode)
 	}
 	if rule := s.qualityRoutingRule(groupID, ImageQualityUnmatched, tier, imageCount); rule != nil {
-		return append([]int64(nil), rule.AccountIDs...), normalizeImageBillingRoutingMode(rule.Mode)
+		return filterDisabledImageBillingAccountIDs(rule.AccountIDs, rule.DisabledAccountIDs), normalizeImageBillingRoutingMode(rule.Mode)
 	}
 	if legacy := s.AccountIDsFor(groupID, tier); len(legacy) > 0 {
 		return legacy, ImageBillingRoutingModePriority
 	}
 	return nil, ImageBillingRoutingModePriority
+}
+
+// filterDisabledImageBillingAccountIDs 从账号链中剔除被手动禁用的账号
+// (保留原有顺序)；禁用列表为空时原样返回。
+func filterDisabledImageBillingAccountIDs(accountIDs []int64, disabled []int64) []int64 {
+	if len(disabled) == 0 {
+		return accountIDs
+	}
+	disabledSet := make(map[int64]struct{}, len(disabled))
+	for _, id := range disabled {
+		disabledSet[id] = struct{}{}
+	}
+	out := make([]int64, 0, len(accountIDs))
+	for _, id := range accountIDs {
+		if _, blocked := disabledSet[id]; blocked {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
+// normalizeDisabledImageBillingAccountIDs 归一化链内禁用列表：去重、剔除
+// 不在账号链内的 ID、剔除非法值；全部无效时返回 nil。
+func normalizeDisabledImageBillingAccountIDs(disabled []int64, accountIDs []int64) []int64 {
+	if len(disabled) == 0 {
+		return nil
+	}
+	inChain := make(map[int64]struct{}, len(accountIDs))
+	for _, id := range accountIDs {
+		inChain[id] = struct{}{}
+	}
+	seen := make(map[int64]struct{}, len(disabled))
+	out := make([]int64, 0, len(disabled))
+	for _, id := range disabled {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := inChain[id]; !ok {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // FallbackRetryFor 返回命中规则的兜底账号与同账号重试次数(0=未配置)。
@@ -456,6 +516,8 @@ func NormalizeGeminiImageBillingRoutingSettings(settings GeminiImageBillingRouti
 				for i := range rules {
 					if rules[i].Tier == tier && rules[i].AspectRatio == aspectRatio && geminiImageBillingRuleCountsKey(rules[i]) == countsKey {
 						rules[i].AccountIDs = normalizeImageBillingRoutingAccountIDs(append(rules[i].AccountIDs, accountIDs...), 0)
+						rules[i].DisabledAccountIDs = normalizeDisabledImageBillingAccountIDs(
+							append(rules[i].DisabledAccountIDs, rule.DisabledAccountIDs...), rules[i].AccountIDs)
 						break
 					}
 				}
@@ -463,10 +525,11 @@ func NormalizeGeminiImageBillingRoutingSettings(settings GeminiImageBillingRouti
 			}
 			seenRules[key] = struct{}{}
 			rules = append(rules, GeminiImageBillingRoutingRule{
-				Tier:        tier,
-				AspectRatio: aspectRatio,
-				ImageCounts: imageCounts,
-				AccountIDs:  accountIDs,
+				Tier:                tier,
+				AspectRatio:         aspectRatio,
+				ImageCounts:         imageCounts,
+				AccountIDs:          accountIDs,
+				DisabledAccountIDs:  normalizeDisabledImageBillingAccountIDs(rule.DisabledAccountIDs, accountIDs),
 			})
 		}
 		if len(rules) > 0 {
@@ -542,7 +605,7 @@ func (s GeminiImageBillingRoutingSettings) AccountIDsFor(groupID int64, tier str
 		}
 		if len(rule.ImageCounts) > 0 {
 			if geminiImageBillingRuleMatchesImageCount(*rule, imageCount) {
-				return append([]int64(nil), rule.AccountIDs...)
+				return filterDisabledImageBillingAccountIDs(rule.AccountIDs, rule.DisabledAccountIDs)
 			}
 			continue
 		}
@@ -551,7 +614,7 @@ func (s GeminiImageBillingRoutingSettings) AccountIDsFor(groupID int64, tier str
 		}
 	}
 	if generic != nil {
-		return append([]int64(nil), generic.AccountIDs...)
+		return filterDisabledImageBillingAccountIDs(generic.AccountIDs, generic.DisabledAccountIDs)
 	}
 	return nil
 }

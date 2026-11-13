@@ -16,6 +16,8 @@ export interface ChannelStatusBucket {
   failures: number
   success_rate: number
   status: ChannelHealthStatus
+  /** 该小时桶内的按模型明细（只统计本桶），点击时间线下钻时展示。 */
+  models?: ChannelStatusModelStat[]
 }
 
 /** 按模型细分的同口径统计（按请求量降序）。 */
