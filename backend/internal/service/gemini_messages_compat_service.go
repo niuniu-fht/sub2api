@@ -15,6 +15,7 @@ import (
 	mathrand "math/rand"
 	"net/http"
 	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -2571,6 +2572,9 @@ func (s *GeminiMessagesCompatService) writeClaudeError(c *gin.Context, status in
 
 func (s *GeminiMessagesCompatService) writeGoogleError(c *gin.Context, status int, message string) error {
 	MarkResponseCommitted(c)
+	// 临时诊断：生产出现源点不明的非 failover 502（gemini.forward_failed + 无上游事件），
+	// 定位后移除本行。
+	log.Printf("[gemini-diag] writeGoogleError status=%d message=%q caller=%s", status, message, callerSignature())
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"code":    status,
@@ -2579,6 +2583,25 @@ func (s *GeminiMessagesCompatService) writeGoogleError(c *gin.Context, status in
 		},
 	})
 	return fmt.Errorf("%s", message)
+}
+
+// callerSignature 返回调用方 caller 信息（临时诊断用）。
+func callerSignature() string {
+	for i := 2; i < 12; i++ {
+		pc, file, line, ok := runtime.Caller(i)
+		if !ok {
+			break
+		}
+		fn := runtime.FuncForPC(pc)
+		if fn == nil {
+			continue
+		}
+		name := fn.Name()
+		if strings.Contains(name, "ForwardNative") || strings.Contains(name, "Forward") {
+			return fmt.Sprintf("%s:%d %s", file, line, name)
+		}
+	}
+	return "unknown-caller"
 }
 
 func unwrapIfNeeded(isOAuth bool, raw []byte) []byte {
