@@ -119,6 +119,35 @@
           </div>
         </div>
 
+        <!-- r2hub 时间窗口推送：窗口内优先 Cloudflare R2 直链，窗外/失败回退主存储 -->
+        <div class="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700">
+          <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input v-model="imageStorageForm.r2hub_enabled" type="checkbox" />
+            <span>{{ t('admin.backup.imageStorage.r2hub.enabled') }}</span>
+          </label>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.backup.imageStorage.r2hub.description') }}
+          </p>
+          <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.imageStorage.r2hub.baseUrl') }}</label>
+              <input v-model="imageStorageForm.r2hub_base_url" class="input w-full" placeholder="http://172.21.0.1:8100" />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.imageStorage.r2hub.apiKey') }}</label>
+              <input v-model="imageStorageForm.r2hub_api_key" type="password" class="input w-full" :placeholder="t('admin.backup.imageStorage.r2hub.apiKeyPlaceholder')" />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.imageStorage.r2hub.uploadWindow') }}</label>
+              <input v-model="imageStorageForm.r2hub_upload_window" class="input w-full" :placeholder="t('admin.backup.imageStorage.r2hub.uploadWindowPlaceholder')" />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.imageStorage.r2hub.timeoutSecs') }}</label>
+              <input v-model.number="imageStorageForm.r2hub_timeout_secs" type="number" min="1" class="input w-full" placeholder="15" />
+            </div>
+          </div>
+        </div>
+
         <div class="mt-4 flex flex-wrap gap-2">
           <button type="button" class="btn btn-secondary btn-sm" :disabled="testingImageStorage" @click="testImageStorage">
             {{ testingImageStorage ? t('common.loading') : t('admin.backup.s3.testConnection') }}
@@ -474,6 +503,11 @@ const imageStorageForm = ref<ImageStorageConfig>({
   access_key_id: '',
   secret_access_key: '',
   force_path_style: false,
+  r2hub_enabled: false,
+  r2hub_base_url: '',
+  r2hub_api_key: '',
+  r2hub_upload_window: '',
+  r2hub_timeout_secs: 15,
 })
 const imageStorageSecretConfigured = ref(false)
 const savingImageStorage = ref(false)
@@ -696,6 +730,10 @@ async function loadImageStorageConfig() {
       prefix: config.prefix || 'images/',
       region: config.region || 'auto',
       secret_access_key: '',
+      r2hub_base_url: config.r2hub_base_url || '',
+      r2hub_api_key: '',
+      r2hub_upload_window: config.r2hub_upload_window || '',
+      r2hub_timeout_secs: config.r2hub_timeout_secs || 15,
     }
     imageStorageSecretConfigured.value = secret_configured
   } catch (error) {

@@ -114,7 +114,17 @@ export default {
         publicBaseUrl: '公开访问域名',
         publicBaseUrlPlaceholder: '留空则返回预签名临时链接',
         presignExpiryHours: '预签名链接有效期（小时）',
-        saved: '异步生图对象存储配置已保存'
+        saved: '异步生图对象存储配置已保存',
+        r2hub: {
+          enabled: 'r2hub 时间窗口推送',
+          description: '开启后在上传窗口内优先经 r2hub 网关上传 Cloudflare R2 并返回 pub-*.r2.dev 直链；窗口外或上传失败自动回退上方主存储，不影响生图任务。上传窗口留空 = 全天走 r2hub。',
+          baseUrl: 'r2hub 网关地址',
+          apiKey: 'r2hub API Key',
+          apiKeyPlaceholder: '留空表示沿用已保存的 Key',
+          uploadWindow: '上传窗口（北京时间）',
+          uploadWindowPlaceholder: '留空 = 全天；如 20:00-05:00（支持跨午夜）',
+          timeoutSecs: '上传超时（秒）'
+        }
       },
       schedule: {
         title: '定时备份',

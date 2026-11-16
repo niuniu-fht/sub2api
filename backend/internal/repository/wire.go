@@ -91,6 +91,7 @@ var ProviderSet = wire.NewSet(
 	NewScopedAdminKeyRepository,
 	NewOpsRepository,
 	NewAuditLogRepository,
+	NewProfitRepository,
 	NewPasskeyRepository,
 	NewPasskeySessionStore,
 	NewUserSubscriptionRepository,
@@ -194,7 +195,13 @@ func ProvideEnt(cfg *config.Config) (*ent.Client, error) {
 // 设置保存后重建，而不是在启动时定死一份。
 func ProvideImageStorageFactory() service.ImageStorageFactory {
 	return func(ctx context.Context, cfg *config.ImageStorageConfig) (service.ImageStorage, error) {
-		return NewS3ImageStorage(ctx, cfg)
+		primary, err := NewS3ImageStorage(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+		// r2hub 时间窗口推送：窗口内优先 Cloudflare R2 直链，窗外/失败回退主存储。
+		// 未启用或凭证不全时 WrapWindowedR2Hub 原样返回 primary，行为与改造前一致。
+		return WrapWindowedR2Hub(primary, cfg.R2Hub), nil
 	}
 }
 

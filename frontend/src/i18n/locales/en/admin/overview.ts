@@ -114,7 +114,17 @@ export default {
         publicBaseUrl: 'Public base URL',
         publicBaseUrlPlaceholder: 'Leave empty to return presigned links',
         presignExpiryHours: 'Presigned link TTL (hours)',
-        saved: 'Async image object storage saved'
+        saved: 'Async image object storage saved',
+        r2hub: {
+          enabled: 'r2hub windowed push',
+          description: 'Within the upload window, images are pushed through the r2hub gateway to Cloudflare R2 and returned as pub-*.r2.dev links; outside the window or on failure it falls back to the primary storage above without failing the task. An empty window means always use r2hub.',
+          baseUrl: 'r2hub gateway URL',
+          apiKey: 'r2hub API key',
+          apiKeyPlaceholder: 'Leave empty to keep the saved key',
+          uploadWindow: 'Upload window (Beijing time)',
+          uploadWindowPlaceholder: 'Empty = always; e.g. 20:00-05:00 (overnight allowed)',
+          timeoutSecs: 'Upload timeout (seconds)'
+        }
       },
       schedule: {
         title: 'Scheduled Backup',

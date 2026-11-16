@@ -42,6 +42,13 @@ type ImageStorageSettings struct {
 	AccessKeyID     string `json:"access_key_id"`
 	SecretAccessKey string `json:"secret_access_key,omitempty"` //nolint:revive // field name follows AWS convention
 	ForcePathStyle  bool   `json:"force_path_style"`
+
+	// r2hub 时间窗口推送：窗口内优先 Cloudflare R2 直链，窗外/失败回退上面的主存储。
+	R2HubEnabled      bool   `json:"r2hub_enabled"`
+	R2HubBaseURL      string `json:"r2hub_base_url"`
+	R2HubAPIKey       string `json:"r2hub_api_key,omitempty"`
+	R2HubUploadWindow string `json:"r2hub_upload_window"` // 北京时间 HH:MM-HH:MM，空 = 全天
+	R2HubTimeoutSecs  int    `json:"r2hub_timeout_secs"`
 }
 
 // ImageStorageSettingService 读写后台设置，并把结果解析成一个可直接使用的 uploader。
@@ -147,6 +154,7 @@ func (s *ImageStorageSettingService) Get(ctx context.Context) (*ImageStorageSett
 		settings = settingsFromConfig(s.fallback)
 	}
 	settings.SecretAccessKey = ""
+	settings.R2HubAPIKey = ""
 	return settings, nil
 }
 
@@ -188,6 +196,22 @@ func (s *ImageStorageSettingService) Update(ctx context.Context, in ImageStorage
 		in.SecretAccessKey = encrypted
 	}
 
+	// r2hub api_key 留空 = 沿用已保存的值（与 SecretAccessKey 同一套语义）
+	if in.R2HubAPIKey == "" {
+		if old, err := s.load(ctx); err == nil && old != nil {
+			in.R2HubAPIKey = old.R2HubAPIKey
+		}
+	} else {
+		if s.backup == nil || !s.backup.EncryptionKeyConfigured() {
+			return nil, ErrSecretEncryptionKeyNotConfigured
+		}
+		encrypted, err := s.encryptor.Encrypt(in.R2HubAPIKey)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt r2hub api key: %w", err)
+		}
+		in.R2HubAPIKey = encrypted
+	}
+
 	data, err := json.Marshal(in)
 	if err != nil {
 		return nil, fmt.Errorf("marshal image storage settings: %w", err)
@@ -198,6 +222,7 @@ func (s *ImageStorageSettingService) Update(ctx context.Context, in ImageStorage
 	s.Invalidate()
 
 	in.SecretAccessKey = ""
+	in.R2HubAPIKey = ""
 	return &in, nil
 }
 
@@ -250,6 +275,13 @@ func (s *ImageStorageSettingService) toImageStorageConfig(ctx context.Context, i
 		AccessKeyID:     in.AccessKeyID,
 		SecretAccessKey: in.SecretAccessKey,
 		ForcePathStyle:  in.ForcePathStyle,
+		R2Hub: config.ImageStorageR2HubConfig{
+			Enabled:      in.R2HubEnabled,
+			BaseURL:      in.R2HubBaseURL,
+			APIKey:       in.R2HubAPIKey,
+			UploadWindow: in.R2HubUploadWindow,
+			TimeoutSecs:  in.R2HubTimeoutSecs,
+		},
 	}
 
 	if in.ReuseBackupS3 {
@@ -275,6 +307,17 @@ func (s *ImageStorageSettingService) toImageStorageConfig(ctx context.Context, i
 			logger.L().Warn("image_storage secret decrypt failed; treating the stored value as plaintext", zap.Error(err))
 		} else {
 			cfg.SecretAccessKey = decrypted
+		}
+	}
+
+	// r2hub api_key 与 SecretAccessKey 同一套加解密语义：库里存密文，这里解回明文再
+	// 交给网关客户端；解密失败按明文旧数据兼容处理，不能让配置加载直接失败。
+	if cfg.R2Hub.APIKey != "" {
+		decrypted, err := s.encryptor.Decrypt(cfg.R2Hub.APIKey)
+		if err != nil {
+			logger.L().Warn("image_storage r2hub api key decrypt failed; treating the stored value as plaintext", zap.Error(err))
+		} else {
+			cfg.R2Hub.APIKey = decrypted
 		}
 	}
 	return cfg, nil
@@ -317,6 +360,11 @@ func settingsFromConfig(cfg config.ImageStorageConfig) *ImageStorageSettings {
 		AccessKeyID:      cfg.AccessKeyID,
 		SecretAccessKey:  cfg.SecretAccessKey,
 		ForcePathStyle:   cfg.ForcePathStyle,
+		R2HubEnabled:     cfg.R2Hub.Enabled,
+		R2HubBaseURL:     cfg.R2Hub.BaseURL,
+		R2HubAPIKey:      cfg.R2Hub.APIKey,
+		R2HubUploadWindow: cfg.R2Hub.UploadWindow,
+		R2HubTimeoutSecs: cfg.R2Hub.TimeoutSecs,
 	}
 }
 
@@ -327,6 +375,11 @@ func normalizeImageStorageSettings(in *ImageStorageSettings) {
 	in.AccessKeyID = strings.TrimSpace(in.AccessKeyID)
 	in.SecretAccessKey = strings.TrimSpace(in.SecretAccessKey)
 	in.PublicBaseURL = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(in.PublicBaseURL), "/"))
+	in.R2HubBaseURL = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(in.R2HubBaseURL), "/"))
+	in.R2HubUploadWindow = strings.TrimSpace(in.R2HubUploadWindow)
+	if in.R2HubTimeoutSecs <= 0 {
+		in.R2HubTimeoutSecs = 15
+	}
 
 	in.Prefix = strings.TrimSpace(in.Prefix)
 	if in.Prefix == "" {

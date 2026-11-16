@@ -111,6 +111,13 @@ export interface ImageStorageConfig {
   access_key_id: string
   secret_access_key?: string
   force_path_style: boolean
+  // r2hub 时间窗口推送：窗口内优先经 r2hub 网关上传 Cloudflare R2 直链，
+  // 窗口外或失败回退上面的主存储。upload_window 空 = 全天。
+  r2hub_enabled: boolean
+  r2hub_base_url: string
+  r2hub_api_key?: string
+  r2hub_upload_window: string
+  r2hub_timeout_secs: number
 }
 
 export interface ImageStorageConfigResponse {

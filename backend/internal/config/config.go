@@ -309,6 +309,16 @@ type BatchImageConfig struct {
 	VertexGCSBaseURL             string `mapstructure:"vertex_gcs_base_url"`
 }
 
+// ImageStorageR2HubConfig 时间窗口内优先经 r2hub 网关上传 Cloudflare R2 并返回公网直链；
+// 窗口外或上传失败回退主存储（MinIO/S3）。与 gptplus 的 r2hub_push 同款语义。
+type ImageStorageR2HubConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	BaseURL      string `mapstructure:"base_url"`      // r2hub 网关地址，如 http://198.2.220.193:8100
+	APIKey       string `mapstructure:"api_key"`       // r2hub Bearer key（r2h_*）
+	UploadWindow string `mapstructure:"upload_window"` // 北京时间 HH:MM-HH:MM，支持跨午夜，空 = 全天
+	TimeoutSecs  int    `mapstructure:"timeout_secs"`  // 单次上传超时，默认 15
+}
+
 // ImageStorageConfig 配置异步图片任务结果上传的 S3 兼容对象存储。
 // Enabled 同时作为异步图片任务功能的总开关：未启用或未配置完整凭证时，
 // 异步生图接口整体禁用，避免把上游返回的大 base64 结果塞进 Redis。
@@ -324,6 +334,7 @@ type ImageStorageConfig struct {
 	PublicBaseURL   string `mapstructure:"public_base_url"`      // 配了则返回 public_base_url/key 直链；否则 presigned
 	PresignExpiry   int    `mapstructure:"presign_expiry_hours"` // public_base_url 为空时的 presigned 过期时长(小时)
 	MaxDownloadByte int64  `mapstructure:"max_download_bytes"`   // 下载上游 url 图片的字节上限
+	R2Hub           ImageStorageR2HubConfig `mapstructure:"r2hub"`
 }
 
 // IsConfigured 检查对象存储必要字段是否已配置
@@ -2398,6 +2409,12 @@ func setDefaults() {
 	viper.SetDefault("image_storage.access_key_id", "")
 	viper.SetDefault("image_storage.secret_access_key", "")
 	viper.SetDefault("image_storage.public_base_url", "")
+	// r2hub 时间窗口推送（窗口内优先 Cloudflare R2 直链，窗外/失败回退主存储）
+	viper.SetDefault("image_storage.r2hub.enabled", false)
+	viper.SetDefault("image_storage.r2hub.base_url", "")
+	viper.SetDefault("image_storage.r2hub.api_key", "")
+	viper.SetDefault("image_storage.r2hub.upload_window", "")
+	viper.SetDefault("image_storage.r2hub.timeout_secs", 15)
 
 	// Ops (vNext)
 	viper.SetDefault("ops.enabled", true)
