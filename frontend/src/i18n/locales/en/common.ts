@@ -191,6 +191,7 @@ export default {
     ops: 'Ops',
     promoCodes: 'Promo Codes',
     imageBilling: 'Image Billing',
+    profit: 'Profit',
     settings: 'Settings',
     myAccount: 'My Account',
     lightMode: 'Light Mode',

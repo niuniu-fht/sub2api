@@ -191,6 +191,7 @@ export default {
     ops: '运维监控',
     promoCodes: '优惠码',
     imageBilling: '图片计费',
+    profit: '利润统计',
     settings: '系统设置',
     myAccount: '我的账户',
     lightMode: '浅色模式',

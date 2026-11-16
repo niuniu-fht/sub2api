@@ -132,6 +132,7 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+		registerProfitRoutes(admin, h)
 	}
 }
 
@@ -148,6 +149,29 @@ func registerPromptAuditRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		promptAudit.POST("/events/batch-delete", h.Admin.PromptAudit.BatchDelete)
 		promptAudit.POST("/events/delete-preview", h.Admin.PromptAudit.DeletePreview)
 		promptAudit.POST("/events/delete-by-filter", h.Admin.PromptAudit.DeleteByFilter)
+	}
+}
+
+// registerProfitRoutes 利润统计：只读聚合 + 费率维护，全部走 adminAuth 组鉴权。
+func registerProfitRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	profit := admin.Group("/profit")
+	{
+		profit.GET("/summary", h.Admin.Profit.Summary)
+		profit.GET("/users", h.Admin.Profit.ListUsers)
+		profit.GET("/users/:id", h.Admin.Profit.UserDetail)
+		profit.GET("/models", h.Admin.Profit.ListModels)
+		profit.GET("/accounts", h.Admin.Profit.ListAccounts)
+		profit.GET("/rates", h.Admin.Profit.ListRates)
+		profit.PUT("/rates/:userId", h.Admin.Profit.UpsertRate)
+		profit.DELETE("/rates/:userId", h.Admin.Profit.DeleteRate)
+		profit.GET("/cost-rules/models", h.Admin.Profit.CostRuleModelOptions)
+		profit.GET("/cost-rules", h.Admin.Profit.ListCostRules)
+		profit.POST("/cost-rules", h.Admin.Profit.CreateCostRule)
+		profit.POST("/cost-rules/batch", h.Admin.Profit.ReplaceCostRules)
+		profit.PUT("/cost-rules/:id", h.Admin.Profit.UpdateCostRule)
+		profit.DELETE("/cost-rules/:id", h.Admin.Profit.DeleteCostRule)
+		profit.GET("/config", h.Admin.Profit.GetConfig)
+		profit.PUT("/config", h.Admin.Profit.UpdateConfig)
 	}
 }
 
