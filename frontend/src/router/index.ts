@@ -461,7 +461,11 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/admin/profit',
-    name: 'AdminProfit',
+    redirect: '/admin/profit/stats'
+  },
+  {
+    path: '/admin/profit/stats',
+    name: 'AdminProfitStats',
     component: () => import('@/views/admin/ProfitView.vue'),
     meta: {
       requiresAuth: true,
@@ -469,6 +473,18 @@ const routes: RouteRecordRaw[] = [
       title: 'Profit Analytics',
       titleKey: 'admin.profit.title',
       descriptionKey: 'admin.profit.description'
+    }
+  },
+  {
+    path: '/admin/profit/cost',
+    name: 'AdminAccountCost',
+    component: () => import('@/views/admin/AccountCostView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Account Cost Rules',
+      titleKey: 'admin.profit.costTitle',
+      descriptionKey: 'admin.profit.costDescription'
     }
   },
   {

@@ -65,7 +65,7 @@
         class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200"
       >
         {{ t('admin.profit.costCoverageWarn', { pct: Math.round(costCoverage * 100) }) }}
-        <button type="button" class="ml-1 font-medium underline" @click="activeTab = 'costRules'">
+        <button type="button" class="ml-1 font-medium underline" @click="router.push('/admin/profit/cost')">
           {{ t('admin.profit.goPricing') }}
         </button>
       </div>
@@ -73,9 +73,9 @@
       <!-- 每日趋势 -->
       <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-800">
         <h2 class="mb-3 text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.profit.dailyTrend') }}</h2>
-        <div v-if="daily.length" class="h-64">
-          <Line :data="chartData" :options="chartOptions" />
-        </div>
+          <div v-if="daily.length" class="h-64">
+            <Line :data="chartData" :options="chartOptions" :plugins="linePlugins" />
+          </div>
         <div v-else class="flex h-40 items-center justify-center text-sm text-gray-400">
           {{ loading ? t('common.loading') : t('admin.profit.noData') }}
         </div>
@@ -220,7 +220,7 @@
         </div>
 
         <!-- 账号表 -->
-        <div v-else-if="activeTab === 'accounts'" class="overflow-x-auto">
+        <div v-else class="overflow-x-auto">
           <table class="min-w-full text-sm">
             <thead>
               <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:text-gray-400">
@@ -251,202 +251,8 @@
             </tbody>
           </table>
         </div>
-
-        <!-- 成本规则 -->
-        <div v-else class="space-y-4">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.profit.rules.hint') }}</p>
-            <button type="button" class="btn btn-primary btn-sm" @click="openBatch()">
-              {{ t('admin.profit.rules.configure') }}
-            </button>
-          </div>
-
-          <div class="overflow-x-auto rounded-xl border border-gray-200 dark:border-dark-700">
-            <table class="min-w-full text-sm">
-              <thead>
-                <tr class="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-500 dark:border-dark-700 dark:bg-dark-900/60 dark:text-gray-400">
-                  <th class="px-3 py-2">{{ t('admin.profit.rules.scope') }}</th>
-                  <th class="px-3 py-2">{{ t('admin.profit.rules.mode') }}</th>
-                  <th class="px-3 py-2">{{ t('admin.profit.rules.price') }}</th>
-                  <th class="px-3 py-2">{{ t('admin.profit.rules.note') }}</th>
-                  <th class="px-3 py-2 text-right">{{ t('common.actions') }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="rule in costRules" :key="rule.id" class="border-b border-gray-100 dark:border-dark-700/50">
-                  <td class="px-3 py-2 font-medium text-gray-900 dark:text-white">{{ ruleScope(rule) }}</td>
-                  <td class="px-3 py-2">
-                    <span class="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
-                      {{ t(`admin.profit.rules.mode_${rule.billing_mode}`) }}
-                    </span>
-                  </td>
-                  <td class="px-3 py-2 tabular-nums text-gray-600 dark:text-gray-300">{{ rulePrice(rule) }}</td>
-                  <td class="px-3 py-2 text-gray-500">{{ rule.note }}</td>
-                  <td class="px-3 py-2 text-right">
-                    <button type="button" class="text-xs font-medium text-red-600 hover:underline dark:text-red-400" @click="removeRule(rule.id)">
-                      {{ t('common.delete') }}
-                    </button>
-                  </td>
-                </tr>
-                <tr v-if="!costRules.length">
-                  <td colspan="5" class="px-3 py-8 text-center text-gray-400">{{ t('admin.profit.rules.empty') }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
     </div>
-
-    <!-- 批量配置成本规则窗口：选一次账号，配完该账号全部模型 -->
-    <BaseDialog
-      :show="batchOpen"
-      :title="t('admin.profit.rules.batchTitle')"
-      width="wide"
-      :close-on-click-outside="false"
-      @close="batchOpen = false"
-    >
-      <div class="space-y-4">
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label class="text-xs text-gray-500">{{ t('admin.profit.rules.account') }}</label>
-            <SearchableSelect
-              v-model="batchAccountId"
-              :options="accountSelectOptions"
-              :placeholder="t('admin.profit.rules.anyAccount')"
-              :search-placeholder="t('common.searchPlaceholder')"
-              :empty-text="t('admin.profit.noData')"
-              test-id="profit-batch-account"
-              class="mt-1"
-            />
-          </div>
-          <p class="self-end text-xs text-gray-500 dark:text-gray-400">{{ t('admin.profit.rules.batchHint') }}</p>
-        </div>
-
-        <template v-if="batchAccountId !== null || batchRows.length">
-          <div v-if="batchLoading" class="py-8 text-center text-sm text-gray-400">{{ t('common.loading') }}</div>
-          <template v-else>
-            <!-- 统一设置条 -->
-            <div class="flex flex-wrap items-end gap-2 rounded-xl bg-gray-50 p-3 dark:bg-dark-900/60">
-              <label class="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
-                <input
-                  type="checkbox"
-                  class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 dark:border-dark-500"
-                  :checked="batchSelectedCount === batchRows.length && batchRows.length > 0"
-                  @change="batchSelectAll(($event.target as HTMLInputElement).checked)"
-                />
-                {{ t('admin.profit.rules.selectAll') }}
-              </label>
-              <span class="text-xs text-gray-500">{{ t('admin.profit.rules.selectedCount', { n: batchSelectedCount }) }}</span>
-              <div class="ml-auto flex flex-wrap items-end gap-2">
-                <div>
-                  <label class="text-xs text-gray-500">{{ t('admin.profit.rules.mode') }}</label>
-                  <select
-                    v-model="batchApplyMode"
-                    class="mt-0.5 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-900 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
-                  >
-                    <option value="per_image">{{ t('admin.profit.rules.mode_per_image') }}</option>
-                    <option value="per_request">{{ t('admin.profit.rules.mode_per_request') }}</option>
-                    <option value="token">{{ t('admin.profit.rules.mode_token') }}</option>
-                  </select>
-                </div>
-                <div>
-                  <label class="text-xs text-gray-500">{{ t('admin.profit.rules.price') }}</label>
-                  <input
-                    v-model.number="batchApplyPrice"
-                    type="number" step="0.001" min="0"
-                    class="mt-0.5 w-24 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-900 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
-                  />
-                </div>
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-sm"
-                  :disabled="!batchSelectedCount || !batchApplyPrice"
-                  @click="batchApplyToSelected"
-                >
-                  {{ t('admin.profit.rules.applySelected', { n: batchSelectedCount }) }}
-                </button>
-              </div>
-            </div>
-
-            <!-- 模型行 -->
-            <div class="max-h-[45vh] overflow-y-auto rounded-xl border border-gray-200 dark:border-dark-700">
-              <table class="min-w-full text-sm">
-                <thead class="sticky top-0 bg-gray-50 dark:bg-dark-900">
-                  <tr class="border-b border-gray-200 text-left text-xs uppercase text-gray-500 dark:border-dark-700 dark:text-gray-400">
-                    <th class="px-3 py-2 w-10"></th>
-                    <th class="px-3 py-2">{{ t('admin.profit.rules.model') }}</th>
-                    <th class="px-3 py-2 w-28">{{ t('admin.profit.rules.mode') }}</th>
-                    <th class="px-3 py-2 w-32">{{ t('admin.profit.rules.price') }}</th>
-                    <th class="px-3 py-2">{{ t('admin.profit.settings.note') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in batchRows" :key="row.model" class="border-b border-gray-100 dark:border-dark-700/50">
-                    <td class="px-3 py-2">
-                      <input
-                        v-model="row.selected"
-                        type="checkbox"
-                        class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 dark:border-dark-500"
-                      />
-                    </td>
-                    <td class="px-3 py-2 font-medium text-gray-900 dark:text-white">{{ row.model }}</td>
-                    <td class="px-3 py-2">
-                      <select
-                        v-model="row.billing_mode"
-                        class="w-full rounded-lg border border-gray-300 bg-white px-1.5 py-1 text-xs text-gray-900 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
-                      >
-                        <option value="per_image">{{ t('admin.profit.rules.mode_per_image') }}</option>
-                        <option value="per_request">{{ t('admin.profit.rules.mode_per_request') }}</option>
-                        <option value="token">{{ t('admin.profit.rules.mode_token') }}</option>
-                      </select>
-                    </td>
-                    <td class="px-3 py-2">
-                      <input
-                        v-if="row.billing_mode === 'per_image'" v-model.number="row.image_price"
-                        type="number" step="0.001" min="0" :placeholder="t('admin.profit.rules.zeroHint')"
-                        class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs tabular-nums text-gray-900 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
-                      />
-                      <input
-                        v-else-if="row.billing_mode === 'per_request'" v-model.number="row.request_price"
-                        type="number" step="0.001" min="0" :placeholder="t('admin.profit.rules.zeroHint')"
-                        class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs tabular-nums text-gray-900 dark:border-dark-600 dark:bg-dark-900 dark:text-white"
-                      />
-                      <div v-else class="flex gap-1">
-                        <input v-model.number="row.input_price" type="number" step="0.01" min="0" placeholder="in ¥/M"
-                          class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs tabular-nums text-gray-900 dark:border-dark-600 dark:bg-dark-900 dark:text-white" />
-                        <input v-model.number="row.output_price" type="number" step="0.01" min="0" placeholder="out ¥/M"
-                          class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs tabular-nums text-gray-900 dark:border-dark-600 dark:bg-dark-900 dark:text-white" />
-                      </div>
-                    </td>
-                    <td class="px-3 py-2">
-                      <input v-model="row.note" type="text"
-                        class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 dark:border-dark-600 dark:bg-dark-900 dark:text-white" />
-                    </td>
-                  </tr>
-                  <tr v-if="!batchRows.length">
-                    <td colspan="5" class="px-3 py-8 text-center text-gray-400">{{ t('admin.profit.noData') }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p class="text-xs text-gray-400">{{ t('admin.profit.rules.zeroHint') }}</p>
-          </template>
-        </template>
-        <p v-else class="py-6 text-center text-sm text-gray-400">{{ t('admin.profit.rules.selectAccountFirst') }}</p>
-      </div>
-      <template #footer>
-        <button type="button" class="btn btn-secondary btn-sm" @click="batchOpen = false">{{ t('common.cancel') }}</button>
-        <button
-          type="button"
-          class="btn btn-primary btn-sm"
-          :disabled="batchSaving || batchLoading"
-          @click="saveBatch"
-        >
-          {{ batchSaving ? t('common.loading') : t('common.save') }}
-        </button>
-      </template>
-    </BaseDialog>
 
     <!-- 用户详情抽屉 -->
     <div
@@ -553,7 +359,7 @@
 
           <h3 class="mb-2 mt-5 text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.profit.dailyTrend') }}</h3>
           <div v-if="detail.daily.length" class="h-56">
-            <Line :data="detailChartData" :options="chartOptions" />
+            <Line :data="detailChartData" :options="chartOptions" :plugins="linePlugins" />
           </div>
         </template>
       </div>
@@ -661,14 +467,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Chart as ChartJS, CategoryScale, Filler, Legend, LineElement, LinearScale, PointElement, Tooltip } from 'chart.js'
+import { useRouter } from 'vue-router'
+import { Chart as ChartJS, CategoryScale, Filler, Legend, LineElement, LinearScale, PointElement, Tooltip, type ChartOptions } from 'chart.js'
 import { Line } from 'vue-chartjs'
+import ChartDataLabels from 'chartjs-plugin-datalabels'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
-import { accountsAPI } from '@/api/admin/accounts'
-import SearchableSelect from '@/components/common/SearchableSelect.vue'
-import BaseDialog from '@/components/common/BaseDialog.vue'
-import type { SelectOption } from '@/components/common/SearchableSelect.vue'
 import {
   getProfitSummary,
   getProfitUsers,
@@ -680,12 +484,6 @@ import {
   deleteProfitRate,
   getProfitConfig,
   updateProfitConfig,
-  getCostRules,
-  deleteCostRule,
-  getCostRuleModels,
-  replaceCostRules,
-  type BatchCostRuleRow,
-  type ProfitCostRule,
   type ProfitSummaryResponse,
   type ProfitUserRow,
   type ProfitModelRow,
@@ -697,6 +495,7 @@ import {
 ChartJS.register(Tooltip, Legend, LineElement, LinearScale, PointElement, CategoryScale, Filler)
 
 const { t } = useI18n()
+const router = useRouter()
 const appStore = useAppStore()
 
 const loading = ref(false)
@@ -704,7 +503,7 @@ const activePreset = ref(7)
 const filterStartDate = ref('')
 const filterEndDate = ref('')
 const summary = ref<ProfitSummaryResponse | null>(null)
-const activeTab = ref<'users' | 'models' | 'accounts' | 'costRules'>('users')
+const activeTab = ref<'users' | 'models' | 'accounts'>('users')
 
 const userRows = ref<ProfitUserRow[]>([])
 const userTotal = ref(0)
@@ -731,7 +530,6 @@ const tabs = computed(() => [
   { key: 'users' as const, label: t('admin.profit.tabs.users') },
   { key: 'models' as const, label: t('admin.profit.tabs.models') },
   { key: 'accounts' as const, label: t('admin.profit.tabs.accounts') },
-  { key: 'costRules' as const, label: t('admin.profit.tabs.costRules') },
 ])
 
 const rangePresets = computed(() => [
@@ -846,8 +644,31 @@ const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
   interaction: { mode: 'index' as const, intersect: false },
-  plugins: { legend: { position: 'top' as const } },
+  plugins: {
+    legend: { position: 'top' as const },
+    // 默认在数据点旁显示数值；点数过多（近90天）时自动隐藏避免重叠
+    datalabels: {
+      display: (ctx: any) => (ctx.dataset.data as number[]).length <= 32,
+      formatter: (v: number) => fmtChartLabel(v),
+      font: { size: 9 },
+      color: '#9ca3af',
+      align: 'top',
+      anchor: 'end',
+      clamp: true,
+    },
+  },
   scales: { y: { beginAtZero: false } },
+} as ChartOptions<'line'>
+
+// 数据标签只作用于本页折线图（局部插件，避免影响其他页面的 chart.js 实例）
+const linePlugins = [ChartDataLabels]
+
+function fmtChartLabel(v: number): string {
+  const n = Number(v) || 0
+  if (n === 0) return ''
+  if (Math.abs(n) >= 10000) return `${(n / 1000).toFixed(0)}k`
+  if (Math.abs(n) >= 1000) return `${(n / 1000).toFixed(1)}k`
+  return n.toFixed(1)
 }
 
 async function reload() {
@@ -967,183 +788,12 @@ async function removeUserRate(userId: number) {
   }
 }
 
-// ─── 成本规则 ───
-const costRules = ref<ProfitCostRule[]>([])
-const accountOptions = ref<{ id: number; name: string; platform: string }[]>([])
-// 批量配置窗口：选一次账号 → 一次性配置该账号下所有模型
-interface BatchRow {
-  model: string
-  selected: boolean
-  billing_mode: 'token' | 'per_image' | 'per_request'
-  image_price: number
-  request_price: number
-  input_price: number
-  output_price: number
-  note: string
-}
-const batchOpen = ref(false)
-const batchAccountId = ref<number | null>(null)
-const batchRows = ref<BatchRow[]>([])
-const batchLoading = ref(false)
-const batchSaving = ref(false)
-const batchApplyMode = ref<'per_image' | 'per_request' | 'token'>('per_image')
-const batchApplyPrice = ref<number | null>(null)
-
-async function loadCostRules() {
-  try {
-    const res = await getCostRules()
-    costRules.value = res.items
-  } catch (e: any) {
-    appStore.showError(e?.message || t('errors.networkError'))
-  }
-}
-
-async function loadAccountOptions() {
-  try {
-    const res = await accountsAPI.list(1, 500, {})
-    const raw: any = res
-    const items: any[] = raw?.items || []
-    accountOptions.value = items
-      .filter((a: any) => a.schedulable === true && a.status === 'active')
-      .map((a: any) => ({ id: a.id, name: a.name, platform: a.platform }))
-  } catch {
-    accountOptions.value = []
-  }
-}
-
-// 账号下拉选项（含"任意账号"）
-const accountSelectOptions = computed<SelectOption[]>(() => [
-  { value: null, label: t('admin.profit.rules.anyAccount') },
-  ...accountOptions.value.map((a) => ({
-    value: a.id,
-    label: a.name || `#${a.id}`,
-    hint: a.platform,
-  })),
-])
-
-
-
-async function loadBatchRows() {
-  batchLoading.value = true
-  try {
-    const [modelRes] = await Promise.all([getCostRuleModels(batchAccountId.value)])
-    const existing = new Map(costRules.value
-      .filter((r) => (r.account_id ?? null) === batchAccountId.value)
-      .map((r) => [r.model, r]))
-    const seen = new Set<string>()
-    batchRows.value = modelRes.items.map((model) => {
-      seen.add(model)
-      const r = existing.get(model)
-      return {
-        model, selected: false,
-        billing_mode: r?.billing_mode || 'per_image',
-        image_price: r?.image_price || 0,
-        request_price: r?.request_price || 0,
-        input_price: r?.input_price || 0,
-        output_price: r?.output_price || 0,
-        note: r?.note || '',
-      }
-    })
-    // 已有规则但不在模型列表里的（如历史模型）也带上
-    for (const [model, r] of existing) {
-      if (!seen.has(model) && model) {
-        batchRows.value.push({
-          model, selected: false,
-          billing_mode: r.billing_mode, image_price: r.image_price,
-          request_price: r.request_price, input_price: r.input_price,
-          output_price: r.output_price, note: r.note,
-        })
-      }
-    }
-  } finally {
-    batchLoading.value = false
-  }
-}
-
-function openBatch() {
-  batchRows.value = []
-  batchOpen.value = true
-}
-
-watch(batchAccountId, () => { if (batchOpen.value) loadBatchRows() })
-
-const batchSelectedCount = computed(() => batchRows.value.filter((r) => r.selected).length)
-
-function batchSelectAll(v: boolean) {
-  batchRows.value.forEach((r) => { r.selected = v })
-}
-
-function batchApplyToSelected() {
-  const price = batchApplyPrice.value
-  if (price == null || price <= 0) return
-  batchRows.value.forEach((r) => {
-    if (!r.selected) return
-    r.billing_mode = batchApplyMode.value
-    if (batchApplyMode.value === 'per_image') r.image_price = price
-    else if (batchApplyMode.value === 'per_request') r.request_price = price
-    else { r.input_price = price; r.output_price = 0 }
-  })
-}
-
-async function saveBatch() {
-  const rules: BatchCostRuleRow[] = batchRows.value
-    .filter((r) => rowPricePositive(r))
-    .map((r) => ({
-      model: r.model, billing_mode: r.billing_mode,
-      input_price: r.input_price, output_price: r.output_price,
-      image_price: r.image_price, request_price: r.request_price, note: r.note,
-    }))
-  batchSaving.value = true
-  try {
-    await replaceCostRules(batchAccountId.value, rules)
-    appStore.showSuccess(t('admin.profit.rules.saved'))
-    batchOpen.value = false
-    await loadCostRules()
-    await reload()
-  } catch (e: any) {
-    appStore.showError(e?.message || t('errors.networkError'))
-  } finally {
-    batchSaving.value = false
-  }
-}
-
-function rowPricePositive(r: BatchRow): boolean {
-  if (r.billing_mode === 'per_image') return r.image_price > 0
-  if (r.billing_mode === 'per_request') return r.request_price > 0
-  return r.input_price > 0 || r.output_price > 0
-}
-
-async function removeRule(id: number) {
-  try {
-    await deleteCostRule(id)
-    appStore.showSuccess(t('admin.profit.rules.saved'))
-    await loadCostRules()
-    await reload()
-  } catch (e: any) {
-    appStore.showError(e?.message || t('errors.networkError'))
-  }
-}
-
-function ruleScope(rule: ProfitCostRule): string {
-  const acc = rule.account_id ? (rule.account_name || `#${rule.account_id}`) : t('admin.profit.rules.anyAccount')
-  const mdl = rule.model || t('admin.profit.rules.anyModel')
-  return `${acc} / ${mdl}`
-}
-
-function rulePrice(rule: ProfitCostRule): string {
-  if (rule.billing_mode === 'per_image') return `¥${rule.image_price}/` + t('admin.profit.rules.perImage')
-  if (rule.billing_mode === 'per_request') return `¥${rule.request_price}/` + t('admin.profit.rules.perRequest')
-  return `¥${rule.input_price}/M in + ¥${rule.output_price}/M out`
-}
-
 watch(activeTab, (tab) => {
   if (tab === 'users' && !userRows.value.length) loadUsers()
-  if (tab === 'costRules' && !costRules.value.length) loadCostRules()
 })
 
 onMounted(() => {
   applyPreset(1)
   loadSettings()
-  loadAccountOptions()
 })
 </script>

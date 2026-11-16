@@ -843,7 +843,17 @@ const adminNavItems = computed((): NavItem[] => {
     },
     { path: '/admin/usage', label: t('nav.usage'), icon: ChartIcon },
     { path: '/admin/image-billing', label: t('nav.imageBilling'), icon: PriceTagIcon, hideInSimpleMode: true },
-    { path: '/admin/profit', label: t('nav.profit'), icon: ChartIcon, hideInSimpleMode: true },
+    {
+      path: '/admin/profit',
+      label: t('nav.profitManagement'),
+      icon: ChartIcon,
+      hideInSimpleMode: true,
+      expandOnly: true,
+      children: [
+        { path: '/admin/profit/stats', label: t('nav.profitStats'), icon: ChartIcon },
+        { path: '/admin/profit/cost', label: t('nav.accountCost'), icon: GlobeIcon },
+      ],
+    },
     { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true }
   ]
 
