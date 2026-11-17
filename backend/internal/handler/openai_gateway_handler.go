@@ -258,6 +258,11 @@ func usageRecordContext(parent context.Context, base context.Context) context.Co
 	if requestID, _ := parent.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
 		base = context.WithValue(base, ctxkey.RequestID, strings.TrimSpace(requestID))
 	}
+	// 复制请求起点：异步计费 worker 据此计算端到端耗时（含账号切换/失败重试），
+	// 丢失该值会静默回退到"仅最后一次转发"的旧口径（见 usageEndToEndDurationMs）。
+	if requestStart, ok := parent.Value(ctxkey.RequestStart).(time.Time); ok && !requestStart.IsZero() {
+		base = context.WithValue(base, ctxkey.RequestStart, requestStart)
+	}
 	return base
 }
 
