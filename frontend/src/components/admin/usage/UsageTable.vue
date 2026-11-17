@@ -284,6 +284,29 @@
           </span>
         </template>
 
+        <!-- 返回图片：最终返回给客户端的图片 URL（图床转存后），点击/Ctrl+左键新标签查看原图（仅管理端） -->
+        <template #cell-image_urls="{ row }">
+          <div v-if="row.image_urls && row.image_urls.length" class="flex items-center gap-1.5">
+            <a
+              v-for="url in row.image_urls.slice(0, 3)"
+              :key="url"
+              :href="url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="block h-12 w-12 shrink-0 overflow-hidden rounded-md border border-gray-200 transition hover:border-primary-400 dark:border-dark-600"
+              :title="t('admin.usage.imageUrlsOpenHint')"
+            >
+              <img :src="url" loading="lazy" class="h-full w-full object-cover" :alt="t('admin.usage.imageUrls')" />
+            </a>
+            <span
+              v-if="row.image_urls.length > 3"
+              class="text-xs font-medium text-gray-500 dark:text-gray-400"
+              :title="row.image_urls.join('\n')"
+            >+{{ row.image_urls.length - 3 }}</span>
+          </div>
+          <span v-else class="text-sm text-gray-400 dark:text-gray-500">—</span>
+        </template>
+
         <template #cell-created_at="{ value }">
           <span class="text-sm text-gray-600 dark:text-gray-400">{{ formatDateTime(value) }}</span>
         </template>

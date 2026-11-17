@@ -46,6 +46,9 @@ type OpenAIRecordUsageInput struct {
 	NativeCompactionV2 bool
 	// AccountAttempts 账号尝试链快照（handler 在提交 usage 时从请求上下文读取）。
 	AccountAttempts []AccountAttempt
+	// ImageResultURLs 最终返回给客户端的图片 URL 快照（图床转存后的地址），
+	// handler 在提交 usage 时从请求上下文读取；仅 images 端点且存在 http(s) URL 时非空。
+	ImageResultURLs []string
 	ChannelUsageFields
 }
 
@@ -422,6 +425,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		ImageSizeBreakdown:       imageSizeBreakdown,
 		NativeCompactionV2:       input.NativeCompactionV2,
 		AccountAttempts:          input.AccountAttempts,
+		ImageResultURLs:          input.ImageResultURLs,
 	}
 	// 复用一直未启用的 billing_tier 列记录图片质量(low/medium/high/xhigh/max),供使用记录展示。
 	if quality := NormalizeOpenAIImageQuality(result.ImageQuality); quality != "" && result.ImageCount > 0 {

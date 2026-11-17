@@ -89,6 +89,7 @@ var usageLogInsertArgTypes = [...]string{
 	"integer",     // cache_creation_12h_tokens
 	"timestamptz", // created_at
 	"jsonb",       // account_attempts
+	"jsonb",       // image_urls
 }
 
 const (
@@ -292,14 +293,15 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			cache_creation_30m_tokens,
 			cache_creation_12h_tokens,
 			created_at,
-			account_attempts
+			account_attempts,
+			image_urls
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9,
 			$10, $11,
 			$12, $13, $14, $15,
 			$16, $17, $18, $19,
 			$20, $21, $22, $23, $24, $25,
-			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65
+			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -755,12 +757,13 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			cache_creation_30m_tokens,
 			cache_creation_12h_tokens,
 			created_at,
-			account_attempts
+			account_attempts,
+			image_urls
 		) AS (VALUES `)
 
-	// Each batch row prepends the synthetic input_index before the 60
+	// Each batch row prepends the synthetic input_index before the 61
 	// usage-log column values.
-	args := make([]any, 0, len(keys)*62)
+	args := make([]any, 0, len(keys)*63)
 	argPos := 1
 	for idx, key := range keys {
 		if idx > 0 {
@@ -853,7 +856,8 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				cache_creation_30m_tokens,
 				cache_creation_12h_tokens,
 				created_at,
-				account_attempts
+				account_attempts,
+				image_urls
 			)
 			SELECT
 				user_id,
@@ -920,7 +924,8 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				cache_creation_30m_tokens,
 				cache_creation_12h_tokens,
 				created_at,
-				account_attempts
+				account_attempts,
+				image_urls
 			FROM input
 			ON CONFLICT (request_id, api_key_id) DO NOTHING
 			RETURNING request_id, api_key_id, id, created_at
@@ -1027,10 +1032,11 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			cache_creation_30m_tokens,
 			cache_creation_12h_tokens,
 			created_at,
-			account_attempts
+			account_attempts,
+			image_urls
 		) AS (VALUES `)
 
-	args := make([]any, 0, len(preparedList)*61)
+	args := make([]any, 0, len(preparedList)*62)
 	argPos := 1
 	for idx, prepared := range preparedList {
 		if idx > 0 {
@@ -1120,7 +1126,8 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			cache_creation_30m_tokens,
 			cache_creation_12h_tokens,
 			created_at,
-			account_attempts
+			account_attempts,
+			image_urls
 		)
 		SELECT
 			user_id,
@@ -1187,7 +1194,8 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			cache_creation_30m_tokens,
 			cache_creation_12h_tokens,
 			created_at,
-			account_attempts
+			account_attempts,
+			image_urls
 		FROM input
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`)
@@ -1262,14 +1270,15 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			cache_creation_30m_tokens,
 			cache_creation_12h_tokens,
 			created_at,
-			account_attempts
+			account_attempts,
+			image_urls
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9,
 			$10, $11,
 			$12, $13, $14, $15,
 			$16, $17, $18, $19,
 			$20, $21, $22, $23, $24, $25,
-			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65
+			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`, prepared.args...)
@@ -1301,6 +1310,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 	imageSizeSource := nullString(log.ImageSizeSource)
 	imageSizeBreakdown := nullStringIntMapJSON(log.ImageSizeBreakdown)
 	accountAttemptsJSON := nullAccountAttemptsJSON(log.AccountAttempts)
+	imageResultURLsJSON := nullStringSliceJSON(log.ImageResultURLs)
 	videoResolution := nullString(log.VideoResolution)
 	videoDurationSeconds := nullInt(log.VideoDurationSeconds)
 	serviceTier := nullString(log.ServiceTier)
@@ -1398,6 +1408,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			log.CacheCreation12hTokens,
 			createdAt,
 			accountAttemptsJSON, // account_attempts
+			imageResultURLsJSON, // image_urls
 		},
 	}
 }

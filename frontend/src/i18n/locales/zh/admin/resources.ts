@@ -510,6 +510,8 @@ export default {
       title: '使用记录',
       description: '查看和管理所有用户的使用记录',
       attemptCount: '账号尝试',
+      imageUrls: '返回图片',
+      imageUrlsOpenHint: '点击（或 Ctrl+左键）在新标签查看原图：最终返回给下游的 URL（图床转存后）',
       attemptChain: {
         title: '账号尝试链路',
         hint: '本次请求共尝试 {count} 个账号',

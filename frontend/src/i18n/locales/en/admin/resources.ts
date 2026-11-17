@@ -513,6 +513,8 @@ export default {
       title: 'Usage Records',
       description: 'View and manage all user usage records',
       attemptCount: 'Account Attempts',
+      imageUrls: 'Result Images',
+      imageUrlsOpenHint: 'Click (or Ctrl+click) to open the original image in a new tab: the final URL returned downstream (after image-storage rewrite)',
       attemptChain: {
         title: 'Account Attempt Chain',
         hint: 'This request tried {count} accounts',

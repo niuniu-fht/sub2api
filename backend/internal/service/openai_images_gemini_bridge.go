@@ -422,6 +422,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesViaGemini(
 	}
 	responseBody = rewritten
 
+	CaptureOpenAIFinalImageURLs(c, responseBody)
 	c.Data(http.StatusOK, "application/json", responseBody)
 	firstToken := int(time.Since(startTime).Milliseconds())
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, int64(firstToken))

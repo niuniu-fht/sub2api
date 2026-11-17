@@ -783,8 +783,17 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 		AccountStatsCost:        l.AccountStatsCost,
 		IPAddress:               l.IPAddress,
 		AccountAttempts:         accountAttemptsFromService(l.AccountAttempts),
+		ImageResultURLs:         imageURLsFromService(l.ImageResultURLs),
 		Account:                 AccountSummaryFromService(l.Account),
 	}
+}
+
+// imageURLsFromService 转换最终返回图片 URL；nil/空输出 nil（JSON 省略）。
+func imageURLsFromService(urls []string) []string {
+	if len(urls) == 0 {
+		return nil
+	}
+	return append([]string(nil), urls...)
 }
 
 // accountAttemptsFromService 转换账号尝试链；nil/空链输出 nil（JSON 省略）。

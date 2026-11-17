@@ -527,6 +527,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		// 尝试链在 handler 协程内预捕获快照：异步 worker 里不得再访问 gin.Context
 		//（池积压时闭包可能延迟到 ctx 复用后才执行，读到空链甚至其他请求的链）。
 		accountAttempts := service.AccountAttemptsFromContext(c)
+		imageResultURLs := service.FinalImageURLsFromContext(c)
 		channelUsageFields := clientRequestedUsageFields(c, channelMapping, requestModel, upstreamModel)
 		h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
@@ -544,6 +545,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				QuotaPlatform:      quotaPlatform,
 				SessionID:          sessionID,
 				AccountAttempts:    accountAttempts,
+				ImageResultURLs:    imageResultURLs,
 				ChannelUsageFields: channelUsageFields,
 			}); err != nil {
 				logger.L().With(

@@ -209,6 +209,11 @@ type UsageLog struct {
 	// 仅在链长>1 时由 repo 持久化为 JSONB，管理端接口可见。
 	AccountAttempts []AccountAttempt
 
+	// ImageResultURLs 最终返回给客户端的图片 URL（图床转存后的地址）。
+	// 仅 OpenAI images 端点非流式响应且存在 http(s) URL 时非空，
+	// data: 内联/纯 b64（未开图床转换）与其余请求为 nil。管理端接口可见。
+	ImageResultURLs []string `json:"image_urls,omitempty"`
+
 	// 视频生成字段（Grok 视频按秒计费；video_count>0 的行不要求 image_size）
 	VideoCount           int
 	VideoResolution      *string

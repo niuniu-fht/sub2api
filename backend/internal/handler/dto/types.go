@@ -716,6 +716,10 @@ type AdminUsageLog struct {
 	// AccountAttempts 账号尝试链（请求内发生账号切换时非空，按账号去重；仅管理端可见）
 	AccountAttempts []AdminAccountAttempt `json:"account_attempts,omitempty"`
 
+	// ImageResultURLs 最终返回给客户端的图片 URL（图床转存后的地址）。
+	// 仅 OpenAI images 端点非流式响应且存在 http(s) URL 时非空；仅管理端可见。
+	ImageResultURLs []string `json:"image_urls,omitempty"`
+
 	// Account 最小账号信息（避免泄露敏感字段）
 	Account *AccountSummary `json:"account,omitempty"`
 }

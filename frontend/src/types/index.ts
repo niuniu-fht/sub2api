@@ -1921,6 +1921,9 @@ export interface AdminUsageLog extends UsageLog {
   // 账号尝试链（请求内发生账号切换时非空，按账号去重；仅管理员可见）
   account_attempts?: AdminUsageAccountAttempt[]
 
+  // 最终返回给客户端的图片 URL（图床转存后的地址；仅管理员可见）
+  image_urls?: string[]
+
   // 最小账号信息（仅管理员接口返回）
   account?: UsageLogAccountSummary
 }
