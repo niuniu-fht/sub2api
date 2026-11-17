@@ -81,4 +81,10 @@ const (
 
 	// ClaudeCodeVersion stores the extracted Claude Code version from User-Agent (e.g. "2.1.22")
 	ClaudeCodeVersion Key = "ctx_claude_code_version"
+
+	// RequestStart 记录请求进入网关的时刻（middleware 在请求最外层注入 request context）。
+	// usage 记录用它计算端到端耗时，把账号切换 / 失败重试 / 选号等待的整段时间计入
+	// duration_ms，而不是只计最后一次成功转发的耗时。入站 WebSocket 每轮 turn 开始时
+	// 会重置该值（见 service.BeginOpsStreamTurn）。
+	RequestStart Key = "ctx_request_start"
 )

@@ -222,6 +222,9 @@ func BeginOpsStreamTurn(c *gin.Context, turn int) {
 	if c == nil || turn <= 0 {
 		return
 	}
+	// 新一轮 turn 重置端到端耗时起点：本轮 usage 的 duration 以本轮为准，
+	// 不把连接建立以来的跨轮空闲时间计入。
+	ResetOpsRequestStartForTurn(c, time.Now())
 	c.Set(OpsStreamTurnKey, turn)
 	// Rule and attempt state is turn-scoped on a long-lived WS connection.
 	c.Set(OpsSkipPassthroughKey, false)

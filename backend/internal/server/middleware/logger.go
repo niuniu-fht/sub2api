@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -15,6 +16,10 @@ func Logger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 开始时间
 		startTime := time.Now()
+		// 注入请求起点到 request context：usage 记录据此计算端到端耗时
+		// （含账号切换 / 失败重试 / 选号等待，而非仅最后一次转发的耗时）。
+		// 异步计费链路（DetachUpstreamContext 基于 WithoutCancel）仍可读到该值。
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.RequestStart, startTime))
 
 		// 请求路径
 		path := c.Request.URL.Path

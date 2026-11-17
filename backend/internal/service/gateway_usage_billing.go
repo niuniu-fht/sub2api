@@ -1318,7 +1318,9 @@ func (s *GatewayService) buildRecordUsageLog(
 	cacheTTLOverridden bool,
 	cost *CostBreakdown,
 ) *UsageLog {
-	durationMs := int(result.Duration.Milliseconds())
+	// duration 口径：请求进入网关 → 本次计量的端到端耗时（含账号切换/失败重试/选号等待），
+	// 仅当 ctx 未携带请求起点时（不走全局 middleware 的路径）回退最后一次转发的耗时。
+	durationMs := usageEndToEndDurationMs(ctx, result.Duration)
 	requestID := resolveUsageBillingRequestID(ctx, result.RequestID)
 	sentModel := upstreamSentModel(result.Model, result.UpstreamModel)
 	if result.UpstreamResponseModelConflict {
