@@ -284,25 +284,41 @@
           </span>
         </template>
 
-        <!-- 返回图片：最终返回给客户端的图片 URL（图床转存后），点击/Ctrl+左键新标签查看原图（仅管理端） -->
+        <!-- 返回图片：最终返回给客户端的图片 URL（图床转存后）。
+             默认只显示域名徽章（不自动加载原图，避免列表滚动把 S3/R2 egress 流量打爆）；
+             点击「预览」才按需加载缩略图，点击徽章/Ctrl+左键新标签打开原图。 -->
         <template #cell-image_urls="{ row }">
-          <div v-if="row.image_urls && row.image_urls.length" class="flex items-center gap-1.5">
-            <a
-              v-for="url in row.image_urls.slice(0, 3)"
-              :key="url"
-              :href="url"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="block h-12 w-12 shrink-0 overflow-hidden rounded-md border border-gray-200 transition hover:border-primary-400 dark:border-dark-600"
-              :title="t('admin.usage.imageUrlsOpenHint')"
-            >
-              <img :src="url" loading="lazy" class="h-full w-full object-cover" :alt="t('admin.usage.imageUrls')" />
-            </a>
-            <span
-              v-if="row.image_urls.length > 3"
-              class="text-xs font-medium text-gray-500 dark:text-gray-400"
-              :title="row.image_urls.join('\n')"
-            >+{{ row.image_urls.length - 3 }}</span>
+          <div v-if="row.image_urls && row.image_urls.length" class="flex flex-col gap-1">
+            <div class="flex items-center gap-1">
+              <a
+                v-for="url in row.image_urls.slice(0, 3)"
+                :key="url"
+                :href="url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="max-w-[110px] truncate rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-600 transition hover:bg-primary-50 hover:text-primary-700 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-primary-900/30 dark:hover:text-primary-200"
+                :title="t('admin.usage.imageUrlsOpenHint') + '\n' + url"
+              >{{ imageHostLabel(url) }}</a>
+              <span v-if="row.image_urls.length > 3" class="text-xs text-gray-400">+{{ row.image_urls.length - 3 }}</span>
+              <button
+                type="button"
+                class="rounded px-1 text-xs text-primary-600 underline decoration-dashed underline-offset-2 hover:text-primary-700 dark:text-primary-400"
+                @click="toggleImagePreview(row)"
+              >{{ imagePreviewOpen(row) ? t('admin.usage.imageUrlsHide') : t('admin.usage.imageUrlsPreview') }}</button>
+            </div>
+            <div v-if="imagePreviewOpen(row)" class="flex items-center gap-1.5">
+              <a
+                v-for="url in row.image_urls.slice(0, 4)"
+                :key="url"
+                :href="url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="block h-12 w-12 shrink-0 overflow-hidden rounded-md border border-gray-200 transition hover:border-primary-400 dark:border-dark-600"
+                :title="t('admin.usage.imageUrlsOpenHint')"
+              >
+                <img :src="url" loading="lazy" class="h-full w-full object-cover" :alt="t('admin.usage.imageUrls')" />
+              </a>
+            </div>
           </div>
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">—</span>
         </template>
@@ -708,6 +724,30 @@ const openAttemptsModal = (row: AdminUsageLog) => {
   attemptsData.value = row.account_attempts ?? []
   attemptsRequestId.value = row.request_id ?? null
   showAttemptsModal.value = true
+}
+
+// 返回图片预览：默认不加载原图，仅当管理员点击「预览」后按需挂载 <img>。
+const imagePreviewKeys = ref<Set<string>>(new Set())
+
+const imageRowKey = (row: AdminUsageLog): string => row.request_id || `id-${row.id}`
+
+const imagePreviewOpen = (row: AdminUsageLog): boolean => imagePreviewKeys.value.has(imageRowKey(row))
+
+const toggleImagePreview = (row: AdminUsageLog): void => {
+  const key = imageRowKey(row)
+  const next = new Set(imagePreviewKeys.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  imagePreviewKeys.value = next
+}
+
+// 域名徽章：一眼区分图床域名与上游原始域名（核查透传的关键）。
+const imageHostLabel = (url: string): string => {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return url.slice(0, 24)
+  }
 }
 
 const showIpGeoToolbar = computed(() => props.columns.some((col) => col.key === 'ip_address'))
