@@ -27,7 +27,10 @@ import (
 //     GET {base}/v1/dashboard/billing/usage?start_date&end_date → total_usage（单位 0.01 美元）
 //     余额 = hard_limit_usd - total_usage/100；日期窗口：has_payment_method=true 取本月
 //     1 号至今天，否则近 100 天（与 new-api controller/channel-billing.go 一致）。
-//  2. Sub2API 站：GET {base}/v1/usage → remaining（优先）/balance，isValid==false 拒绝。
+//  2. new-api 无限额度令牌：billing 端点返回哨兵 hard_limit=1 亿时，追加
+//     GET {base}/api/usage/token/ 取「账户」真实余额（user_quota/QuotaPerUnit 换算）；
+//     上游未开启账户额度查询时保留无限令牌展示。
+//  3. Sub2API 站：GET {base}/v1/usage → remaining（优先）/balance，isValid==false 拒绝。
 //     OpenAI 兼容端点 404/401 时回退探测该协议。
 //
 // 其余平台（gemini/claude oauth 等）无公开余额端点，返回"暂不支持"。
@@ -304,10 +307,74 @@ func (s *UpstreamBalanceService) queryOpenAIBilling(ctx context.Context, account
 	if subStatus < 200 || subStatus >= 300 {
 		return nil, fmt.Errorf("subscription endpoint returned HTTP %d: %s", subStatus, truncateUpstreamBalanceText(string(subBody), 120))
 	}
-	return parseOpenAIBillingResult(account.ID, subBody, func(windowStart, windowEnd string) ([]byte, int, error) {
+	res, err := parseOpenAIBillingResult(account.ID, subBody, func(windowStart, windowEnd string) ([]byte, int, error) {
 		usageURL := fmt.Sprintf("%s/v1/dashboard/billing/usage?start_date=%s&end_date=%s", strings.TrimRight(base, "/"), windowStart, windowEnd)
 		return s.doBalanceGet(ctx, account, usageURL, apiKey)
 	})
+	if err != nil {
+		return nil, err
+	}
+	// 无限额度令牌（new-api 哨兵 hard_limit=1亿）：billing 端点反映的是令牌视角，
+	// 余额数字无意义。追加 new-api 的 /api/usage/token/ 取「账户」真实余额
+	//（上游用户需开启"允许查询账户额度"）；拿不到时保留无限令牌展示。
+	if res.Unlimited {
+		if upgraded, err := s.queryNewAPITokenUsage(ctx, account, base, apiKey); err == nil {
+			return upgraded, nil
+		}
+	}
+	return res, nil
+}
+
+// queryNewAPITokenUsage 查询 new-api 系站点的令牌用量端点，
+// 返回「账户（用户）」维度的真实余额（quota/QuotaPerUnit 换算 USD）。
+//   - GET {base}/api/status              → data.quota_per_unit（缺省 500000）
+//   - GET {base}/api/usage/token/ (Bearer)→ data.user_quota.total_available / total_used
+//
+// 令牌自身 total_available 对无限令牌无意义，账户余额以 user_quota 为准；
+// 上游未开启"允许查询账户额度"时 user_quota 缺失，返回错误由调用方回退。
+func (s *UpstreamBalanceService) queryNewAPITokenUsage(ctx context.Context, account *Account, base, apiKey string) (*UpstreamBalanceResult, error) {
+	statusBody, status, err := s.doBalanceGet(ctx, account, strings.TrimRight(base, "/")+"/api/status", apiKey)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("/api/status returned HTTP %d", status)
+	}
+	qpu := gjson.GetBytes(statusBody, "data.quota_per_unit").Float()
+	if qpu <= 0 {
+		qpu = 500000
+	}
+
+	usageBody, status, err := s.doBalanceGet(ctx, account, strings.TrimRight(base, "/")+"/api/usage/token/", apiKey)
+	if err != nil {
+		return nil, err
+	}
+	if status == http.StatusNotFound || status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return nil, fmt.Errorf("/api/usage/token returned HTTP %d", status)
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("/api/usage/token returned HTTP %d: %s", status, truncateUpstreamBalanceText(string(usageBody), 120))
+	}
+	userQuota := gjson.GetBytes(usageBody, "data.user_quota")
+	if !userQuota.IsObject() {
+		return nil, fmt.Errorf("user_quota missing (upstream may not enable account-quota lookup)")
+	}
+	available := userQuota.Get("total_available")
+	usedRaw := userQuota.Get("total_used")
+	if !available.Exists() {
+		return nil, fmt.Errorf("user_quota.total_available missing")
+	}
+	used := usedRaw.Float() / qpu
+	balance := available.Float() / qpu
+	return &UpstreamBalanceResult{
+		AccountID: account.ID,
+		Status:    "success",
+		Protocol:  "newapi_token_usage",
+		Balance:   balance,
+		Used:      used,
+		HardLimit: balance + used,
+		Currency:  "USD",
+	}, nil
 }
 
 // upstreamBalanceUsageWindow 计算用量查询日期窗口（与 new-api 一致）：
