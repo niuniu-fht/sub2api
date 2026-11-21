@@ -9,10 +9,12 @@ import promptAudit from './promptAudit'
 import imageBilling from './imageBilling'
 import plugins from './plugins'
 import profit from './profit'
+import upstreamBalance from './upstreamBalance'
 
 export default {
   ...overview,
   ...profit,
+  ...upstreamBalance,
   ...channels,
   ...accounts,
   ...resources,

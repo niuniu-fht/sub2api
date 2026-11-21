@@ -65,6 +65,7 @@ func RegisterAdminRoutes(
 
 		// 国产供应商（kimi/zhipu/deepseek）额度与余额
 		registerCNProviderRoutes(admin, h)
+		registerUpstreamBalanceRoutes(admin, h)
 
 		// 代理管理
 		registerProxyRoutes(admin, h, stepUpAuth)
@@ -542,6 +543,17 @@ func registerCNProviderRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		// payg 账号余额（kimi/deepseek；zhipu 无余额端点）。
 		cn.GET("/accounts/:id/balance", h.Admin.CNProvider.QueryBalance)
 	}
+}
+
+// registerUpstreamBalanceRoutes 注册通用上游余额监控端点（OpenAI 兼容中转站 + Sub2API 站）。
+func registerUpstreamBalanceRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	ub := admin.Group("/upstream-balances")
+	{
+		ub.GET("", h.Admin.UpstreamBalance.List)
+		ub.POST("/refresh", h.Admin.UpstreamBalance.RefreshBatch)
+	}
+	// 单账号查询挂在账号组（与 upstream-billing-probe 同风格）。
+	admin.POST("/accounts/:id/upstream-balance", h.Admin.UpstreamBalance.RefreshOne)
 }
 
 func registerProxyRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {

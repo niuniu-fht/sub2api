@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -335,6 +337,30 @@ func ProvideCNProviderBalanceCheckService(
 		minutes = cfg.Gateway.CNProviders.BalanceCheckIntervalMinutes
 	}
 	svc := NewCNProviderBalanceCheckService(accountRepo, balanceService, quotaService, cfg, time.Duration(minutes)*time.Minute)
+	svc.Start()
+	return svc
+}
+
+// ProvideUpstreamBalanceService 构造通用上游余额查询服务（OpenAI 兼容中转站 + Sub2API 站）。
+func ProvideUpstreamBalanceService(
+	accountRepo AccountRepository,
+	proxyRepo ProxyRepository,
+	httpUpstream HTTPUpstream,
+	cfg *config.Config,
+) *UpstreamBalanceService {
+	return NewUpstreamBalanceService(accountRepo, proxyRepo, httpUpstream, cfg)
+}
+
+// ProvideUpstreamBalanceCheckService 构造周期余额刷新服务并按需启动。
+// 间隔读环境变量 UPSTREAM_BALANCE_CHECK_MINUTES（分钟）；0/未设置/非法值 = 不启动。
+func ProvideUpstreamBalanceCheckService(balanceService *UpstreamBalanceService) *UpstreamBalanceCheckService {
+	minutes := 0
+	if raw := strings.TrimSpace(os.Getenv("UPSTREAM_BALANCE_CHECK_MINUTES")); raw != "" {
+		if v, err := strconv.Atoi(raw); err == nil && v > 0 {
+			minutes = v
+		}
+	}
+	svc := NewUpstreamBalanceCheckService(balanceService, time.Duration(minutes)*time.Minute)
 	svc.Start()
 	return svc
 }
@@ -930,6 +956,8 @@ var ProviderSet = wire.NewSet(
 	ProvideGrokQuotaService,
 	ProvideCNProviderQuotaService,
 	ProvideCNProviderBalanceService,
+	ProvideUpstreamBalanceService,
+	ProvideUpstreamBalanceCheckService,
 	ProvideCNProviderBalanceCheckService,
 	ProvideClaudeTokenProvider,
 	NewAntigravityGatewayService,

@@ -195,6 +195,7 @@ export default {
     profitManagement: '利润管理',
     profitStats: '利润统计',
     accountCost: '账号利润',
+    upstreamBalance: '上游管理',
     settings: '系统设置',
     myAccount: '我的账户',
     lightMode: '浅色模式',

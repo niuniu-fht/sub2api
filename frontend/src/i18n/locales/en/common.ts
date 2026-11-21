@@ -195,6 +195,7 @@ export default {
     profitManagement: 'Profit',
     profitStats: 'Profit Stats',
     accountCost: 'Account Cost',
+    upstreamBalance: 'Upstream Balance',
     settings: 'Settings',
     myAccount: 'My Account',
     lightMode: 'Light Mode',
