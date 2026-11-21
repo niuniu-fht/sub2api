@@ -64,6 +64,14 @@
             </button>
           </div>
           <Select v-model="filterStatus" :options="statusOptions" class="w-40" />
+          <label class="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+            <input v-model="groupByUpstream" type="checkbox" class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 dark:border-dark-500" />
+            {{ t('admin.upstreamBalance.groupByUpstream') }}
+          </label>
+          <label v-if="hiddenCount > 0" class="flex cursor-pointer items-center gap-1.5 text-xs text-gray-600 dark:text-gray-300">
+            <input v-model="showHidden" type="checkbox" class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 dark:border-dark-500" />
+            {{ t('admin.upstreamBalance.showHidden', { n: hiddenCount }) }}
+          </label>
           <SearchInput
             v-model="filterSearch"
             :placeholder="t('admin.upstreamBalance.searchAccount')"
@@ -86,9 +94,11 @@
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
               <tr
-                v-for="item in visibleItems"
+                v-for="item in rowItems"
+                v-show="rowVisible(item)"
                 :key="item.account_id"
                 class="transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/40"
+                :class="isHidden(item.account_id) ? 'opacity-50' : ''"
                 :data-testid="`upstream-balance-${item.account_id}`"
               >
                 <td class="px-3 py-2.5">
@@ -99,6 +109,13 @@
                     <span class="min-w-0 max-w-[220px] truncate font-medium text-gray-900 dark:text-white">{{ item.account_name || `#${item.account_id}` }}</span>
                     <span class="shrink-0 text-xs text-gray-400">#{{ item.account_id }}</span>
                     <span v-if="!item.schedulable" class="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-400 dark:bg-dark-700 dark:text-gray-500">{{ t('admin.upstreamBalance.disabled') }}</span>
+                    <button
+                      v-if="isGroupHead(item)"
+                      type="button"
+                      class="shrink-0 rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-medium text-primary-700 transition hover:bg-primary-100 dark:bg-primary-900/30 dark:text-primary-200 dark:hover:bg-primary-900/50"
+                      :title="t('admin.upstreamBalance.groupToggleHint')"
+                      @click="toggleHostGroup(item.base_url_host)"
+                    >{{ hostExpanded(item.base_url_host) ? '−' : '+' }}{{ hostGroupSize(item.base_url_host) - 1 }}</button>
                   </div>
                 </td>
                 <td class="px-3 py-2.5 font-mono text-xs text-gray-500 dark:text-gray-400">{{ item.base_url_host || '—' }}</td>
@@ -130,15 +147,25 @@
                   <span v-else class="text-xs text-gray-400">{{ t('admin.upstreamBalance.neverChecked') }}</span>
                 </td>
                 <td class="px-3 py-2.5 text-right">
-                  <button
-                    v-if="item.queryable"
-                    type="button"
-                    class="text-xs font-medium text-primary-600 underline decoration-dashed underline-offset-2 transition-colors hover:text-primary-700 dark:text-primary-400"
-                    :disabled="refreshingIds.has(item.account_id)"
-                    @click="refreshOne(item)"
-                  >
-                    {{ t('admin.upstreamBalance.refresh') }}
-                  </button>
+                  <div class="flex items-center justify-end gap-2">
+                    <button
+                      v-if="item.queryable"
+                      type="button"
+                      class="text-xs font-medium text-primary-600 underline decoration-dashed underline-offset-2 transition-colors hover:text-primary-700 dark:text-primary-400"
+                      :disabled="refreshingIds.has(item.account_id)"
+                      @click="refreshOne(item)"
+                    >
+                      {{ t('admin.upstreamBalance.refresh') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="text-xs text-gray-400 underline decoration-dashed underline-offset-2 transition-colors hover:text-gray-600 dark:hover:text-gray-200"
+                      :title="isHidden(item.account_id) ? t('admin.upstreamBalance.unhideHint') : t('admin.upstreamBalance.hideHint')"
+                      @click="toggleHidden(item.account_id)"
+                    >
+                      {{ isHidden(item.account_id) ? t('admin.upstreamBalance.unhide') : t('admin.upstreamBalance.hide') }}
+                    </button>
+                  </div>
                 </td>
               </tr>
               <tr v-if="!visibleItems.length && !loading">
@@ -153,7 +180,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
@@ -180,6 +207,30 @@ const filterPlatform = ref('')
 const filterStatus = ref('')
 const filterSearch = ref('')
 
+// ─── 个人偏好（localStorage）：隐藏账号 + 按上游聚合 ───
+const HIDDEN_KEY = 'upstream-balance-hidden'
+const GROUP_KEY = 'upstream-balance-group'
+const hiddenIds = ref<Set<number>>(new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')))
+const showHidden = ref(false)
+const groupByUpstream = ref(localStorage.getItem(GROUP_KEY) === '1')
+const expandedHosts = ref<Set<string>>(new Set())
+
+watch(groupByUpstream, (v) => localStorage.setItem(GROUP_KEY, v ? '1' : '0'))
+
+function isHidden(id: number): boolean {
+  return hiddenIds.value.has(id)
+}
+
+function toggleHidden(id: number): void {
+  const next = new Set(hiddenIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  hiddenIds.value = next
+  localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next]))
+}
+
+const hiddenCount = computed(() => items.value.filter((i) => hiddenIds.value.has(i.account_id)).length)
+
 const platformOptions = computed(() => [
   { value: '', label: t('admin.upstreamBalance.allPlatforms') },
   ...[...new Set(items.value.map((i) => i.platform))].sort().map((p) => ({ value: p, label: platformLabel(p) })),
@@ -196,6 +247,7 @@ const statusOptions = computed(() => [
 const visibleItems = computed(() => {
   const kw = filterSearch.value.trim().toLowerCase()
   return items.value.filter((item) => {
+    if (!showHidden.value && hiddenIds.value.has(item.account_id)) return false
     if (filterPlatform.value && item.platform !== filterPlatform.value) return false
     if (filterStatus.value) {
       const st = item.snapshot?.status || 'never'
@@ -208,6 +260,58 @@ const visibleItems = computed(() => {
     return true
   })
 })
+
+// ─── 按上游聚合：同 host 行聚拢，组内首个为头行（+N 徽章展开），其余默认收起 ───
+const hostGroupSizes = computed(() => {
+  const sizes = new Map<string, number>()
+  for (const item of visibleItems.value) {
+    const host = item.base_url_host || ''
+    sizes.set(host, (sizes.get(host) || 0) + 1)
+  }
+  return sizes
+})
+
+const rowItems = computed(() => {
+  if (!groupByUpstream.value) return visibleItems.value
+  const order = new Map<string, number>()
+  const ranked = [...hostGroupSizes.value.entries()].sort((a, b) => b[1] - a[1])
+  ranked.forEach(([host], i) => order.set(host, i))
+  return [...visibleItems.value].sort((x, y) => {
+    const hx = x.base_url_host || ''
+    const hy = y.base_url_host || ''
+    if (hx === hy) return 0
+    return (order.get(hx) ?? 1e9) - (order.get(hy) ?? 1e9)
+  })
+})
+
+function hostGroupSize(host: string | undefined): number {
+  return hostGroupSizes.value.get(host || '') || 1
+}
+
+function isGroupHead(item: UpstreamBalanceListItem): boolean {
+  if (!groupByUpstream.value) return false
+  if (hostGroupSize(item.base_url_host) <= 1) return false
+  return rowItems.value.find((r) => (r.base_url_host || '') === (item.base_url_host || ''))?.account_id === item.account_id
+}
+
+function hostExpanded(host: string | undefined): boolean {
+  return expandedHosts.value.has(host || '')
+}
+
+function toggleHostGroup(host: string | undefined): void {
+  const key = host || ''
+  const next = new Set(expandedHosts.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  expandedHosts.value = next
+}
+
+function rowVisible(item: UpstreamBalanceListItem): boolean {
+  if (!groupByUpstream.value) return true
+  if (hostGroupSize(item.base_url_host) <= 1) return true
+  if (isGroupHead(item)) return true
+  return hostExpanded(item.base_url_host)
+}
 
 const stats = computed(() => {
   let queryable = 0
