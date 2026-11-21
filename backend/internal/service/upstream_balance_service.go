@@ -40,12 +40,20 @@ const (
 	// 批量刷新参数（对齐 new-api channel_balance.go）。
 	upstreamBalanceConcurrency = 4
 	upstreamBalanceInterval    = 500 * time.Millisecond
+
+	// upstreamBalanceUnlimitedLimit：new-api 对「无限额度令牌」在 billing/subscription
+	// 里硬编码返回 hard_limit_usd = 100000000（1 亿美元）。命中该值意味着上游把令牌
+	// 配成了无限额度：余额数字没有意义，展示层应显示「无限」并只看已用金额。
+	upstreamBalanceUnlimitedLimit = 100_000_000.0
 )
 
 // UpstreamBalanceSnapshot 是 extra.upstream_balance 的持久化快照。
 type UpstreamBalanceSnapshot struct {
 	Status     string  `json:"status"` // success | error | unsupported
 	Protocol   string  `json:"protocol,omitempty"`
+	// Unlimited 表示上游是无限额度令牌（new-api 固定 hard_limit=1亿），
+	// Balance 此时不具参考意义，展示层显示「无限」+ 已用金额。
+	Unlimited  bool    `json:"unlimited,omitempty"`
 	Balance    float64 `json:"balance,omitempty"`
 	HardLimit  float64 `json:"hard_limit,omitempty"` // 总额度 USD
 	Used       float64 `json:"used,omitempty"`       // 已用 USD
@@ -57,9 +65,10 @@ type UpstreamBalanceSnapshot struct {
 
 // UpstreamBalanceResult 是单账号查询的即时返回（管理端 API 消费）。
 type UpstreamBalanceResult struct {
-	AccountID int64  `json:"account_id"`
-	Status    string `json:"status"`
-	Protocol  string `json:"protocol,omitempty"`
+	AccountID int64   `json:"account_id"`
+	Status    string  `json:"status"`
+	Protocol  string  `json:"protocol,omitempty"`
+	Unlimited bool    `json:"unlimited,omitempty"`
 	Balance   float64 `json:"balance,omitempty"`
 	HardLimit float64 `json:"hard_limit,omitempty"`
 	Used      float64 `json:"used,omitempty"`
@@ -330,6 +339,7 @@ func parseOpenAIBillingResult(accountID int64, subBody []byte, fetchUsage func(s
 		AccountID: accountID,
 		Status:    "success",
 		Protocol:  "openai_billing",
+		Unlimited: hardLimit >= upstreamBalanceUnlimitedLimit,
 		Balance:   hardLimit - used,
 		HardLimit: hardLimit,
 		Used:      used,
@@ -426,6 +436,7 @@ func (s *UpstreamBalanceService) persist(ctx context.Context, accountID int64, r
 	if err := s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{
 		upstreamBalanceExtraKey: map[string]any{
 			"status":      snapshot.Status,
+			"unlimited":   snapshot.Unlimited,
 			"protocol":    snapshot.Protocol,
 			"balance":     snapshot.Balance,
 			"hard_limit":  snapshot.HardLimit,
@@ -445,8 +456,9 @@ func (s *UpstreamBalanceService) persist(ctx context.Context, accountID int64, r
 
 func snapshotFromResult(res *UpstreamBalanceResult, now time.Time) *UpstreamBalanceSnapshot {
 	return &UpstreamBalanceSnapshot{
-		Status:    res.Status,
-		Protocol:  res.Protocol,
+		Status:     res.Status,
+		Unlimited:  res.Unlimited,
+		Protocol:   res.Protocol,
 		Balance:   res.Balance,
 		HardLimit: res.HardLimit,
 		Used:      res.Used,
@@ -485,8 +497,13 @@ func extraMapToUpstreamBalanceSnapshot(raw map[string]any) *UpstreamBalanceSnaps
 			return 0
 		}
 	}
+	unlimited := false
+	if v, ok := raw["unlimited"].(bool); ok {
+		unlimited = v
+	}
 	return &UpstreamBalanceSnapshot{
 		Status:     getStr("status"),
+		Unlimited:  unlimited,
 		Protocol:   getStr("protocol"),
 		Balance:    getF64("balance"),
 		HardLimit:  getF64("hard_limit"),

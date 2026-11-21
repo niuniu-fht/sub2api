@@ -7,6 +7,8 @@ import { apiClient } from '../client'
 export interface UpstreamBalanceSnapshot {
   status: 'success' | 'error' | 'unsupported'
   protocol?: string
+  /** 上游为 new-api 无限额度令牌（hard_limit 恒为 1 亿），余额数字无意义 */
+  unlimited?: boolean
   balance?: number
   hard_limit?: number
   used?: number
@@ -32,6 +34,7 @@ export interface UpstreamBalanceResult {
   account_id: number
   status: 'success' | 'error' | 'unsupported'
   protocol?: string
+  unlimited?: boolean
   balance?: number
   hard_limit?: number
   used?: number

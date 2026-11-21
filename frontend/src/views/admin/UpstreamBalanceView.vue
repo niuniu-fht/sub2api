@@ -103,14 +103,18 @@
                 </td>
                 <td class="px-3 py-2.5 font-mono text-xs text-gray-500 dark:text-gray-400">{{ item.base_url_host || '—' }}</td>
                 <td class="px-3 py-2.5 text-right">
-                  <span v-if="item.snapshot?.status === 'success'" class="inline-flex items-center rounded-md px-2 py-1 text-sm font-semibold tabular-nums" :class="balanceClass(item.snapshot.balance)">
+                  <span v-if="item.snapshot?.status === 'success' && item.snapshot.unlimited" class="inline-flex items-center gap-1 rounded-md bg-primary-50 px-2 py-1 text-sm font-semibold text-primary-700 dark:bg-primary-900/30 dark:text-primary-200" :title="t('admin.upstreamBalance.unlimitedHint')">
+                    ∞ {{ t('admin.upstreamBalance.unlimited') }}
+                    <span class="text-xs font-normal text-gray-500 dark:text-gray-400">{{ t('admin.upstreamBalance.usedShort') }} {{ fmtMoney(item.snapshot.used) }}</span>
+                  </span>
+                  <span v-else-if="item.snapshot?.status === 'success'" class="inline-flex items-center rounded-md px-2 py-1 text-sm font-semibold tabular-nums" :class="balanceClass(item.snapshot.balance)">
                     {{ fmtMoney(item.snapshot.balance) }}
                   </span>
                   <span v-else-if="!item.queryable" class="text-sm text-gray-400">—</span>
                   <span v-else class="text-sm text-gray-400" :title="item.snapshot?.error">?</span>
                 </td>
                 <td class="px-3 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ item.snapshot?.used ? fmtMoney(item.snapshot.used) : '—' }}</td>
-                <td class="px-3 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ item.snapshot?.hard_limit ? fmtMoney(item.snapshot.hard_limit) : '—' }}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ item.snapshot?.unlimited ? '∞' : (item.snapshot?.hard_limit ? fmtMoney(item.snapshot.hard_limit) : '—') }}</td>
                 <td class="px-3 py-2.5">
                   <span v-if="refreshingIds.has(item.account_id)" class="text-xs text-primary-600 dark:text-primary-400">{{ t('admin.upstreamBalance.refreshing') }}…</span>
                   <span v-else-if="item.snapshot?.status === 'success'" class="inline-flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
@@ -215,7 +219,8 @@ const stats = computed(() => {
     const st = item.snapshot?.status
     if (st === 'success') {
       ok++
-      total += item.snapshot?.balance || 0
+      // 无限额度令牌的余额是 new-api 硬编码的 1 亿，计入合计无意义。
+      if (!item.snapshot?.unlimited) total += item.snapshot?.balance || 0
     } else if (st === 'error') {
       failed++
     }

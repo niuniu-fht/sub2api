@@ -51,6 +51,35 @@ func TestParseOpenAIBillingResult(t *testing.T) {
 	}
 }
 
+func TestParseOpenAIBillingResultUnlimitedToken(t *testing.T) {
+	// new-api 无限额度令牌：hard_limit_usd 硬编码 100000000，应标记 Unlimited。
+	sub := []byte(`{"has_payment_method":false,"hard_limit_usd":100000000}`)
+	res, err := parseOpenAIBillingResult(1, sub, func(start, end string) ([]byte, int, error) {
+		return []byte(`{"total_usage":43917}`), 200, nil
+	})
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+	if !res.Unlimited {
+		t.Fatal("hard_limit=1e8 should be flagged unlimited")
+	}
+	if res.Used < 439.16 || res.Used > 439.18 {
+		t.Fatalf("used = %v", res.Used)
+	}
+
+	// 普通有限额度令牌不标记。
+	sub2 := []byte(`{"has_payment_method":true,"hard_limit_usd":120}`)
+	res2, err := parseOpenAIBillingResult(1, sub2, func(start, end string) ([]byte, int, error) {
+		return []byte(`{"total_usage":100}`), 200, nil
+	})
+	if err != nil {
+		t.Fatalf("parse2 failed: %v", err)
+	}
+	if res2.Unlimited {
+		t.Fatal("hard_limit=120 should not be unlimited")
+	}
+}
+
 func TestParseOpenAIBillingResultUsageError(t *testing.T) {
 	sub := []byte(`{"has_payment_method":false,"hard_limit_usd":10}`)
 	_, err := parseOpenAIBillingResult(1, sub, func(start, end string) ([]byte, int, error) {
