@@ -303,3 +303,16 @@ func TestGroupModelAllowlistFilterForListing(t *testing.T) {
 		}
 	})
 }
+
+
+// ExactEntries 返回白名单精确条目（桥接分组的模型列表兜底数据源）。
+func TestGroupModelAllowlistExactEntries(t *testing.T) {
+	a := GroupModelAllowlist{
+		Enabled: true,
+		Models:  []string{"gpt-image-gemini-3-pro-image", "banana-*", " gpt-image-gemini-3.1-flash-image ", ""},
+	}
+	got := a.ExactEntries()
+	if len(got) != 2 || got[0] != "gpt-image-gemini-3-pro-image" || got[1] != "gpt-image-gemini-3.1-flash-image" {
+		t.Fatalf("exact entries = %v", got)
+	}
+}

@@ -1419,6 +1419,25 @@ func mixedListingModelAllowed(groupPlatform, model string) bool {
 	return groupPlatform == PlatformGemini && isAntigravityGeminiModel(model)
 }
 
+// GroupBridgesPlatform 判断分组是否为"桥接分组"：存在可调度账号，但全部与给定
+// 平台不一致（如 openai 分组挂 gemini 生图账号）。此时 /v1/models 的账号映射
+// 收集恒为空、候选源退化为平台默认列表，模型白名单应作为声明直接生效。
+func (s *GatewayService) GroupBridgesPlatform(ctx context.Context, groupID *int64, platform string) bool {
+	if s == nil || s.accountRepo == nil || groupID == nil || platform == "" {
+		return false
+	}
+	accounts, err := s.accountRepo.ListSchedulableByGroupID(ctx, *groupID)
+	if err != nil || len(accounts) == 0 {
+		return false
+	}
+	for _, acc := range accounts {
+		if acc.Platform == platform || mixedListingAccountAllowed(platform, &acc) {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
 	if s == nil {
 		return nil

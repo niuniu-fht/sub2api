@@ -1188,6 +1188,16 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	// Get available models from account configurations for the selected group platform.
 	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
 	if apiKey != nil && apiKey.Group != nil && apiKey.Group.ModelAllowlistEnabled() {
+		// 桥接分组（分组平台 ≠ 服务账号平台，如 openai 分组挂 gemini 生图账号）：
+		// 平台过滤把账号全部排除、映射收集为空，候选源退化为平台默认列表——
+		// 与实际可调模型完全脱节。此时模型白名单即管理员声明的对外清单，
+		// 直接生效（准入仍由白名单 Allows 判定，请求可正常路由）。
+		// 注意不能只看"交集为空"：白名单与平台默认列表的偶合交集（如历史遗留
+		// 条目）会掩盖桥接事实，把真正可调的映射模型继续藏住。
+		if h.gatewayService.GroupBridgesPlatform(c.Request.Context(), groupID, platform) {
+			writeAllowlistedModelsList(c, platform, apiKey.Group.ModelAllowlist.ExactEntries())
+			return
+		}
 		source := modelListingSource(platform, availableModels, defaultModelIDsForPlatform(platform))
 		writeAllowlistedModelsList(c, platform, apiKey.Group.ModelAllowlist.FilterForListing(source))
 		return

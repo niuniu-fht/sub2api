@@ -222,6 +222,21 @@ func (a GroupModelAllowlist) FilterForListing(source []string) []string {
 	return filtered
 }
 
+// ExactEntries 返回白名单中的精确（非通配）条目，保持配置顺序。
+// 供模型列表的桥接分组兜底使用：当分组的服务账号与分组平台不一致导致
+// 账号映射收集为空时，白名单即管理员声明的对外模型清单。
+func (a GroupModelAllowlist) ExactEntries() []string {
+	entries := make([]string, 0, len(a.Models))
+	for _, entry := range a.Models {
+		entry = strings.TrimSpace(entry)
+		if entry == "" || strings.Contains(entry, "*") {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
 // allowlistSourcePatternAllowsModel 沿用 filterModelsByCustomList 时代的匹配规则：
 // 精确相等、source 通配模式的前缀匹配，以及 Claude 归一化（-thinking 后缀）
 // 后的精确匹配。比较与 Allows 一律大小写不敏感，保证「准入允许 ⇒ 列表可见」。

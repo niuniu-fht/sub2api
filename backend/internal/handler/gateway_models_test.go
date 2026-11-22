@@ -1328,6 +1328,57 @@ func TestGatewayModels_CustomModelsListCanReturnEmptyWhenSelectionsUnavailable(t
 	require.Empty(t, modelIDsForTest(got.Data))
 }
 
+// 桥接分组：openai 分组挂 gemini 生图账号（跨平台服务）——账号映射收集为空，
+// 白名单与 OpenAI 默认列表交集为空。列表应回退输出白名单声明（能调 ⇒ 可见），
+// 而不是返回空导致客户端拉不到模型。
+func TestGatewayModels_BridgedGroupFallsBackToAllowlist(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(26)
+	h := newGatewayModelsHandlerForTest(
+		&gatewayModelsAccountRepoStub{
+			byGroup: map[int64][]service.Account{
+				groupID: {
+					{
+						ID:       1,
+						Platform: service.PlatformGemini, // 与分组平台不一致 → 映射不可见
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{
+								"gpt-image-gemini-3-pro-image": "gemini-3-pro-image",
+							},
+						},
+					},
+				},
+			},
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		Group: &service.Group{
+			ID:       groupID,
+			Platform: service.PlatformOpenAI,
+			ModelAllowlist: service.GroupModelAllowlist{
+				Enabled: true,
+				// 含一个恰与 OpenAI 默认列表重合的历史条目（gpt-image-2）：
+				// 桥接判定必须优先于交集——不能因偶合交集只显示默认模型，
+				// 把真正可调的映射模型藏住。
+				Models: []string{"gpt-image-gemini-3-pro-image", "gpt-image-2", "gpt-image-gemini-nano-banana-2-1"},
+			},
+		},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, []string{"gpt-image-gemini-3-pro-image", "gpt-image-2", "gpt-image-gemini-nano-banana-2-1"}, modelIDsForTest(got.Data))
+}
+
 func TestGatewayModels_CustomModelsListFiltersDefaultFallbackModels(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
