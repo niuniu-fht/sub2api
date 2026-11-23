@@ -128,8 +128,11 @@ func TestUpstreamBalanceQueryable(t *testing.T) {
 	if !upstreamBalanceQueryable(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}) {
 		t.Fatal("openai apikey account should be queryable")
 	}
-	if upstreamBalanceQueryable(&Account{Platform: PlatformGemini, Type: AccountTypeAPIKey}) {
-		t.Fatal("gemini account should not be queryable")
+	if !upstreamBalanceQueryable(&Account{Platform: PlatformGemini, Type: AccountTypeAPIKey}) {
+		t.Fatal("gemini apikey account (relay-backed) should be queryable")
+	}
+	if upstreamBalanceQueryable(&Account{Platform: PlatformGemini, Type: AccountTypeOAuth}) {
+		t.Fatal("gemini oauth account should not be queryable")
 	}
 	if upstreamBalanceQueryable(&Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}) {
 		t.Fatal("openai oauth account should not be queryable")

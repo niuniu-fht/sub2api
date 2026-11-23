@@ -197,7 +197,13 @@ func (s *UpstreamBalanceService) ListBalances(ctx context.Context) ([]UpstreamBa
 		if raw, ok := acc.Extra[upstreamBalanceExtraKey].(map[string]any); ok {
 			item.Snapshot = extraMapToUpstreamBalanceSnapshot(raw)
 		}
-		if base := strings.TrimSpace(acc.GetOpenAIBaseURL()); base != "" {
+		base := strings.TrimSpace(acc.GetOpenAIBaseURL())
+		if base == "" {
+			// GetOpenAIBaseURL 只认 openai 平台；其余平台（gemini 中转等）回退
+			// 原始凭证，保证「按上游聚合」按真实域名分组而不是全部落进空 host 组。
+			base = strings.TrimSpace(acc.GetCredential("base_url"))
+		}
+		if base != "" {
 			if u, err := url.Parse(base); err == nil {
 				item.BaseURLHost = u.Host
 			}
@@ -248,13 +254,16 @@ func (s *UpstreamBalanceService) resolveTargets(ctx context.Context, ids []int64
 }
 
 // upstreamBalanceQueryable 判断账号是否可查询余额：
-// openai 平台 + apikey 型（自定义 base_url 的中转站/官方 key 均可）。
+// openai / gemini 平台 + apikey 型。gemini apikey 账号指向的中转站（new-api 系
+// 的 gemini 协议网关）同样实现 /v1/dashboard/billing 与 /v1/usage，令牌通用。
 func upstreamBalanceQueryable(account *Account) bool {
 	if account == nil {
 		return false
 	}
-	return account.Platform == PlatformOpenAI &&
-		(account.Type == AccountTypeAPIKey || account.Type == AccountTypeUpstream)
+	if account.Platform != PlatformOpenAI && account.Platform != PlatformGemini {
+		return false
+	}
+	return account.Type == AccountTypeAPIKey || account.Type == AccountTypeUpstream
 }
 
 func (s *UpstreamBalanceService) queryAccount(ctx context.Context, account *Account) (*UpstreamBalanceResult, error) {
@@ -271,11 +280,18 @@ func (s *UpstreamBalanceService) queryAccount(ctx context.Context, account *Acco
 		}, now)
 	}
 
+	// GetOpenAI* getter 只认 openai 平台；gemini apikey 账号回退到原始凭证字段。
 	apiKey := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(account.GetCredential("api_key"))
+	}
 	if apiKey == "" {
 		return s.fail(ctx, account.ID, now, "account api_key is empty")
 	}
 	base := strings.TrimSpace(account.GetOpenAIBaseURL())
+	if base == "" {
+		base = strings.TrimSpace(account.GetCredential("base_url"))
+	}
 	if base == "" {
 		return s.fail(ctx, account.ID, now, "account base_url is empty")
 	}
