@@ -460,6 +460,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/channels/status',
+    name: 'AdminChannelStatus',
+    component: () => import('@/views/admin/AdminChannelStatusView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Channel Status',
+      titleKey: 'nav.channelStatus',
+      descriptionKey: 'nav.channelStatus'
+    }
+  },
+  {
     path: '/admin/profit',
     redirect: '/admin/profit/stats'
   },

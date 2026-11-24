@@ -794,6 +794,7 @@ const adminNavItems = computed((): NavItem[] => {
       children: [
         { path: '/admin/channels/pricing', label: t('nav.channelPricing'), icon: PriceTagIcon },
         { path: '/admin/channels/monitor', label: t('nav.channelMonitor'), icon: SignalIcon, featureFlag: flagChannelMonitor },
+        { path: '/admin/channels/status', label: t('nav.channelStatusAdmin'), icon: ChartIcon },
       ],
     },
     // 「仅充值」站点连管理端的「订阅管理」入口也一并收起（路由本身不拦截）。

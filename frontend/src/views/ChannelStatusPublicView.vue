@@ -1,8 +1,8 @@
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-950">
-    <PlazaNavBar login-redirect="/status" />
+  <div :class="embedded ? '' : 'min-h-screen bg-gray-50 dark:bg-dark-950'">
+    <PlazaNavBar v-if="!embedded" login-redirect="/status" />
 
-    <main class="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <main :class="embedded ? '' : 'mx-auto max-w-5xl px-4 py-8 sm:px-6'">
       <!-- 标题 -->
       <div class="mb-6">
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">
@@ -284,6 +284,13 @@ import { formatDateTimeToMinute } from '@/utils/format'
 import type { GroupPlatform } from '@/types'
 
 const { t } = useI18n()
+
+withDefaults(defineProps<{
+  /** 管理端嵌入模式：跳过广场导航栏与页面级布局，由外层 AppLayout 提供 */
+  embedded?: boolean
+}>(), {
+  embedded: false,
+})
 const appStore = useAppStore()
 
 const snapshot = ref<ChannelStatusSnapshot | null>(null)
