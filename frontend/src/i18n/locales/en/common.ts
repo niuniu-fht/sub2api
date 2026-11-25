@@ -183,6 +183,7 @@ export default {
     groups: 'Groups',
     channels: 'Channels',
     availableChannels: 'Available Channels',
+    channelStatusPage: 'Channel Status',
     modelPlaza: 'Model Plaza',
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
@@ -471,6 +472,7 @@ export default {
   // Channel status public page (/status)
   statusPage: {
     title: 'Service Status',
+    description: 'Real-time channel availability and success rates',
     subtitle: 'Per-group availability aggregated from real generation records (passive, no probing)',
     overallOperational: 'All groups operational',
     overallDegraded: 'Some groups degraded',

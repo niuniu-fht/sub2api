@@ -183,6 +183,7 @@ export default {
     groups: '分组管理',
     channels: '渠道管理',
     availableChannels: '可用渠道',
+    channelStatusPage: '渠道状态',
     modelPlaza: '模型广场',
     subscriptions: '订阅管理',
     accounts: '账号管理',
@@ -470,6 +471,7 @@ export default {
   // 渠道状态公开页（/status）
   statusPage: {
     title: '服务状态',
+    description: '各渠道实时可用性与成功率',
     subtitle: '各分组基于真实生成记录的可用性统计（被动聚合，非主动探测）',
     overallOperational: '全部分组运行正常',
     overallDegraded: '部分分组降级',

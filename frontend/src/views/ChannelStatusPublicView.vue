@@ -296,8 +296,8 @@
               </div>
 
               <!-- 模型明细（可展开，带过渡）；点击时间线桶可下钻该时段数据。
-                   仅管理端嵌入模式提供：用户/匿名页只看分组级状态。 -->
-              <div v-if="embedded && (namedModels(group).length > 0 || isBucketSelected(group))" class="mt-3">
+                   管理端与登录用户面板可见（含模型成功率下钻）；匿名页只看分组级状态。 -->
+              <div v-if="showModelDetail && (namedModels(group).length > 0 || isBucketSelected(group))" class="mt-3">
                 <button
                   type="button"
                   class="inline-flex items-center gap-1 text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
@@ -365,10 +365,10 @@
                           <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.modelCol') }}</th>
                           <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.successRateCol') }}</th>
                           <th class="py-1.5 pr-3 font-semibold">{{ t('statusPage.avgGenCol') }}</th>
-                          <th class="py-1.5 pr-3 font-semibold">{{ t('statusPage.fastestCol') }}</th>
-                          <th class="py-1.5 pr-3 font-semibold">P95</th>
-                          <th class="py-1.5 pr-3 font-semibold">P99</th>
-                          <th class="py-1.5 font-semibold">{{ t('statusPage.slowestCol') }}</th>
+                          <th v-if="embedded" class="py-1.5 pr-3 font-semibold">{{ t('statusPage.fastestCol') }}</th>
+                          <th v-if="embedded" class="py-1.5 pr-3 font-semibold">P95</th>
+                          <th v-if="embedded" class="py-1.5 pr-3 font-semibold">P99</th>
+                          <th v-if="embedded" class="py-1.5 font-semibold">{{ t('statusPage.slowestCol') }}</th>
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
@@ -383,10 +383,10 @@
                             :class="rateTextClass(m.success_rate)"
                           >{{ formatRate(m.success_rate) }}</td>
                           <td class="py-1.5 pr-3 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.avg_gen_ms) }}</td>
-                          <td class="py-1.5 pr-3 tabular-nums text-emerald-600 dark:text-emerald-400">{{ formatGenMs(m.fastest_ms) }}</td>
-                          <td class="py-1.5 pr-3 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.p95_ms) }}</td>
-                          <td class="py-1.5 pr-3 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.p99_ms) }}</td>
-                          <td class="py-1.5 tabular-nums text-red-500 dark:text-red-400">{{ formatGenMs(m.slowest_ms) }}</td>
+                          <td v-if="embedded" class="py-1.5 pr-3 tabular-nums text-emerald-600 dark:text-emerald-400">{{ formatGenMs(m.fastest_ms) }}</td>
+                          <td v-if="embedded" class="py-1.5 pr-3 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.p95_ms) }}</td>
+                          <td v-if="embedded" class="py-1.5 pr-3 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.p99_ms) }}</td>
+                          <td v-if="embedded" class="py-1.5 tabular-nums text-red-500 dark:text-red-400">{{ formatGenMs(m.slowest_ms) }}</td>
                         </tr>
                         <tr v-if="displayModels(group).length === 0">
                           <td colspan="7" class="py-2 text-center text-gray-400">{{ t('statusPage.drilldownEmpty') }}</td>
@@ -542,10 +542,16 @@ const props = withDefaults(defineProps<{
   /** 管理端嵌入模式：跳过广场导航栏与页面级布局，由外层 AppLayout 提供。
    * 嵌入模式走管理端鉴权的完整快照接口（含耗时分布等详细指标）。 */
   embedded?: boolean
+  /** 登录用户面板模式（API 后台侧边栏入口）：可展开模型成功率下钻，
+   * 但不显示账号明细、耗时分布与公告编辑；走公开脱敏接口。 */
+  panel?: boolean
 }>(), {
   embedded: false,
+  panel: false,
 })
 const embedded = computed(() => props.embedded)
+// 模型成功率下钻：管理端与登录用户面板均可见（匿名公开页不展示）。
+const showModelDetail = computed(() => props.embedded || props.panel)
 const appStore = useAppStore()
 
 const snapshot = ref<ChannelStatusSnapshot | null>(null)

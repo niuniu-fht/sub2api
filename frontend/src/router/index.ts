@@ -275,6 +275,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/channel-status',
+    name: 'UserChannelStatus',
+    component: () => import('@/views/user/UserChannelStatusView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Channel Status',
+      titleKey: 'statusPage.title',
+      descriptionKey: 'statusPage.description'
+    }
+  },
+  {
     path: '/available-channels',
     name: 'UserAvailableChannels',
     component: () => import('@/views/user/AvailableChannelsView.vue'),

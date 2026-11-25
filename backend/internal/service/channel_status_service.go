@@ -439,19 +439,24 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	agg := newChannelStatusAgg(start, config.WindowHours)
 
 	// 1) 成功请求（usage_logs）
-	// 按「分组 × 模型 × 小时桶」分组：时间线的每个桶必须拿到自己小时内的成功数。
-	// 旧写法只按 (group_id, model) 聚合并取 max(created_at) 当桶时间戳，
-	// 会把整个窗口的成功请求全部堆进最近一小时的桶，历史小时桶只剩失败 → 成功率 0。
+	// 按「分组 × 模型 × 时间桶」直接以原始时间戳落桶（与失败侧、最近1小时口径
+	// 完全同公式）。旧写法按 date_trunc('hour')+30m 落桶：窗口起点不对齐整点时
+	// （start = now-24h 天然不对齐），边界小时会被整块错位到相邻桶，导致时间线
+	// 最后一桶与「最近 1 小时」数字不一致。
+	bucketSeconds := int64(config.WindowHours*3600) / channelStatusTimelineBuckets
+	if bucketSeconds < 1 {
+		bucketSeconds = 1
+	}
 	usageRows, err := s.db.QueryContext(ctx, `
 		SELECT group_id,
 		       coalesce(nullif(trim(requested_model), ''), model, '') AS model,
 		       count(*) AS requests,
 		       avg(duration_ms) AS avg_ms,
-		       date_trunc('hour', created_at) AS bucket_hour
+		       LEAST($3, GREATEST(0, floor(extract(epoch FROM (created_at - $1::timestamptz)) / $2)))::int AS bucket_idx
 		FROM usage_logs
 		WHERE created_at >= $1
-		GROUP BY group_id, 2, date_trunc('hour', created_at)
-	`, start)
+		GROUP BY group_id, 2, 5
+	`, start, bucketSeconds, channelStatusTimelineBuckets-1)
 	if err != nil {
 		return nil, fmt.Errorf("query usage aggregation: %w", err)
 	}
@@ -460,8 +465,8 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		var model string
 		var requests int64
 		var avgMs *float64
-		var bucketHour time.Time
-		if err := usageRows.Scan(&groupID, &model, &requests, &avgMs, &bucketHour); err != nil {
+		var bucketIdx int
+		if err := usageRows.Scan(&groupID, &model, &requests, &avgMs, &bucketIdx); err != nil {
 			_ = usageRows.Close()
 			return nil, fmt.Errorf("scan usage row: %w", err)
 		}
@@ -469,9 +474,8 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		if avgMs != nil {
 			durationMs = int64(*avgMs)
 		}
-		// 取小时桶中点作时间戳：整小时的请求全部落进覆盖该小时中点的同一个桶，
-		// 与失败侧行级时间戳的落桶口径一致，不会在桶边界上劈成两半。
-		agg.addSuccess(groupID, model, requests, durationMs, bucketHour.Add(30*time.Minute))
+		// 桶中点作时间戳（addSuccess 内部仅用它算桶下标，中点必落本桶）。
+		agg.addSuccess(groupID, model, requests, durationMs, start.Add(time.Duration(bucketIdx)*time.Duration(bucketSeconds)*time.Second+time.Duration(bucketSeconds/2)*time.Second))
 	}
 	if err := usageRows.Err(); err != nil {
 		_ = usageRows.Close()
@@ -575,13 +579,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	// 全站(())、分组(group_id)、分组×模型(group_id, model)、分组×模型×时间桶
 	// （时间线下钻视图用）四个粒度；percentile_cont 为插值精确值。
 	// 与 avg_gen_ms 同源（duration_ms>0 的成功行），只统计成功请求。
-	// 桶下标必须与成功侧完全同公式：date_trunc('hour') 后 +30 分钟再按桶宽取整并
-	// 收敛到 [0,23]——窗口起点不对齐整点时，直接用行时间落桶会把部分行错位到
-	// 相邻桶，导致该桶模型有 avg 却没有最快/最长/P95/P99。
-	bucketSeconds := int64(config.WindowHours*3600) / channelStatusTimelineBuckets
-	if bucketSeconds < 1 {
-		bucketSeconds = 1
-	}
+	// 桶下标与成功侧/失败侧完全同公式：原始时间戳按桶宽取整并收敛到 [0,23]。
 	latencyRows, err := s.db.QueryContext(ctx, `
 		SELECT group_id, model, bucket_idx,
 		       avg(ms)::float8,
@@ -591,13 +589,13 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		FROM (
 			SELECT group_id,
 			       coalesce(nullif(trim(requested_model), ''), model, '') AS model,
-			       LEAST(23, GREATEST(0, floor(extract(epoch FROM (date_trunc('hour', created_at) + interval '30 minutes' - $1::timestamptz)) / $2)))::int AS bucket_idx,
+			       LEAST($3, GREATEST(0, floor(extract(epoch FROM (created_at - $1::timestamptz)) / $2)))::int AS bucket_idx,
 			       duration_ms AS ms
 			FROM usage_logs
 			WHERE created_at >= $1 AND duration_ms IS NOT NULL AND duration_ms > 0
 		) t
 		GROUP BY GROUPING SETS ((group_id, model, bucket_idx), (group_id, model), (group_id), ())
-	`, start, bucketSeconds)
+	`, start, bucketSeconds, channelStatusTimelineBuckets-1)
 	if err != nil {
 		return nil, fmt.Errorf("query latency stats: %w", err)
 	}
