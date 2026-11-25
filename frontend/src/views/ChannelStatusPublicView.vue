@@ -1,5 +1,52 @@
 <template>
   <div :class="embedded ? '' : 'min-h-screen bg-gray-50 dark:bg-dark-950'">
+    <!-- 渠道公告（单条覆盖式）：置顶通栏、吸顶悬浮、可关闭；管理员发布新公告后重新出现。
+         管理端/用户面板嵌在 AppLayout 的 main 内边距里（p-4 md:p-6 lg:p-8），
+         用等值负外边距抵消以铺满内容列；匿名页是根节点的直接子元素，天然通栏。 -->
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="-translate-y-2 opacity-0"
+    >
+      <div
+        v-if="announcementVisible"
+        class="sticky top-0 z-30 border-b border-amber-200 bg-amber-50 backdrop-blur-sm dark:border-amber-500/25 dark:bg-amber-500/10"
+        :class="inLayout ? '-mx-4 -mt-4 md:-mx-6 md:-mt-6 lg:-mx-8 lg:-mt-8' : ''"
+        data-testid="status-announcement"
+      >
+        <div class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:px-6">
+          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
+            <Icon name="megaphone" size="sm" />
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="text-[11px] font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400">
+              {{ t('statusPage.annBadge') }} · {{ formatAnnouncementTime }}
+            </div>
+            <div class="mt-0.5 whitespace-pre-wrap break-words text-sm text-gray-800 dark:text-gray-100">{{ announcement?.content }}</div>
+          </div>
+          <div class="flex shrink-0 items-center gap-2 sm:pt-1">
+            <button
+              v-if="canEditAnnouncement"
+              type="button"
+              class="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white/70 px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-white dark:border-amber-500/40 dark:bg-dark-800/70 dark:text-amber-200 dark:hover:bg-dark-700"
+              data-testid="status-announcement-edit"
+              @click="announcementDialogOpen = true"
+            >
+              <Icon name="edit" size="sm" />
+              {{ t('statusPage.annEdit') }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 shadow-sm transition-colors hover:bg-amber-100 dark:border-amber-500/40 dark:bg-dark-800 dark:text-amber-100 dark:hover:bg-dark-700"
+              data-testid="status-announcement-close"
+              @click="dismissAnnouncement"
+            >
+              <Icon name="x" size="sm" />
+              {{ t('common.close') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <main :class="embedded ? '' : 'mx-auto max-w-5xl px-4 py-8 sm:px-6'">
       <!-- 标题 -->
@@ -122,56 +169,6 @@
           </div>
         </section>
 
-        <!-- 渠道公告（单条覆盖式）：悬浮可关闭；embedded 模式可就地编辑 -->
-        <Teleport to="body">
-          <Transition
-            enter-active-class="transition duration-300 ease-out"
-            enter-from-class="translate-y-4 opacity-0"
-            enter-to-class="translate-y-0 opacity-100"
-            leave-active-class="transition duration-200 ease-in"
-            leave-from-class="translate-y-0 opacity-100"
-            leave-to-class="translate-y-4 opacity-0"
-          >
-            <div
-              v-if="announcementVisible"
-              class="fixed bottom-4 left-1/2 z-[60] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2"
-              data-testid="status-announcement"
-            >
-              <div class="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/95 p-4 shadow-lg backdrop-blur-sm dark:border-amber-500/20 dark:bg-amber-500/10">
-                <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
-                  <Icon name="megaphone" size="sm" />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <div class="text-[10px] font-semibold uppercase tracking-widest text-amber-600 dark:text-amber-400">
-                    {{ t('statusPage.annBadge') }} · {{ formatAnnouncementTime }}
-                  </div>
-                  <div class="mt-1 whitespace-pre-wrap break-words text-sm text-gray-800 dark:text-gray-100">{{ announcement?.content }}</div>
-                </div>
-                <div class="flex shrink-0 items-center gap-1">
-                  <button
-                    v-if="embedded"
-                    type="button"
-                    class="rounded-lg p-1.5 text-amber-600 transition-colors hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-500/20"
-                    :title="t('statusPage.annEdit')"
-                    data-testid="status-announcement-edit"
-                    @click.stop="announcementDialogOpen = true"
-                  >
-                    <Icon name="edit" size="sm" />
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-200/60 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-gray-200"
-                    :title="t('common.close')"
-                    data-testid="status-announcement-close"
-                    @click.stop="dismissAnnouncement"
-                  >
-                    <Icon name="x" size="sm" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </Transition>
-        </Teleport>
         <ChannelAnnouncementDialog v-model:open="announcementDialogOpen" @saved="onAnnouncementSaved" />
 
         <!-- 首轮聚合未完成 -->
@@ -527,6 +524,7 @@ import StatusTimeline from '@/components/channelStatus/StatusTimeline.vue'
 import { accountsAPI } from '@/api/admin/accounts'
 import { getChannelStatusAccountStats, type AccountSuccessStat } from '@/api/admin/settings'
 import ChannelAnnouncementDialog from '@/components/channelStatus/ChannelAnnouncementDialog.vue'
+import Icon from '@/components/icons/Icon.vue'
 import { getChannelStatusSnapshot } from '@/api/admin/settings'
 import { getChannelStatus, getChannelStatusAnnouncement, type ChannelStatusAnnouncement, type ChannelHealthStatus, type ChannelStatusBucket, type ChannelStatusGroup, type ChannelStatusModelStat, type ChannelStatusSnapshot } from '@/api/channelStatus'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
@@ -551,6 +549,8 @@ const props = withDefaults(defineProps<{
 const embedded = computed(() => props.embedded)
 // 模型成功率下钻：管理端与登录用户面板均可见（匿名公开页不展示）。
 const showModelDetail = computed(() => props.embedded || props.panel)
+// 嵌在 AppLayout 内容区内的模式（公告通栏需抵消 main 内边距才能铺满）。
+const inLayout = computed(() => props.embedded || props.panel)
 
 // 公告编辑入口：管理员在任何状态页变体（匿名页/用户面板/管理端嵌入）都可见
 // （路由守卫会从 localStorage 恢复登录态，匿名页上 isAdmin 同样有效；PUT 需管理权限）。
@@ -561,14 +561,25 @@ const appStore = useAppStore()
 const snapshot = ref<ChannelStatusSnapshot | null>(null)
 const loading = ref(true)
 
-// ---- 渠道公告（单条覆盖式）：悬浮条可关闭；新公告（updated_at_ms 变化）会重新弹出 ----
+// ---- 渠道公告（单条覆盖式）：置顶通栏可关闭；新公告（updated_at_ms 变化）会重新出现 ----
 const ANNOUNCEMENT_DISMISS_KEY = 'sub2api:channel-status-ann-dismissed'
 const announcement = ref<ChannelStatusAnnouncement | null>(null)
 const announcementDialogOpen = ref(false)
+// 已关闭公告的时间戳：localStorage 不是响应式来源，必须镜像成 ref，
+// 否则关闭后可见性 computed 不会重新求值（点击关闭无反应）。
+const announcementDismissedAtMs = ref<number | null>(readDismissedAnnouncementAtMs())
 
-const announcementVisible = computed(() =>
-  !!announcement.value?.content &&
-  Number(localStorage.getItem(ANNOUNCEMENT_DISMISS_KEY)) !== announcement.value.updated_at_ms,
+function readDismissedAnnouncementAtMs(): number | null {
+  const raw = localStorage.getItem(ANNOUNCEMENT_DISMISS_KEY)
+  if (raw === null) return null
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const announcementVisible = computed(
+  () =>
+    !!announcement.value?.content &&
+    announcementDismissedAtMs.value !== announcement.value.updated_at_ms,
 )
 
 const formatAnnouncementTime = computed(() => {
@@ -578,14 +589,17 @@ const formatAnnouncementTime = computed(() => {
 })
 
 function dismissAnnouncement(): void {
-  if (announcement.value) {
-    localStorage.setItem(ANNOUNCEMENT_DISMISS_KEY, String(announcement.value.updated_at_ms))
-  }
+  if (!announcement.value) return
+  announcementDismissedAtMs.value = announcement.value.updated_at_ms
+  localStorage.setItem(ANNOUNCEMENT_DISMISS_KEY, String(announcement.value.updated_at_ms))
 }
 
 function onAnnouncementSaved(content: string, updatedAtMs: number): void {
   announcement.value = content ? { content, updated_at_ms: updatedAtMs } : null
-  if (!content) localStorage.removeItem(ANNOUNCEMENT_DISMISS_KEY)
+  if (!content) {
+    announcementDismissedAtMs.value = null
+    localStorage.removeItem(ANNOUNCEMENT_DISMISS_KEY)
+  }
 }
 
 // 统计口径：默认「最近 1 小时」滚动窗口（所有用户可见），可切「全部窗口」。
