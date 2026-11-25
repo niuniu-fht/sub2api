@@ -76,3 +76,40 @@ func TestChannelStatusAgg_BucketModelsDrilldown(t *testing.T) {
 	require.Nil(t, agg.bucketModels(11, channelStatusTimelineBuckets))
 	require.Nil(t, agg.bucketModels(999, 0))
 }
+
+// 一次请求 A 错 B 错 C 成功：客户端最终 200，ops 行以 "Recovered …" 记录
+// 中间失败。分组/总体（用户视角）必须把这些行排除在失败之外；账号层面
+// （尝试视角）保留并按真实上游码/传输层分类。样例消息均取自生产真实数据。
+func TestClassifyStatus200_ProductionShapes(t *testing.T) {
+	cases := []struct {
+		name    string
+		message string
+		want    string
+		skip    bool
+	}{
+		{"上游码恢复", "Recovered upstream error 504: <badge color=\"success\">图片生成成功</badge>", "↻504", false},
+		{"上游码恢复401", "Recovered upstream error 401: Invalid token (request id: 2026110417)", "↻401", false},
+		{"传输层恢复", "Recovered upstream error: Post \"http://leoapp:8099/v1/images/generations\": dial tcp: lookup leoapp: no such host", "↻net", false},
+		{"账号鉴权恢复", "Recovered account authentication failure", "↻net", false},
+		{"内嵌真实码", "上游返回 HTTP 429，请稍后重试", "429", false},
+		{"业务失败保持200", "Accounts are temporarily unavailable. Please retry later.", "200", false},
+		{"裸成功文案跳过", "<badge color=\"success\">图片生成成功</badge>", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, skip := classifyStatus200(tc.message)
+			require.Equal(t, tc.want, got)
+			require.Equal(t, tc.skip, skip)
+		})
+	}
+}
+
+// 分组口径（用户视角）：所有 "Recovered …" 形态的 200 行都跳过——
+// 包括无状态码的传输层恢复，它们同样是「换号后最终成功」的请求。
+func TestIsRecoveredStatus200Row_AllRecoveredForms(t *testing.T) {
+	require.True(t, isRecoveredStatus200Row("Recovered upstream error 502: boom"))
+	require.True(t, isRecoveredStatus200Row("Recovered upstream error: dial tcp: i/o timeout"))
+	require.True(t, isRecoveredStatus200Row("Recovered account authentication failure"))
+	require.False(t, isRecoveredStatus200Row("Accounts are temporarily unavailable. Please retry later."))
+	require.False(t, isRecoveredStatus200Row(""))
+}

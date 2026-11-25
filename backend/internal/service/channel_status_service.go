@@ -43,6 +43,40 @@ const channelStatusSnapshotRedisKey = "channel_status:snapshot"
 // 如 "Recovered upstream error 502: Image generation timed out"。
 var recoveredUpstreamStatusRe = regexp.MustCompile(`Recovered upstream error (\d+)`)
 
+// msgEmbeddedHTTPStatusRe 提取消息内嵌的真实 HTTP 状态码（如 "返回 HTTP 429、"）。
+var msgEmbeddedHTTPStatusRe = regexp.MustCompile(`HTTP (\d{3})`)
+
+// classifyStatus200 对 status_code=200 的 ops 行细分：
+//   - "Recovered upstream error N" → 已恢复的中间失败，分类 "↻N"，计入尝试失败；
+//   - 其他 "Recovered …"（传输层错误/账号鉴权失败恢复，无状态码）→ "↻net"；
+//   - "<badge color="success">" 开头 → 成功行误入错误表，完全跳过；
+//   - 消息内嵌 "HTTP N"（如 AI Studio 429 包在 200 行）→ 分类真实码 "N"，计入失败；
+//   - 其余（池不可用/无可用账号/分组停用等业务失败）→ 分类 "200"，计入失败。
+// skip=true 表示该行既不算失败也不进分类（用户视角与尝试视角一致跳过）。
+func classifyStatus200(message string) (classStatus string, skip bool) {
+	if strings.HasPrefix(message, "<badge color=\"success\">") {
+		return "", true
+	}
+	if m := recoveredUpstreamStatusRe.FindStringSubmatch(message); m != nil {
+		return "↻" + m[1], false
+	}
+	if strings.HasPrefix(message, "Recovered ") {
+		return "↻net", false
+	}
+	if m := msgEmbeddedHTTPStatusRe.FindStringSubmatch(message); m != nil {
+		return m[1], false
+	}
+	return "200", false
+}
+
+// isRecoveredStatus200Row 判断 status_code=200 的 ops 行是否为「已恢复的中间失败」：
+// 客户端最终成功（200），ops 行只记录换号前某次尝试的失败供账号层面观测。
+// 覆盖 "Recovered upstream error N: …"、无状态码的传输层恢复
+// （"Recovered upstream error: Post …: dial tcp …"）与账号鉴权失败恢复。
+func isRecoveredStatus200Row(message string) bool {
+	return strings.HasPrefix(message, "Recovered ")
+}
+
 // ---- 对外数据结构（JSON 即 API 响应契约，字段只含可公开展示信息） ----
 
 type ChannelStatusModelStatus struct {
@@ -435,11 +469,14 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		if strings.Contains(message, "is not supported by any configured account in this group") {
 			continue
 		}
-		// 已恢复的中间失败（换号后最终成功，status_code=200 / Recovered upstream error）：
-		// 分组/时间线/overall 采用「用户视角」口径——请求最终成功就不算渠道失败；
-		// 账号明细保留尝试级口径衡量各账号质量（见 AccountSuccessStatsRange）。
+		// status_code=200 的行细分：已恢复的中间失败（A 错 B 错 C 成功，客户端
+		// 最终拿到 200）与误入的成功行不计入分组失败（用户视角：这次请求就是
+		// 成功的，失败只在账号层面显示）；但池不可用/无可用账号/分组停用等
+		// 业务失败虽是 200 也真实影响用户，保留计入。
 		if clientStatus == http.StatusOK {
-			continue
+			if _, skip := classifyStatus200(message); skip || isRecoveredStatus200Row(message) {
+				continue
+			}
 		}
 		agg.addFailure(groupID, model, createdAt)
 	}
@@ -847,19 +884,20 @@ func (s *ChannelStatusService) AccountSuccessStatsRange(ctx context.Context, gro
 		if strings.Contains(message, "is not supported by any configured account in this group") {
 			continue // 客户端误配模型名的路由拒绝，不属于渠道故障
 		}
+		// 错误分类码：200 行细分（已恢复 ↻N / ↻net、内嵌真实码、200）；
+		// 误入错误表的成功行在账号层面也不计失败，直接跳过。
+		classStatus := fmt.Sprintf("%d", clientStatus)
+		if clientStatus == http.StatusOK {
+			var skipRow bool
+			classStatus, skipRow = classifyStatus200(message)
+			if skipRow {
+				continue
+			}
+		}
 		failuresByAccount[accountID]++
 		if windowHours == hourlyBuckets {
 			ensureHourly(accountID)
 			hourlyFailures[accountID][hourIndex(createdAt)]++
-		}
-		// 错误分类码：status_code=200 的行是「已恢复的中间失败」（failover 换号后
-		// 最终成功，ops 行以 Recovered upstream error <code> 记录该次尝试），分类
-		// 用消息里的真实上游状态码并加 ↻ 前缀，与最终失败的红色徽章区分。
-		classStatus := fmt.Sprintf("%d", clientStatus)
-		if clientStatus == http.StatusOK {
-			if m := recoveredUpstreamStatusRe.FindStringSubmatch(message); m != nil {
-				classStatus = "↻" + m[1]
-			}
 		}
 		codeKey := classStatus
 		if errorsByCodeAccount[accountID] == nil {
@@ -873,8 +911,9 @@ func (s *ChannelStatusService) AccountSuccessStatsRange(ctx context.Context, gro
 		}
 		if sampleMsg != "" {
 			// 每类只保留第一条（最新，因 ORDER BY created_at DESC）作为样例。
-			if _, exists := errorSampleAccount[accountID][fmt.Sprintf("%d", clientStatus)]; !exists {
-				errorSampleAccount[accountID][fmt.Sprintf("%d", clientStatus)] = sampleMsg
+			// key 与 errorsByCodeAccount 一致（200 行是分类码如 "↻504"，非原始状态码）。
+			if _, exists := errorSampleAccount[accountID][codeKey]; !exists {
+				errorSampleAccount[accountID][codeKey] = sampleMsg
 			}
 		}
 	}
