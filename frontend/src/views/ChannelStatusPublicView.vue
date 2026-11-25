@@ -572,9 +572,20 @@ function namedModels(group: ChannelStatusGroup): ChannelStatusModelStat[] {
   return (group.models || []).filter((m) => m.model !== '' && m.requests > 0)
 }
 
-/** API 返回的桶为最旧在前，直接左→右渲染即为「过去 → 现在」。 */
+/** API 返回的桶为最旧在前，直接左→右渲染即为「过去 → 现在」。
+ * 无请求的空桶直接截掉（用户偏好：时间线只看有流量的时段，避免大片空白）；
+ * 全窗口都无流量时回退为原始 24 桶，避免时间线整个消失。
+ * 选中桶索引、下钻明细与区间文案均基于本函数的返回值，截断后仍全局一致。 */
 function orderedTimeline(group: ChannelStatusGroup): ChannelStatusBucket[] {
-  return group.timeline ?? []
+  const all = group.timeline ?? []
+  const active = all.filter((b) => b.requests + b.failures > 0)
+  return active.length > 0 ? active : all
+}
+
+/** 单桶时间宽度（毫秒）：窗口 24 桶均分。截掉空桶后相邻桶不再连续，
+ * 区间计算不能用相邻桶差值，必须用固定桶宽。 */
+function bucketWidthMs(): number {
+  return ((snapshot.value?.window_hours || 24) * 3600_000) / 24
 }
 
 function toggleModels(id: number): void {
@@ -723,7 +734,7 @@ function accountStatsRangeFor(groupId: number): { start?: string; end?: string }
     const buckets = group ? orderedTimeline(group) : []
     const bucket = buckets[bucketIdx]
     if (bucket) {
-      const endMs = bucket.bucket_start_ms + 3600_000
+      const endMs = bucket.bucket_start_ms + bucketWidthMs()
       return { start: new Date(bucket.bucket_start_ms).toISOString(), end: new Date(endMs).toISOString() }
     }
   }
@@ -746,16 +757,14 @@ function displayModels(group: ChannelStatusGroup): ChannelStatusModelStat[] {
   return (bucket?.models ?? []).filter((m) => m.model !== '')
 }
 
-/** 桶时间范围文案：起点取桶的 bucket_start_ms，终点按相邻桶间距推算。 */
+/** 桶时间范围文案：起点取桶的 bucket_start_ms，终点按固定桶宽推算
+ * （空桶被截掉后相邻桶不连续，不能用相邻差值）。 */
 function bucketRangeLabel(group: ChannelStatusGroup, idx: number): string {
   const timeline = orderedTimeline(group)
   const bucket = timeline[idx]
   if (!bucket) return ''
-  const spanMs = idx + 1 < timeline.length
-    ? timeline[idx + 1].bucket_start_ms - bucket.bucket_start_ms
-    : 60 * 60 * 1000
   const start = new Date(bucket.bucket_start_ms)
-  const end = new Date(bucket.bucket_start_ms + spanMs)
+  const end = new Date(bucket.bucket_start_ms + bucketWidthMs())
   return `${formatDateTimeToMinute(start)} ~ ${formatDateTimeToMinute(end)}`
 }
 
