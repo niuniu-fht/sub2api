@@ -27,6 +27,11 @@ export interface ChannelStatusModelStat {
   failures: number
   success_rate: number
   avg_gen_ms: number
+  /** 成功请求耗时分布（0 表示无样本）。 */
+  fastest_ms: number
+  slowest_ms: number
+  p95_ms: number
+  p99_ms: number
 }
 
 /** 单个分组的可用性状态。 */
@@ -39,6 +44,11 @@ export interface ChannelStatusGroup {
   failures: number
   success_rate: number
   avg_gen_ms: number
+  /** 分组级成功请求耗时分布（0 表示无样本）。 */
+  fastest_ms: number
+  slowest_ms: number
+  p95_ms: number
+  p99_ms: number
   models: ChannelStatusModelStat[]
   timeline: ChannelStatusBucket[]
 }
@@ -50,6 +60,13 @@ export interface ChannelStatusSnapshot {
   refresh_seconds: number
   /** 全局状态：所有分组的最差值；无数据为 unknown。 */
   overall: ChannelHealthStatus
+  /** 全站成功请求平均耗时（0 表示无样本）。 */
+  avg_gen_ms: number
+  /** 全站成功请求耗时分布（0 表示无样本）。 */
+  fastest_ms: number
+  slowest_ms: number
+  p95_ms: number
+  p99_ms: number
   groups: ChannelStatusGroup[]
 }
 

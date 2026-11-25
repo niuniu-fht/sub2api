@@ -85,6 +85,10 @@ type ChannelStatusModelStatus struct {
 	Failures    int64   `json:"failures"`
 	SuccessRate float64 `json:"success_rate"` // 百分比 0-100；无请求时 -1 表示 unknown
 	AvgGenMs    int64   `json:"avg_gen_ms"`   // 成功请求平均耗时；0 表示无样本
+	FastestMs   int64   `json:"fastest_ms"`   // 最快成功耗时；0 表示无样本
+	SlowestMs   int64   `json:"slowest_ms"`   // 最长成功耗时
+	P95Ms       int64   `json:"p95_ms"`       // 成功耗时 95 分位（percentile_cont 插值）
+	P99Ms       int64   `json:"p99_ms"`       // 成功耗时 99 分位
 }
 
 type ChannelStatusBucket struct {
@@ -107,6 +111,10 @@ type GroupStatus struct {
 	Failures    int64                      `json:"failures"`
 	SuccessRate float64                    `json:"success_rate"`
 	AvgGenMs    int64                      `json:"avg_gen_ms"`
+	FastestMs   int64                      `json:"fastest_ms"` // 分组级成功耗时分布
+	SlowestMs   int64                      `json:"slowest_ms"`
+	P95Ms       int64                      `json:"p95_ms"`
+	P99Ms       int64                      `json:"p99_ms"`
 	Models      []ChannelStatusModelStatus `json:"models"`
 	Timeline    []ChannelStatusBucket      `json:"timeline"`
 }
@@ -116,10 +124,25 @@ type ChannelStatusSnapshot struct {
 	WindowHours   int           `json:"window_hours"`
 	RefreshSec    int           `json:"refresh_seconds"`
 	Overall       string        `json:"overall"` // operational | degraded | down | unknown
+	AvgGenMs      int64         `json:"avg_gen_ms"`  // 全站成功请求平均耗时；0 表示无样本
+	FastestMs     int64         `json:"fastest_ms"` // 全站成功耗时分布
+	SlowestMs     int64         `json:"slowest_ms"`
+	P95Ms         int64         `json:"p95_ms"`
+	P99Ms         int64         `json:"p99_ms"`
 	Groups        []GroupStatus `json:"groups"`
 }
 
 const channelStatusTimelineBuckets = 24
+
+// channelLatencyStats 成功请求耗时的分布统计（同一窗口内），由
+// Aggregate/AccountSuccessStatsRange 的 percentile_cont 查询填充。
+type channelLatencyStats struct {
+	AvgMs     int64
+	FastestMs int64
+	SlowestMs int64
+	P95Ms     int64
+	P99Ms     int64
+}
 
 // classifyChannelStatus 按阈值把成功率（百分比）映射为状态。
 func classifyChannelStatus(ratePct float64, hasTraffic bool, thresholds ChannelStatusThresholds) string {
@@ -489,6 +512,65 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	}
 	_ = errorRows.Close()
 
+	// 2.5) 成功耗时分布（最快/最长/P95/P99）：一次扫描用 GROUPING SETS 同时算出
+	// 全站(())、分组(group_id)、分组×模型三个粒度；percentile_cont 为插值精确值。
+	// 与 avg_gen_ms 同源（duration_ms>0 的成功行），只统计成功请求。
+	latencyRows, err := s.db.QueryContext(ctx, `
+		SELECT group_id, model,
+		       avg(ms)::float8,
+		       min(ms)::float8, max(ms)::float8,
+		       percentile_cont(0.95) WITHIN GROUP (ORDER BY ms),
+		       percentile_cont(0.99) WITHIN GROUP (ORDER BY ms)
+		FROM (
+			SELECT group_id,
+			       coalesce(nullif(trim(requested_model), ''), model, '') AS model,
+			       duration_ms AS ms
+			FROM usage_logs
+			WHERE created_at >= $1 AND duration_ms IS NOT NULL AND duration_ms > 0
+		) t
+		GROUP BY GROUPING SETS ((group_id, model), (group_id), ())
+	`, start)
+	if err != nil {
+		return nil, fmt.Errorf("query latency stats: %w", err)
+	}
+	groupLatency := map[int64]channelLatencyStats{}
+	modelLatency := map[int64]map[string]channelLatencyStats{}
+	overallLatency := channelLatencyStats{}
+	for latencyRows.Next() {
+		var groupID sql.NullInt64
+		var model sql.NullString
+		var avg, fastest, slowest, p95, p99 float64
+		if err := latencyRows.Scan(&groupID, &model, &avg, &fastest, &slowest, &p95, &p99); err != nil {
+			_ = latencyRows.Close()
+			return nil, fmt.Errorf("scan latency row: %w", err)
+		}
+		stats := channelLatencyStats{
+			AvgMs:     int64(math.Round(avg)),
+			FastestMs: int64(math.Round(fastest)),
+			SlowestMs: int64(math.Round(slowest)),
+			P95Ms:     int64(math.Round(p95)),
+			P99Ms:     int64(math.Round(p99)),
+		}
+		if !groupID.Valid {
+			overallLatency = stats // () 分组：全站
+			continue
+		}
+		id := groupID.Int64
+		if !model.Valid {
+			groupLatency[id] = stats // (group_id) 分组
+			continue
+		}
+		if modelLatency[id] == nil {
+			modelLatency[id] = map[string]channelLatencyStats{}
+		}
+		modelLatency[id][model.String] = stats
+	}
+	if err := latencyRows.Err(); err != nil {
+		_ = latencyRows.Close()
+		return nil, fmt.Errorf("iterate latency rows: %w", err)
+	}
+	_ = latencyRows.Close()
+
 	// 3) 分组元信息（名称/平台/是否专属）
 	groupMeta := map[int64]struct {
 		Name      string
@@ -587,9 +669,11 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 				groupSumMs += agg.successSumMs[id][m]
 				groupCntMs += agg.successCntMs[id][m]
 			}
+			ml := modelLatency[id][m]
 			gr.Models = append(gr.Models, ChannelStatusModelStatus{
 				Model: m, Requests: requests, Failures: failures,
 				SuccessRate: ratePercent(requests, total), AvgGenMs: avgMs,
+				FastestMs: ml.FastestMs, SlowestMs: ml.SlowestMs, P95Ms: ml.P95Ms, P99Ms: ml.P99Ms,
 			})
 			gr.Requests += requests
 			gr.Failures += failures
@@ -598,6 +682,9 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		gr.SuccessRate = ratePercent(gr.Requests, gr.Requests+gr.Failures)
 		if groupCntMs > 0 {
 			gr.AvgGenMs = int64(math.Round(groupSumMs / float64(groupCntMs)))
+		}
+		if gl, ok := groupLatency[id]; ok {
+			gr.FastestMs, gr.SlowestMs, gr.P95Ms, gr.P99Ms = gl.FastestMs, gl.SlowestMs, gl.P95Ms, gl.P99Ms
 		}
 		gr.Status = classifyChannelStatus(gr.SuccessRate, gr.Requests+gr.Failures > 0, config.Thresholds)
 
@@ -652,6 +739,11 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		WindowHours:   config.WindowHours,
 		RefreshSec:    config.RefreshSeconds,
 		Overall:       overall,
+		AvgGenMs:      overallLatency.AvgMs,
+		FastestMs:     overallLatency.FastestMs,
+		SlowestMs:     overallLatency.SlowestMs,
+		P95Ms:         overallLatency.P95Ms,
+		P99Ms:         overallLatency.P99Ms,
 		Groups:        groups,
 	}, nil
 }
@@ -717,6 +809,10 @@ type AccountSuccessStat struct {
 	ErrorsByCode []AccountErrorClass `json:"errors_by_code,omitempty"`
 	SuccessRate float64             `json:"success_rate"` // 百分比 0-100；无请求时 -1 表示 unknown
 	AvgGenMs    int64               `json:"avg_gen_ms"`
+	FastestMs   int64               `json:"fastest_ms"` // 该账号成功请求的耗时分布
+	SlowestMs   int64               `json:"slowest_ms"`
+	P95Ms       int64               `json:"p95_ms"`
+	P99Ms       int64               `json:"p99_ms"`
 	Hourly      []AccountHourlyStat `json:"hourly"` // 仅 24h 窗口时返回：逐小时明细
 }
 
@@ -926,6 +1022,41 @@ func (s *ChannelStatusService) AccountSuccessStatsRange(ctx context.Context, gro
 	}
 	_ = errorRows.Close()
 
+	// 账号级成功耗时分布（最快/最长/P95/P99），与 avg_gen_ms 同源同窗口。
+	latencyRows, err := s.db.QueryContext(ctx, `
+		SELECT account_id,
+		       min(duration_ms)::float8, max(duration_ms)::float8,
+		       percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms),
+		       percentile_cont(0.99) WITHIN GROUP (ORDER BY duration_ms)
+		FROM usage_logs
+		WHERE group_id = $1 AND created_at >= $2 AND created_at <= $3
+		  AND account_id IS NOT NULL AND duration_ms IS NOT NULL AND duration_ms > 0
+		GROUP BY account_id
+	`, groupID, start, end)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query account latency stats: %w", err)
+	}
+	latencyByAccount := map[int64]channelLatencyStats{}
+	for latencyRows.Next() {
+		var accountID int64
+		var fastest, slowest, p95, p99 float64
+		if err := latencyRows.Scan(&accountID, &fastest, &slowest, &p95, &p99); err != nil {
+			_ = latencyRows.Close()
+			return nil, 0, fmt.Errorf("scan account latency row: %w", err)
+		}
+		latencyByAccount[accountID] = channelLatencyStats{
+			FastestMs: int64(math.Round(fastest)),
+			SlowestMs: int64(math.Round(slowest)),
+			P95Ms:     int64(math.Round(p95)),
+			P99Ms:     int64(math.Round(p99)),
+		}
+	}
+	if err := latencyRows.Err(); err != nil {
+		_ = latencyRows.Close()
+		return nil, 0, fmt.Errorf("iterate account latency rows: %w", err)
+	}
+	_ = latencyRows.Close()
+
 	accounts := make([]AccountSuccessStat, 0, len(requestsByAccount)+len(failuresByAccount))
 	seen := map[int64]struct{}{}
 	for accountID := range requestsByAccount {
@@ -963,6 +1094,10 @@ func (s *ChannelStatusService) AccountSuccessStatsRange(ctx context.Context, gro
 			SwitchedToRequests:  switchedByAccount[accountID],
 			SuccessRate:         ratePercent(requests, requests+failures),
 			AvgGenMs:            avgMs,
+			FastestMs:           latencyByAccount[accountID].FastestMs,
+			SlowestMs:           latencyByAccount[accountID].SlowestMs,
+			P95Ms:               latencyByAccount[accountID].P95Ms,
+			P99Ms:               latencyByAccount[accountID].P99Ms,
 			ErrorsByCode:        errorClassesByAccount[accountID],
 		}
 		// 仅 24h 窗口输出逐小时明细；桶时间锚定在窗口起点，与账号表汇总同源。

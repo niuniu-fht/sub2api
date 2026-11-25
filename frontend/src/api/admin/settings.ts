@@ -1474,6 +1474,11 @@ export interface AccountSuccessStat {
   /** 百分比 0-100；-1 表示窗口内无请求。 */
   success_rate: number;
   avg_gen_ms: number;
+  /** 该账号成功请求的耗时分布（0 表示无样本）。 */
+  fastest_ms: number;
+  slowest_ms: number;
+  p95_ms: number;
+  p99_ms: number;
   /** 24h 窗口逐小时明细。 */
   hourly?: AccountHourlyStat[];
 }

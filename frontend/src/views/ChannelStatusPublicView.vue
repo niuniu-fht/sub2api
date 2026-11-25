@@ -65,6 +65,17 @@
                 · {{ t('statusPage.windowHours', { n: snapshot.window_hours }) }}
                 · {{ t('statusPage.refreshEvery', { n: snapshot.refresh_seconds }) }}
               </div>
+              <div class="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-gray-500 dark:text-gray-400">
+                <span>{{ t('statusPage.avgGenCol') }} <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(snapshot.avg_gen_ms) }}</span></span>
+                <span class="text-gray-300 dark:text-gray-600">·</span>
+                <span>{{ t('statusPage.fastestCol') }} <span class="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">{{ formatGenMs(snapshot.fastest_ms) }}</span></span>
+                <span class="text-gray-300 dark:text-gray-600">·</span>
+                <span>P95 <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(snapshot.p95_ms) }}</span></span>
+                <span class="text-gray-300 dark:text-gray-600">·</span>
+                <span>P99 <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(snapshot.p99_ms) }}</span></span>
+                <span class="text-gray-300 dark:text-gray-600">·</span>
+                <span>{{ t('statusPage.slowestCol') }} <span class="font-medium tabular-nums text-red-500 dark:text-red-400">{{ formatGenMs(snapshot.slowest_ms) }}</span></span>
+              </div>
             </div>
           </div>
           <AutoRefreshButton
@@ -147,9 +158,19 @@
                     <div class="truncate text-base font-semibold text-gray-900 dark:text-gray-100">
                       {{ group.name }}
                     </div>
-                    <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                      {{ t('statusPage.avgGenTime') }}
-                      <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(group.avg_gen_ms) }}</span>
+                    <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500 dark:text-gray-400">
+                      <span>
+                        {{ t('statusPage.avgGenTime') }}
+                        <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(group.avg_gen_ms) }}</span>
+                      </span>
+                      <span class="text-gray-300 dark:text-gray-600">·</span>
+                      <span>{{ t('statusPage.fastestCol') }} <span class="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">{{ formatGenMs(group.fastest_ms) }}</span></span>
+                      <span class="text-gray-300 dark:text-gray-600">·</span>
+                      <span>P95 <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(group.p95_ms) }}</span></span>
+                      <span class="text-gray-300 dark:text-gray-600">·</span>
+                      <span>P99 <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(group.p99_ms) }}</span></span>
+                      <span class="text-gray-300 dark:text-gray-600">·</span>
+                      <span>{{ t('statusPage.slowestCol') }} <span class="font-medium tabular-nums text-red-500 dark:text-red-400">{{ formatGenMs(group.slowest_ms) }}</span></span>
                     </div>
                   </div>
                 </div>
@@ -252,7 +273,11 @@
                         <tr class="text-[10px] uppercase tracking-widest text-gray-400">
                           <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.modelCol') }}</th>
                           <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.successRateCol') }}</th>
-                          <th class="py-1.5 font-semibold">{{ t('statusPage.avgGenCol') }}</th>
+                          <th class="py-1.5 pr-3 font-semibold">{{ t('statusPage.avgGenCol') }}</th>
+                          <th class="py-1.5 pr-3 font-semibold">{{ t('statusPage.fastestCol') }}</th>
+                          <th class="py-1.5 pr-3 font-semibold">P95</th>
+                          <th class="py-1.5 pr-3 font-semibold">P99</th>
+                          <th class="py-1.5 font-semibold">{{ t('statusPage.slowestCol') }}</th>
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
@@ -266,10 +291,14 @@
                             class="py-1.5 pr-4 tabular-nums font-medium"
                             :class="rateTextClass(m.success_rate)"
                           >{{ formatRate(m.success_rate) }}</td>
-                          <td class="py-1.5 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.avg_gen_ms) }}</td>
+                          <td class="py-1.5 pr-3 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.avg_gen_ms) }}</td>
+                          <td class="py-1.5 pr-3 tabular-nums text-emerald-600 dark:text-emerald-400">{{ formatGenMs(m.fastest_ms) }}</td>
+                          <td class="py-1.5 pr-3 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.p95_ms) }}</td>
+                          <td class="py-1.5 pr-3 tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(m.p99_ms) }}</td>
+                          <td class="py-1.5 tabular-nums text-red-500 dark:text-red-400">{{ formatGenMs(m.slowest_ms) }}</td>
                         </tr>
                         <tr v-if="displayModels(group).length === 0">
-                          <td colspan="3" class="py-2 text-center text-gray-400">{{ t('statusPage.drilldownEmpty') }}</td>
+                          <td colspan="7" class="py-2 text-center text-gray-400">{{ t('statusPage.drilldownEmpty') }}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -319,6 +348,10 @@
                             <th class="py-1.5 pr-4 text-right font-semibold">{{ t('statusPage.failuresCol') }}</th>
                             <th class="py-1.5 pr-4 text-right font-semibold">{{ t('statusPage.switchedCol') }}</th>
                             <th class="py-1.5 pr-4 text-right font-semibold">{{ t('statusPage.avgGenCol') }}</th>
+                            <th class="py-1.5 pr-3 text-right font-semibold">{{ t('statusPage.fastestCol') }}</th>
+                            <th class="py-1.5 pr-3 text-right font-semibold">P95</th>
+                            <th class="py-1.5 pr-3 text-right font-semibold">P99</th>
+                            <th class="py-1.5 pr-4 text-right font-semibold">{{ t('statusPage.slowestCol') }}</th>
                             <th class="py-1.5 pr-6 font-semibold">{{ t('statusPage.successRateCol') }}</th>
                             <th class="py-1.5 font-semibold">{{ t('statusPage.hourlyCol') }}</th>
                             <th class="py-1.5 font-semibold">{{ t('statusPage.errorsCol') }}</th>
@@ -339,6 +372,10 @@
                             <td class="py-2 pr-4 text-right tabular-nums" :class="acc.failures > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'">{{ acc.failures }}</td>
                             <td class="py-2 pr-4 text-right tabular-nums" :class="(acc.switched_to_requests || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400'" :title="t('statusPage.switchedHint')">{{ acc.switched_to_requests || '—' }}</td>
                             <td class="py-2 pr-4 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(acc.avg_gen_ms) }}</td>
+                            <td class="py-2 pr-3 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{{ formatGenMs(acc.fastest_ms) }}</td>
+                            <td class="py-2 pr-3 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(acc.p95_ms) }}</td>
+                            <td class="py-2 pr-3 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(acc.p99_ms) }}</td>
+                            <td class="py-2 pr-4 text-right tabular-nums text-red-500 dark:text-red-400">{{ formatGenMs(acc.slowest_ms) }}</td>
                             <td class="py-2 pr-6">
                               <div class="flex items-center gap-2">
                                 <span class="w-12 shrink-0 tabular-nums font-medium" :class="rateTextClass(acc.success_rate)">{{ formatRate(acc.success_rate) }}</span>
