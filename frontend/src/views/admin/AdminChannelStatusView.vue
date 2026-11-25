@@ -1,5 +1,5 @@
 <template>
-  <AppLayout>
+  <AppLayout hide-header>
     <ChannelStatusPublicView embedded />
   </AppLayout>
 </template>

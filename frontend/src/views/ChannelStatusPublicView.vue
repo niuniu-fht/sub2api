@@ -1,6 +1,5 @@
 <template>
   <div :class="embedded ? '' : 'min-h-screen bg-gray-50 dark:bg-dark-950'">
-    <PlazaNavBar v-if="!embedded" login-redirect="/status" />
 
     <main :class="embedded ? '' : 'mx-auto max-w-5xl px-4 py-8 sm:px-6'">
       <!-- 标题 -->
@@ -520,7 +519,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import PlazaNavBar from '@/components/modelPlaza/PlazaNavBar.vue'
 import AutoRefreshButton from '@/components/common/AutoRefreshButton.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'

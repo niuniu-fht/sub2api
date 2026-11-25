@@ -11,8 +11,8 @@
       class="relative min-h-screen transition-all duration-300"
       :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64']"
     >
-      <!-- Header -->
-      <AppHeader />
+      <!-- Header（hideHeader：内容型页面如渠道状态页不需要页头 logo 区） -->
+      <AppHeader v-if="!hideHeader" />
 
       <!-- Main Content -->
       <main class="p-4 md:p-6 lg:p-8">
@@ -31,6 +31,11 @@ import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import { useOnboardingStore } from '@/stores/onboarding'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
+
+withDefaults(defineProps<{
+  /** 隐藏顶部页头（logo/面包屑/右上角操作区）：全屏内容型页面用 */
+  hideHeader?: boolean
+}>(), { hideHeader: false })
 
 const appStore = useAppStore()
 const authStore = useAuthStore()
