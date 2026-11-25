@@ -1864,6 +1864,8 @@ export const settingsAPI = {
   updatePanelRateLimitSettings,
   getChannelStatusSettings,
   updateChannelStatusSettings,
+  getChannelStatusAnnouncementAdmin,
+  updateChannelStatusAnnouncement,
   getStreamTimeoutSettings,
   updateStreamTimeoutSettings,
   getRectifierSettings,

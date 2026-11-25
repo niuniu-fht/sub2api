@@ -2039,6 +2039,45 @@
                 </button>
               </div>
 
+              <!-- 渠道公告（单条覆盖式）：状态页悬浮条，编辑入口在系统设置常驻 -->
+              <div class="rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-500/20 dark:bg-amber-500/5">
+                <div class="mb-2 flex items-center justify-between">
+                  <span class="text-sm font-medium text-gray-700 dark:text-gray-200">
+                    {{ t("admin.settings.channelStatus.announcement") }}
+                  </span>
+                  <span v-if="channelStatusAnnouncement.trim()" class="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                    {{ t("admin.settings.channelStatus.announcementLive") }}
+                  </span>
+                </div>
+                <textarea
+                  v-model="channelStatusAnnouncement"
+                  rows="3"
+                  maxlength="2000"
+                  class="input w-full resize-y"
+                  :placeholder="t('statusPage.annPlaceholder')"
+                ></textarea>
+                <div class="mt-2 flex items-center justify-between">
+                  <span class="text-[10px]" :class="channelStatusAnnouncementSaved ? 'text-emerald-500' : 'text-gray-400'">
+                    {{ channelStatusAnnouncementSaved ? t("common.saved") : t("admin.settings.channelStatus.announcementHint") }}
+                  </span>
+                  <div class="flex items-center gap-2">
+                    <button
+                      v-if="channelStatusAnnouncement.trim()"
+                      type="button"
+                      class="btn btn-secondary !py-1 text-red-500"
+                      :disabled="channelStatusAnnouncementSaving"
+                      @click="clearStatusAnnouncement"
+                    >{{ t("statusPage.annClear") }}</button>
+                    <button
+                      type="button"
+                      class="btn btn-primary !py-1"
+                      :disabled="channelStatusAnnouncementSaving || !channelStatusAnnouncement.trim()"
+                      @click="saveStatusAnnouncement"
+                    >{{ channelStatusAnnouncementSaving ? t("common.saving") : t("common.save") }}</button>
+                  </div>
+                </div>
+              </div>
+
               <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
                 <div>
                   <label class="input-label">{{ t("admin.settings.channelStatus.windowHours") }}</label>
@@ -12419,10 +12458,57 @@ async function savePanelRateLimitSettings() {
 }
 
 // 渠道状态统计方法
+// 渠道公告（单条覆盖式）：系统设置内常驻编辑入口。
+const channelStatusAnnouncement = ref("");
+const channelStatusAnnouncementSaving = ref(false);
+const channelStatusAnnouncementSaved = ref(false);
+let channelStatusAnnouncementSavedTimer: ReturnType<typeof setTimeout> | null = null;
+
+function markAnnouncementSaved(): void {
+  channelStatusAnnouncementSaved.value = true;
+  if (channelStatusAnnouncementSavedTimer) clearTimeout(channelStatusAnnouncementSavedTimer);
+  channelStatusAnnouncementSavedTimer = setTimeout(() => { channelStatusAnnouncementSaved.value = false; }, 2500);
+}
+
+async function loadChannelStatusAnnouncement() {
+  try {
+    const ann = await adminAPI.settings.getChannelStatusAnnouncementAdmin();
+    channelStatusAnnouncement.value = ann.content || "";
+  } catch {
+    channelStatusAnnouncement.value = "";
+  }
+}
+
+async function saveStatusAnnouncement() {
+  channelStatusAnnouncementSaving.value = true;
+  try {
+    await adminAPI.settings.updateChannelStatusAnnouncement(channelStatusAnnouncement.value);
+    markAnnouncementSaved();
+  } catch {
+    // 保存失败：保持输入内容，用户可重试；错误由 API 拦截器统一提示。
+  } finally {
+    channelStatusAnnouncementSaving.value = false;
+  }
+}
+
+async function clearStatusAnnouncement() {
+  channelStatusAnnouncementSaving.value = true;
+  try {
+    await adminAPI.settings.updateChannelStatusAnnouncement("");
+    channelStatusAnnouncement.value = "";
+    markAnnouncementSaved();
+  } catch {
+    // 同上：错误由 API 拦截器统一提示。
+  } finally {
+    channelStatusAnnouncementSaving.value = false;
+  }
+}
+
 async function loadChannelStatusSettings() {
   channelStatusLoading.value = true;
   try {
     const settings = await adminAPI.settings.getChannelStatusSettings();
+    void loadChannelStatusAnnouncement();
     channelStatusForm.enabled = settings.enabled;
     if (settings.config) {
       channelStatusForm.config = {

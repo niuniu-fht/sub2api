@@ -232,6 +232,10 @@ export default {
         auditRetentionHint: '超过该天数的操作日志将被自动清理；填 0 表示永久保留（仅支持手动清空）。'
       },
       channelStatus: {
+      announcement: '渠道公告',
+      announcementLive: '● 生效中',
+      announcementHint: '单条覆盖式：保存新内容即覆盖旧公告，撤销即清除；状态页悬浮展示',
+
         title: '渠道状态统计',
         description: '基于真实生成记录（用量日志 + 错误日志）定时聚合成分组/模型的成功率与平均生图时间，内置公开状态页（/status），并通过公开 API（GET /api/v1/channel-status）提供给外部系统。',
         enabled: '启用渠道状态统计',

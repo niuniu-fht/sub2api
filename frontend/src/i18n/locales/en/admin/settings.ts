@@ -232,6 +232,10 @@ export default {
         auditRetentionHint: 'Audit logs older than this are cleaned up automatically. Set to 0 to keep them forever (manual clear only).'
       },
       channelStatus: {
+      announcement: 'Channel announcement',
+      announcementLive: '● Live',
+      announcementHint: 'Single overwriting record: saving replaces the old announcement; status page shows it as a floating bar',
+
         title: 'Channel Status Statistics',
         description: 'Periodically aggregates real generation records (usage logs + error logs) into per-group/model success rates and average generation times, with a built-in public status page (/status) and a public API (GET /api/v1/channel-status) for external systems.',
         enabled: 'Enable channel status statistics',
