@@ -32,6 +32,22 @@
           <!-- Right: Actions -->
           <div class="flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-3 lg:w-auto">
             <button
+              class="btn btn-secondary relative"
+              :title="hasAnnouncement ? t('statusPage.annEdit') : t('statusPage.annDialogTitle')"
+              data-testid="channels-announcement-btn"
+              @click="announcementOpen = true"
+            >
+              <Icon name="megaphone" size="md" :class="hasAnnouncement ? 'text-amber-500' : 'text-gray-400'" />
+              <span
+                v-if="hasAnnouncement"
+                class="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5"
+                data-testid="channels-announcement-dot"
+              >
+                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+                <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500"></span>
+              </span>
+            </button>
+            <button
               @click="loadChannels"
               :disabled="loading"
               class="btn btn-secondary"
@@ -625,6 +641,7 @@
       @cancel="showDeleteDialog = false"
     />
   </AppLayout>
+  <ChannelAnnouncementDialog v-model:open="announcementOpen" @saved="onAnnouncementSaved" />
 </template>
 
 <script setup lang="ts">
@@ -649,6 +666,8 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
+import ChannelAnnouncementDialog from '@/components/channelStatus/ChannelAnnouncementDialog.vue'
+import { getChannelStatusAnnouncementAdmin } from '@/api/admin/settings'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import PricingEntryCard from '@/components/admin/channel/PricingEntryCard.vue'
@@ -656,6 +675,23 @@ import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useKeyedDebouncedSearch } from '@/composables/useKeyedDebouncedSearch'
 
 const { t } = useI18n()
+
+// 渠道公告（单条覆盖式）：有生效公告时喇叭亮红点，点击查看/编辑。
+const announcementOpen = ref(false)
+const hasAnnouncement = ref(false)
+
+onMounted(async () => {
+  try {
+    const ann = await getChannelStatusAnnouncementAdmin()
+    hasAnnouncement.value = !!ann.content
+  } catch {
+    hasAnnouncement.value = false
+  }
+})
+
+function onAnnouncementSaved(content: string): void {
+  hasAnnouncement.value = !!content
+}
 const appStore = useAppStore()
 
 // Web Search global enabled state (loaded once on mount)

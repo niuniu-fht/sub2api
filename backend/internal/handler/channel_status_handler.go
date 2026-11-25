@@ -90,6 +90,41 @@ func (h *ChannelStatusHandler) GetChannelStatusSnapshot(c *gin.Context) {
 	response.Success(c, snapshot)
 }
 
+// ---- 公告（单条覆盖式） ----
+
+// GetChannelStatusAnnouncement 公开读取当前公告（匿名可访问）。
+// GET /api/v1/channel-status/announcement
+func (h *ChannelStatusHandler) GetChannelStatusAnnouncement(c *gin.Context) {
+	if !h.channelStatusEnabled(c) {
+		response.NotFound(c, "Channel status is not enabled")
+		return
+	}
+	ann, err := h.settingService.GetChannelStatusAnnouncement(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, ann)
+}
+
+// UpdateChannelStatusAnnouncement 覆盖保存公告（内容为空即清除）。
+// PUT /api/v1/admin/settings/channel-status/announcement  body: {"content": "..."}
+func (h *ChannelStatusHandler) UpdateChannelStatusAnnouncement(c *gin.Context) {
+	var req struct {
+		Content string `json:"content"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	ann, err := h.settingService.SetChannelStatusAnnouncement(c.Request.Context(), req.Content)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, ann)
+}
+
 // ---- 管理端配置 ----
 
 // GetChannelStatusSettings 读取渠道状态统计配置。

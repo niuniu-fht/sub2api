@@ -650,6 +650,9 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpA
 		adminSettings.GET("/channel-status/account-stats", h.ChannelStatus.GetAccountSuccessStats)
 		// 渠道状态完整快照（含耗时分布等管理端详细指标；公开接口已脱敏）
 		adminSettings.GET("/channel-status/snapshot", h.ChannelStatus.GetChannelStatusSnapshot)
+		// 渠道状态公告（单条覆盖式：PUT 新内容覆盖旧公告，空内容清除）
+		adminSettings.GET("/channel-status/announcement", h.ChannelStatus.GetChannelStatusAnnouncement)
+		adminSettings.PUT("/channel-status/announcement", h.ChannelStatus.UpdateChannelStatusAnnouncement)
 		// 图片档位账号调度配置
 		adminSettings.GET("/image-billing-account-routing", h.Admin.Setting.GetImageBillingAccountRoutingSettings)
 		adminSettings.PUT("/image-billing-account-routing", h.Admin.Setting.UpdateImageBillingAccountRoutingSettings)

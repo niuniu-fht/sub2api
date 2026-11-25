@@ -20,5 +20,7 @@ func RegisterChannelStatusRoutes(
 	status.Use(panelRateLimiter.PublicIP())
 	{
 		status.GET("", h.ChannelStatus.GetChannelStatus)
+		// 当前公告（单条覆盖式，匿名可读；关闭悬浮后新公告会重新弹出）
+		status.GET("/announcement", h.ChannelStatus.GetChannelStatusAnnouncement)
 	}
 }

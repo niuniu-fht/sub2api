@@ -1494,6 +1494,22 @@ export interface AccountSuccessStatsResponse {
   accounts: AccountSuccessStat[];
 }
 
+/** 渠道状态公告管理（单条覆盖式：非空内容覆盖旧公告，空内容清除）。 */
+export async function getChannelStatusAnnouncementAdmin(): Promise<import('../channelStatus').ChannelStatusAnnouncement> {
+  const { data } = await apiClient.get<import('../channelStatus').ChannelStatusAnnouncement>(
+    '/admin/settings/channel-status/announcement',
+  )
+  return data
+}
+
+export async function updateChannelStatusAnnouncement(content: string): Promise<import('../channelStatus').ChannelStatusAnnouncement> {
+  const { data } = await apiClient.put<import('../channelStatus').ChannelStatusAnnouncement>(
+    '/admin/settings/channel-status/announcement',
+    { content },
+  )
+  return data
+}
+
 /** 管理端完整渠道状态快照（含耗时分布等详细指标；公开接口已脱敏）。 */
 export async function getChannelStatusSnapshot(): Promise<import('../channelStatus').ChannelStatusSnapshot> {
   const { data } = await apiClient.get<import('../channelStatus').ChannelStatusSnapshot>(

@@ -90,6 +90,18 @@ export async function getChannelStatus(options?: {
   return data
 }
 
-export const channelStatusAPI = { getChannelStatus }
+/** 渠道状态公告（单条覆盖式；content 为空表示当前无公告）。 */
+export interface ChannelStatusAnnouncement {
+  content: string
+  updated_at_ms: number
+}
+
+/** 获取当前公告（匿名可访问）。 */
+export async function getChannelStatusAnnouncement(): Promise<ChannelStatusAnnouncement> {
+  const { data } = await apiClient.get<ChannelStatusAnnouncement>('/channel-status/announcement')
+  return data
+}
+
+export const channelStatusAPI = { getChannelStatus, getChannelStatusAnnouncement }
 
 export default channelStatusAPI

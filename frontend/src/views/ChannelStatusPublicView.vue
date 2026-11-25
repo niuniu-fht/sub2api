@@ -103,6 +103,58 @@
           </div>
         </section>
 
+        <!-- 渠道公告（单条覆盖式）：悬浮可关闭；embedded 模式可就地编辑 -->
+        <Teleport to="body">
+          <Transition
+            enter-active-class="transition duration-300 ease-out"
+            enter-from-class="translate-y-4 opacity-0"
+            enter-to-class="translate-y-0 opacity-100"
+            leave-active-class="transition duration-200 ease-in"
+            leave-from-class="translate-y-0 opacity-100"
+            leave-to-class="translate-y-4 opacity-0"
+          >
+            <div
+              v-if="announcementVisible"
+              class="fixed bottom-4 left-1/2 z-[60] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2"
+              data-testid="status-announcement"
+            >
+              <div class="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/95 p-4 shadow-lg backdrop-blur-sm dark:border-amber-500/20 dark:bg-amber-500/10">
+                <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400">
+                  <Icon name="megaphone" size="sm" />
+                </span>
+                <div class="min-w-0 flex-1">
+                  <div class="text-[10px] font-semibold uppercase tracking-widest text-amber-600 dark:text-amber-400">
+                    {{ t('statusPage.annBadge') }} · {{ formatAnnouncementTime }}
+                  </div>
+                  <div class="mt-1 whitespace-pre-wrap break-words text-sm text-gray-800 dark:text-gray-100">{{ announcement?.content }}</div>
+                </div>
+                <div class="flex shrink-0 items-center gap-1">
+                  <button
+                    v-if="embedded"
+                    type="button"
+                    class="rounded-lg p-1.5 text-amber-600 transition-colors hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-500/20"
+                    :title="t('statusPage.annEdit')"
+                    data-testid="status-announcement-edit"
+                    @click.stop="announcementDialogOpen = true"
+                  >
+                    <Icon name="edit" size="sm" />
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-200/60 hover:text-gray-600 dark:hover:bg-dark-700 dark:hover:text-gray-200"
+                    :title="t('common.close')"
+                    data-testid="status-announcement-close"
+                    @click.stop="dismissAnnouncement"
+                  >
+                    <Icon name="x" size="sm" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </Teleport>
+        <ChannelAnnouncementDialog v-model:open="announcementDialogOpen" @saved="onAnnouncementSaved" />
+
         <!-- 首轮聚合未完成 -->
         <EmptyState
           v-if="snapshot.groups.length === 0"
@@ -456,8 +508,9 @@ import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import StatusTimeline from '@/components/channelStatus/StatusTimeline.vue'
 import { accountsAPI } from '@/api/admin/accounts'
 import { getChannelStatusAccountStats, type AccountSuccessStat } from '@/api/admin/settings'
+import ChannelAnnouncementDialog from '@/components/channelStatus/ChannelAnnouncementDialog.vue'
 import { getChannelStatusSnapshot } from '@/api/admin/settings'
-import { getChannelStatus, type ChannelHealthStatus, type ChannelStatusBucket, type ChannelStatusGroup, type ChannelStatusModelStat, type ChannelStatusSnapshot } from '@/api/channelStatus'
+import { getChannelStatus, getChannelStatusAnnouncement, type ChannelStatusAnnouncement, type ChannelHealthStatus, type ChannelStatusBucket, type ChannelStatusGroup, type ChannelStatusModelStat, type ChannelStatusSnapshot } from '@/api/channelStatus'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { useAppStore } from '@/stores/app'
 import { formatDateTimeToMinute } from '@/utils/format'
@@ -477,6 +530,33 @@ const appStore = useAppStore()
 
 const snapshot = ref<ChannelStatusSnapshot | null>(null)
 const loading = ref(true)
+
+// ---- 渠道公告（单条覆盖式）：悬浮条可关闭；新公告（updated_at_ms 变化）会重新弹出 ----
+const ANNOUNCEMENT_DISMISS_KEY = 'sub2api:channel-status-ann-dismissed'
+const announcement = ref<ChannelStatusAnnouncement | null>(null)
+const announcementDialogOpen = ref(false)
+
+const announcementVisible = computed(() =>
+  !!announcement.value?.content &&
+  Number(localStorage.getItem(ANNOUNCEMENT_DISMISS_KEY)) !== announcement.value.updated_at_ms,
+)
+
+const formatAnnouncementTime = computed(() => {
+  const ms = announcement.value?.updated_at_ms
+  if (!ms) return ''
+  return new Date(ms).toLocaleString()
+})
+
+function dismissAnnouncement(): void {
+  if (announcement.value) {
+    localStorage.setItem(ANNOUNCEMENT_DISMISS_KEY, String(announcement.value.updated_at_ms))
+  }
+}
+
+function onAnnouncementSaved(content: string, updatedAtMs: number): void {
+  announcement.value = content ? { content, updated_at_ms: updatedAtMs } : null
+  if (!content) localStorage.removeItem(ANNOUNCEMENT_DISMISS_KEY)
+}
 
 // 统计口径：默认「最近 1 小时」滚动窗口（所有用户可见），可切「全部窗口」。
 // 详细分布（最快/最长/P95/P99）与账号明细仅管理端（embedded）可见。
@@ -814,6 +894,11 @@ async function load(): Promise<void> {
     snapshot.value = embedded.value
       ? await getChannelStatusSnapshot()
       : await getChannelStatus()
+    try {
+      announcement.value = await getChannelStatusAnnouncement()
+    } catch {
+      announcement.value = null
+    }
     disabled.value = false
     loadFailed.value = false
   } catch (err) {
