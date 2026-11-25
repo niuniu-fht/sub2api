@@ -526,7 +526,9 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	// 全站(())、分组(group_id)、分组×模型(group_id, model)、分组×模型×时间桶
 	// （时间线下钻视图用）四个粒度；percentile_cont 为插值精确值。
 	// 与 avg_gen_ms 同源（duration_ms>0 的成功行），只统计成功请求。
-	// 桶下标与时间线同口径：floor((created_at - 窗口起点) / 桶宽)。
+	// 桶下标必须与成功侧完全同公式：date_trunc('hour') 后 +30 分钟再按桶宽取整并
+	// 收敛到 [0,23]——窗口起点不对齐整点时，直接用行时间落桶会把部分行错位到
+	// 相邻桶，导致该桶模型有 avg 却没有最快/最长/P95/P99。
 	bucketSeconds := int64(config.WindowHours*3600) / channelStatusTimelineBuckets
 	if bucketSeconds < 1 {
 		bucketSeconds = 1
@@ -540,7 +542,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		FROM (
 			SELECT group_id,
 			       coalesce(nullif(trim(requested_model), ''), model, '') AS model,
-			       floor(extract(epoch FROM (created_at - $1::timestamptz)) / $2)::int AS bucket_idx,
+			       LEAST(23, GREATEST(0, floor(extract(epoch FROM (date_trunc('hour', created_at) + interval '30 minutes' - $1::timestamptz)) / $2)))::int AS bucket_idx,
 			       duration_ms AS ms
 			FROM usage_logs
 			WHERE created_at >= $1 AND duration_ms IS NOT NULL AND duration_ms > 0
