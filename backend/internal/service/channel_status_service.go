@@ -240,7 +240,8 @@ func (a *channelStatusAgg) bucketModelMaps(accountID int64, idx int) (requests, 
 
 // bucketModels 汇总指定桶的模型明细（成功率/平均耗时按该桶数据计算，
 // 只含有请求的模型，按请求量降序），供时间线桶的下钻展示。
-func (a *channelStatusAgg) bucketModels(accountID int64, idx int) []ChannelStatusModelStatus {
+// latency 是该分组每桶每模型的耗时分布（可为 nil，单元测试用）。
+func (a *channelStatusAgg) bucketModels(accountID int64, idx int, latency map[int]map[string]channelLatencyStats) []ChannelStatusModelStatus {
 	if a.bucketModelRequests[accountID] == nil || idx < 0 || idx >= channelStatusTimelineBuckets {
 		return nil
 	}
@@ -256,6 +257,10 @@ func (a *channelStatusAgg) bucketModels(accountID int64, idx int) []ChannelStatu
 	for m := range failures {
 		modelSet[m] = struct{}{}
 	}
+	var bucketLatency map[string]channelLatencyStats
+	if latency != nil {
+		bucketLatency = latency[idx]
+	}
 	for m := range modelSet {
 		reqN := requests[m]
 		failN := failures[m]
@@ -264,12 +269,17 @@ func (a *channelStatusAgg) bucketModels(accountID int64, idx int) []ChannelStatu
 		if cntMs != nil && cntMs[m] > 0 {
 			avgMs = int64(math.Round(sumMs[m] / float64(cntMs[m])))
 		}
+		ml := bucketLatency[m]
 		models = append(models, ChannelStatusModelStatus{
 			Model:       m,
 			Requests:    reqN,
 			Failures:    failN,
 			SuccessRate: ratePercent(reqN, total),
 			AvgGenMs:    avgMs,
+			FastestMs:   ml.FastestMs,
+			SlowestMs:   ml.SlowestMs,
+			P95Ms:       ml.P95Ms,
+			P99Ms:       ml.P99Ms,
 		})
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].Requests > models[j].Requests })
@@ -513,10 +523,16 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	_ = errorRows.Close()
 
 	// 2.5) 成功耗时分布（最快/最长/P95/P99）：一次扫描用 GROUPING SETS 同时算出
-	// 全站(())、分组(group_id)、分组×模型三个粒度；percentile_cont 为插值精确值。
+	// 全站(())、分组(group_id)、分组×模型(group_id, model)、分组×模型×时间桶
+	// （时间线下钻视图用）四个粒度；percentile_cont 为插值精确值。
 	// 与 avg_gen_ms 同源（duration_ms>0 的成功行），只统计成功请求。
+	// 桶下标与时间线同口径：floor((created_at - 窗口起点) / 桶宽)。
+	bucketSeconds := int64(config.WindowHours*3600) / channelStatusTimelineBuckets
+	if bucketSeconds < 1 {
+		bucketSeconds = 1
+	}
 	latencyRows, err := s.db.QueryContext(ctx, `
-		SELECT group_id, model,
+		SELECT group_id, model, bucket_idx,
 		       avg(ms)::float8,
 		       min(ms)::float8, max(ms)::float8,
 		       percentile_cont(0.95) WITHIN GROUP (ORDER BY ms),
@@ -524,23 +540,25 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		FROM (
 			SELECT group_id,
 			       coalesce(nullif(trim(requested_model), ''), model, '') AS model,
+			       floor(extract(epoch FROM (created_at - $1::timestamptz)) / $2)::int AS bucket_idx,
 			       duration_ms AS ms
 			FROM usage_logs
 			WHERE created_at >= $1 AND duration_ms IS NOT NULL AND duration_ms > 0
 		) t
-		GROUP BY GROUPING SETS ((group_id, model), (group_id), ())
-	`, start)
+		GROUP BY GROUPING SETS ((group_id, model, bucket_idx), (group_id, model), (group_id), ())
+	`, start, bucketSeconds)
 	if err != nil {
 		return nil, fmt.Errorf("query latency stats: %w", err)
 	}
 	groupLatency := map[int64]channelLatencyStats{}
 	modelLatency := map[int64]map[string]channelLatencyStats{}
+	bucketLatency := map[int64]map[int]map[string]channelLatencyStats{}
 	overallLatency := channelLatencyStats{}
 	for latencyRows.Next() {
-		var groupID sql.NullInt64
+		var groupID, bucketIdx sql.NullInt64
 		var model sql.NullString
 		var avg, fastest, slowest, p95, p99 float64
-		if err := latencyRows.Scan(&groupID, &model, &avg, &fastest, &slowest, &p95, &p99); err != nil {
+		if err := latencyRows.Scan(&groupID, &model, &bucketIdx, &avg, &fastest, &slowest, &p95, &p99); err != nil {
 			_ = latencyRows.Close()
 			return nil, fmt.Errorf("scan latency row: %w", err)
 		}
@@ -560,10 +578,20 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 			groupLatency[id] = stats // (group_id) 分组
 			continue
 		}
-		if modelLatency[id] == nil {
-			modelLatency[id] = map[string]channelLatencyStats{}
+		if !bucketIdx.Valid {
+			if modelLatency[id] == nil {
+				modelLatency[id] = map[string]channelLatencyStats{}
+			}
+			modelLatency[id][model.String] = stats // (group_id, model) 分组
+			continue
 		}
-		modelLatency[id][model.String] = stats
+		if bucketLatency[id] == nil {
+			bucketLatency[id] = map[int]map[string]channelLatencyStats{}
+		}
+		if bucketLatency[id][int(bucketIdx.Int64)] == nil {
+			bucketLatency[id][int(bucketIdx.Int64)] = map[string]channelLatencyStats{}
+		}
+		bucketLatency[id][int(bucketIdx.Int64)][model.String] = stats
 	}
 	if err := latencyRows.Err(); err != nil {
 		_ = latencyRows.Close()
@@ -688,11 +716,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		}
 		gr.Status = classifyChannelStatus(gr.SuccessRate, gr.Requests+gr.Failures > 0, config.Thresholds)
 
-		// 时间线（桶数固定 24，桶宽 = 窗口/24）
-		bucketSeconds := int64(config.WindowHours*3600) / channelStatusTimelineBuckets
-		if bucketSeconds < 1 {
-			bucketSeconds = 1
-		}
+		// 时间线（桶数固定 24，桶宽 = 窗口/24，与耗时分布查询同参数）
 		requestsB := agg.bucketRequests[id]
 		failuresB := agg.bucketFailures[id]
 		gr.Timeline = make([]ChannelStatusBucket, 0, channelStatusTimelineBuckets)
@@ -707,7 +731,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 				Failures:      failures,
 				SuccessRate:   ratePercent(requests, total),
 				Status:        classifyChannelStatus(ratePercent(requests, total), total > 0, config.Thresholds),
-				Models:        agg.bucketModels(id, i),
+				Models:        agg.bucketModels(id, i, bucketLatency[id]),
 			})
 		}
 

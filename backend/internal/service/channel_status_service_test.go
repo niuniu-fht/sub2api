@@ -52,7 +52,7 @@ func TestChannelStatusAgg_BucketModelsDrilldown(t *testing.T) {
 	agg.addFailure(11, "model-a", start.Add(100*time.Minute))
 	agg.addFailure(11, "model-a", start.Add(105*time.Minute))
 
-	b0 := agg.bucketModels(11, 0)
+	b0 := agg.bucketModels(11, 0, nil)
 	require.Len(t, b0, 2)
 	require.Equal(t, "model-a", b0[0].Model) // 按请求量降序
 	require.Equal(t, int64(3), b0[0].Requests)
@@ -63,18 +63,18 @@ func TestChannelStatusAgg_BucketModelsDrilldown(t *testing.T) {
 	require.InDelta(t, 100.0, b0[1].SuccessRate, 1e-9)
 	require.Equal(t, int64(6000), b0[1].AvgGenMs)
 
-	b1 := agg.bucketModels(11, 1)
+	b1 := agg.bucketModels(11, 1, nil)
 	require.Len(t, b1, 1)
 	require.Equal(t, "model-a", b1[0].Model)
 	require.InDelta(t, 25.0, b1[0].SuccessRate, 1e-9)
 	require.Equal(t, int64(2000), b1[0].AvgGenMs)
 
 	// 空桶无明细。
-	require.Empty(t, agg.bucketModels(11, 5))
+	require.Empty(t, agg.bucketModels(11, 5, nil))
 	// 越界索引安全返回。
-	require.Nil(t, agg.bucketModels(11, -1))
-	require.Nil(t, agg.bucketModels(11, channelStatusTimelineBuckets))
-	require.Nil(t, agg.bucketModels(999, 0))
+	require.Nil(t, agg.bucketModels(11, -1, nil))
+	require.Nil(t, agg.bucketModels(11, channelStatusTimelineBuckets, nil))
+	require.Nil(t, agg.bucketModels(999, 0, nil))
 }
 
 // 一次请求 A 错 B 错 C 成功：客户端最终 200，ops 行以 "Recovered …" 记录
