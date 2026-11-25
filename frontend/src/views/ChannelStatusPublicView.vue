@@ -83,7 +83,7 @@
           </div>
           <div class="flex flex-shrink-0 items-center gap-3">
             <button
-              v-if="embedded"
+              v-if="canEditAnnouncement"
               type="button"
               class="relative rounded-lg p-2 transition-colors"
               :class="announcement?.content
@@ -532,6 +532,7 @@ import ChannelAnnouncementDialog from '@/components/channelStatus/ChannelAnnounc
 import { getChannelStatusSnapshot } from '@/api/admin/settings'
 import { getChannelStatus, getChannelStatusAnnouncement, type ChannelStatusAnnouncement, type ChannelHealthStatus, type ChannelStatusBucket, type ChannelStatusGroup, type ChannelStatusModelStat, type ChannelStatusSnapshot } from '@/api/channelStatus'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
+import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { formatDateTimeToMinute } from '@/utils/format'
 import type { GroupPlatform } from '@/types'
@@ -552,6 +553,10 @@ const props = withDefaults(defineProps<{
 const embedded = computed(() => props.embedded)
 // 模型成功率下钻：管理端与登录用户面板均可见（匿名公开页不展示）。
 const showModelDetail = computed(() => props.embedded || props.panel)
+
+// 公告编辑入口：管理端嵌入始终可见；用户面板模式对管理员可见（PUT 需管理权限）。
+const authStore = useAuthStore()
+const canEditAnnouncement = computed(() => props.embedded || (props.panel && authStore.isAdmin))
 const appStore = useAppStore()
 
 const snapshot = ref<ChannelStatusSnapshot | null>(null)
