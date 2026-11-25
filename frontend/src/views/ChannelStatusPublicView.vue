@@ -82,6 +82,26 @@
             </div>
           </div>
           <div class="flex flex-shrink-0 items-center gap-3">
+            <button
+              v-if="embedded"
+              type="button"
+              class="relative rounded-lg p-2 transition-colors"
+              :class="announcement?.content
+                ? 'bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20'
+                : 'bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600 dark:bg-dark-900 dark:text-gray-500 dark:hover:bg-dark-700'"
+              :title="t('statusPage.annDialogTitle')"
+              data-testid="status-announcement-btn"
+              @click.stop="announcementDialogOpen = true"
+            >
+              <Icon name="megaphone" size="md" />
+              <span
+                v-if="announcement?.content"
+                class="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5"
+              >
+                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+                <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500"></span>
+              </span>
+            </button>
             <div class="flex gap-1 rounded-lg bg-gray-100 p-0.5 dark:bg-dark-900" data-testid="status-scope-toggle">
               <button
                 v-for="opt in scopeOptions"
