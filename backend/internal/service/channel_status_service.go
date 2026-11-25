@@ -135,6 +135,9 @@ type ChannelStatusSnapshot struct {
 	WindowHours   int           `json:"window_hours"`
 	RefreshSec    int           `json:"refresh_seconds"`
 	Overall       string        `json:"overall"` // operational | degraded | down | unknown
+	// Thresholds 是状态分级阈值（healthy/degraded 百分比），随快照下发：
+	// 前端切换「最近 1 小时」口径时用它对 last_hour 成功率重新分级状态徽章。
+	Thresholds    ChannelStatusThresholds `json:"thresholds"`
 	AvgGenMs      int64         `json:"avg_gen_ms"`  // 全站成功请求平均耗时；0 表示无样本
 	FastestMs     int64         `json:"fastest_ms"` // 全站成功耗时分布
 	SlowestMs     int64         `json:"slowest_ms"`
@@ -826,6 +829,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		WindowHours:   config.WindowHours,
 		RefreshSec:    config.RefreshSeconds,
 		Overall:       overall,
+		Thresholds:    config.Thresholds,
 		AvgGenMs:      overallLatency.AvgMs,
 		FastestMs:     overallLatency.FastestMs,
 		SlowestMs:     overallLatency.SlowestMs,

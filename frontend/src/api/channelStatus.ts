@@ -70,6 +70,8 @@ export interface ChannelStatusSnapshot {
   refresh_seconds: number
   /** 全局状态：所有分组的最差值；无数据为 unknown。 */
   overall: ChannelHealthStatus
+  /** 状态分级阈值（百分比）：前端切换最近1小时口径时对 last_hour 重新分级。 */
+  thresholds: { healthy: number; degraded: number }
   /** 全站成功请求平均耗时（0 表示无样本）。 */
   avg_gen_ms: number
   /** 全站成功请求耗时分布（0 表示无样本）。 */

@@ -267,10 +267,10 @@
                 <div class="flex flex-shrink-0 flex-col items-end gap-1">
                   <span
                     class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors"
-                    :class="STATUS_CHIP[group.status]"
+                    :class="STATUS_CHIP[scopeStatus(group)]"
                   >
-                    <span class="h-1.5 w-1.5 rounded-full" :class="STATUS_DOT[group.status]"></span>
-                    {{ statusLabel(group.status) }}
+                    <span class="h-1.5 w-1.5 rounded-full" :class="STATUS_DOT[scopeStatus(group)]"></span>
+                    {{ statusLabel(scopeStatus(group)) }}
                   </span>
                   <span
                     class="text-lg font-bold tabular-nums"
@@ -602,6 +602,25 @@ function scopeAvgMs(group: ChannelStatusGroup): number {
   if (statsScope.value === '1h' && group.last_hour) return group.last_hour.avg_gen_ms
   return group.avg_gen_ms
 }
+
+/** 状态徽章跟随当前口径：1h 模式按 last_hour 成功率用后端下发的阈值重新分级，
+ * 全窗口模式沿用后端算好的 group.status（同一套阈值）。 */
+function scopeStatus(group: ChannelStatusGroup): ChannelHealthStatus {
+  if (statsScope.value !== '1h' || !group.last_hour) return group.status
+  const th = snapshot.value?.thresholds
+  if (!th) return group.status
+  if (group.last_hour.requests + group.last_hour.failures <= 0) return 'unknown'
+  const rate = group.last_hour.success_rate
+  if (rate >= th.healthy) return 'operational'
+  if (rate >= th.degraded) return 'degraded'
+  return 'down'
+}
+
+/** 最近 1 小时对应的原始（未截空桶）时间线末桶。 */
+function lastRawBucket(group: ChannelStatusGroup): ChannelStatusBucket | null {
+  const tl = group.timeline || []
+  return tl.length ? tl[tl.length - 1] : null
+}
 const disabled = ref(false)
 const loadFailed = ref(false)
 const expanded = ref<Record<number, boolean>>({})
@@ -899,9 +918,17 @@ function accountStatsRangeFor(groupId: number): { start?: string; end?: string }
  * 整窗视图维持原有过滤。 */
 function displayModels(group: ChannelStatusGroup): ChannelStatusModelStat[] {
   const idx = selectedBuckets.value[group.id] ?? null
-  if (idx === null) return namedModels(group)
-  const bucket = orderedTimeline(group)[idx]
-  return (bucket?.models ?? []).filter((m) => m.model !== '')
+  if (idx !== null) {
+    const bucket = orderedTimeline(group)[idx]
+    return (bucket?.models ?? []).filter((m) => m.model !== '')
+  }
+  // 默认视图跟随口径：最近 1 小时 → 原始时间线末桶（与 last_hour 同窗口）；
+  // 全窗口 → 整窗模型统计。
+  if (statsScope.value === '1h') {
+    const bucket = lastRawBucket(group)
+    return (bucket?.models ?? []).filter((m) => m.model !== '')
+  }
+  return namedModels(group)
 }
 
 /** 桶时间范围文案：起点取桶的 bucket_start_ms，终点按固定桶宽推算
