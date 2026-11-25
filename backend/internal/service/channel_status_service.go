@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -361,6 +362,34 @@ func (a *channelStatusAgg) bucketIndexAt(t time.Time) int {
 	return idx
 }
 
+// timeline 生成指定分组固定 24 桶的时间线。桶计数切片是按分组懒创建的：分组在
+// 窗口内没有记录时切片尚不存在，此时各桶按 0 处理——展示白名单里勾选、但当前
+// 没有流量的分组会走到这里（直接按下标取值会 panic）。
+func (a *channelStatusAgg) timeline(groupID int64, start time.Time, bucketSeconds int64, thresholds ChannelStatusThresholds, latency map[int]map[string]channelLatencyStats) []ChannelStatusBucket {
+	requestsB := a.bucketRequests[groupID]
+	failuresB := a.bucketFailures[groupID]
+	buckets := make([]ChannelStatusBucket, 0, channelStatusTimelineBuckets)
+	for i := 0; i < channelStatusTimelineBuckets; i++ {
+		var requests, failures int64
+		if i < len(requestsB) {
+			requests = requestsB[i]
+		}
+		if i < len(failuresB) {
+			failures = failuresB[i]
+		}
+		total := requests + failures
+		buckets = append(buckets, ChannelStatusBucket{
+			BucketStartMs: start.Add(time.Duration(i) * time.Duration(bucketSeconds) * time.Second).UnixMilli(),
+			Requests:      requests,
+			Failures:      failures,
+			SuccessRate:   ratePercent(requests, total),
+			Status:        classifyChannelStatus(ratePercent(requests, total), total > 0, thresholds),
+			Models:        a.bucketModels(groupID, i, latency),
+		})
+	}
+	return buckets
+}
+
 // addSuccess 累计一组成功聚合行:requests 是 SQL GROUP BY 合并后的真实请求数
 // (count(*)),durationMs 是该组的平均耗时(avg(duration_ms));两者都必须使用,
 // 逐行 ++ 会把整组 N 次成功只计成 1 次,导致成功率被严重低估。
@@ -476,7 +505,20 @@ func (s *ChannelStatusService) runOnceSafe() {
 }
 
 // Aggregate 聚合一次窗口数据并产出快照（不落缓存）。
-func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSnapshot, error) {
+// 统计聚合是旁路功能：内部任何 panic 都在这里收敛为带堆栈的 error。定时刷新与
+// 「保存配置后立即聚合」都跑在独立 goroutine 里，那里未恢复的 panic 会直接终止
+// 承载网关请求的整个进程。
+func (s *ChannelStatusService) Aggregate(ctx context.Context) (snapshot *ChannelStatusSnapshot, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			snapshot = nil
+			err = fmt.Errorf("channel status aggregation panicked: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return s.aggregate(ctx)
+}
+
+func (s *ChannelStatusService) aggregate(ctx context.Context) (*ChannelStatusSnapshot, error) {
 	enabled, config, err := s.settingService.GetChannelStatusSettings(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read channel status settings: %w", err)
@@ -801,23 +843,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		gr.Status = classifyChannelStatus(gr.SuccessRate, gr.Requests+gr.Failures > 0, config.Thresholds)
 
 		// 时间线（桶数固定 24，桶宽 = 窗口/24，与耗时分布查询同参数）
-		requestsB := agg.bucketRequests[id]
-		failuresB := agg.bucketFailures[id]
-		gr.Timeline = make([]ChannelStatusBucket, 0, channelStatusTimelineBuckets)
-		for i := 0; i < channelStatusTimelineBuckets; i++ {
-			bStart := start.Add(time.Duration(i) * time.Duration(bucketSeconds) * time.Second)
-			requests := requestsB[i]
-			failures := failuresB[i]
-			total := requests + failures
-			gr.Timeline = append(gr.Timeline, ChannelStatusBucket{
-				BucketStartMs: bStart.UnixMilli(),
-				Requests:      requests,
-				Failures:      failures,
-				SuccessRate:   ratePercent(requests, total),
-				Status:        classifyChannelStatus(ratePercent(requests, total), total > 0, config.Thresholds),
-				Models:        agg.bucketModels(id, i, bucketLatency[id]),
-			})
-		}
+		gr.Timeline = agg.timeline(id, start, bucketSeconds, config.Thresholds, bucketLatency[id])
 
 		switch gr.Status {
 		case "down":

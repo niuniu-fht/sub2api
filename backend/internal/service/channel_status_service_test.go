@@ -113,3 +113,30 @@ func TestIsRecoveredStatus200Row_AllRecoveredForms(t *testing.T) {
 	require.False(t, isRecoveredStatus200Row("Accounts are temporarily unavailable. Please retry later."))
 	require.False(t, isRecoveredStatus200Row(""))
 }
+
+// 展示白名单里勾选、但窗口内没有记录的分组：桶计数切片是懒创建的，此时不存在。
+// 回归：旧实现在组装时间线时直接按下标取值 panic（index out of range），而保存配置后
+// 的即时聚合跑在独立 goroutine 里，panic 让整个网关进程退出。
+func TestChannelStatusAgg_TimelineForGroupWithoutRecords(t *testing.T) {
+	start := time.Date(2026, 11, 26, 0, 0, 0, 0, time.UTC)
+	thresholds := ChannelStatusThresholds{Healthy: 90, Degraded: 70}
+	agg := newChannelStatusAgg(start, 24)
+	agg.addSuccess(11, "model-a", 3, 1000, start.Add(10*time.Minute))
+	agg.addFailure(11, "model-a", start.Add(70*time.Minute))
+
+	idle := agg.timeline(7, start, 3600, thresholds, nil)
+	require.Len(t, idle, channelStatusTimelineBuckets)
+	for i, b := range idle {
+		require.Zero(t, b.Requests, "bucket %d", i)
+		require.Zero(t, b.Failures, "bucket %d", i)
+		require.Equal(t, "unknown", b.Status, "bucket %d", i)
+		require.Equal(t, start.Add(time.Duration(i)*time.Hour).UnixMilli(), b.BucketStartMs)
+	}
+
+	active := agg.timeline(11, start, 3600, thresholds, nil)
+	require.Len(t, active, channelStatusTimelineBuckets)
+	require.Equal(t, int64(3), active[0].Requests)
+	require.Equal(t, "operational", active[0].Status)
+	require.Equal(t, int64(1), active[1].Failures)
+	require.Equal(t, "down", active[1].Status)
+}
