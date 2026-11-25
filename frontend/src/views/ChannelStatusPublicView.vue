@@ -554,9 +554,10 @@ const embedded = computed(() => props.embedded)
 // 模型成功率下钻：管理端与登录用户面板均可见（匿名公开页不展示）。
 const showModelDetail = computed(() => props.embedded || props.panel)
 
-// 公告编辑入口：管理端嵌入始终可见；用户面板模式对管理员可见（PUT 需管理权限）。
+// 公告编辑入口：管理员在任何状态页变体（匿名页/用户面板/管理端嵌入）都可见
+// （路由守卫会从 localStorage 恢复登录态，匿名页上 isAdmin 同样有效；PUT 需管理权限）。
 const authStore = useAuthStore()
-const canEditAnnouncement = computed(() => props.embedded || (props.panel && authStore.isAdmin))
+const canEditAnnouncement = computed(() => props.embedded || authStore.isAdmin)
 const appStore = useAppStore()
 
 const snapshot = ref<ChannelStatusSnapshot | null>(null)
