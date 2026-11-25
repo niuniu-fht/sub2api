@@ -435,6 +435,12 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		if strings.Contains(message, "is not supported by any configured account in this group") {
 			continue
 		}
+		// 已恢复的中间失败（换号后最终成功，status_code=200 / Recovered upstream error）：
+		// 分组/时间线/overall 采用「用户视角」口径——请求最终成功就不算渠道失败；
+		// 账号明细保留尝试级口径衡量各账号质量（见 AccountSuccessStatsRange）。
+		if clientStatus == http.StatusOK {
+			continue
+		}
 		agg.addFailure(groupID, model, createdAt)
 	}
 	if err := errorRows.Err(); err != nil {
