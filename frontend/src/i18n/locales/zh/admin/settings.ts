@@ -234,7 +234,14 @@ export default {
       channelStatus: {
       announcement: '渠道公告',
       announcementLive: '● 生效中',
-      announcementHint: '单条覆盖式：保存新内容即覆盖旧公告，撤销即清除；状态页悬浮展示',
+              announcementHint: '单条覆盖式：点「发布公告」立即生效并覆盖旧公告；下方的统计设置请用底部「保存配置」',
+        saveConfig: '保存配置',
+        unsavedChanges: '有未保存的更改：分组、窗口、阈值、过滤规则要点「保存配置」才生效',
+        unsavedChangesShort: '分组等设置尚未保存',
+        allChangesSaved: '所有更改已保存',
+        announcementPublish: '发布公告',
+        announcementPublished: '公告已发布',
+        announcementCleared: '公告已撤销',
 
         title: '渠道状态统计',
         description: '基于真实生成记录（用量日志 + 错误日志）定时聚合成分组/模型的成功率与平均生图时间，内置公开状态页（/status），并通过公开 API（GET /api/v1/channel-status）提供给外部系统。',

@@ -2057,9 +2057,7 @@
                   :placeholder="t('statusPage.annPlaceholder')"
                 ></textarea>
                 <div class="mt-2 flex items-center justify-between">
-                  <span class="text-[10px]" :class="channelStatusAnnouncementSaved ? 'text-emerald-500' : 'text-gray-400'">
-                    {{ channelStatusAnnouncementSaved ? t("common.saved") : t("admin.settings.channelStatus.announcementHint") }}
-                  </span>
+                  <span class="text-[10px] text-gray-400">{{ t("admin.settings.channelStatus.announcementHint") }}</span>
                   <div class="flex items-center gap-2">
                     <button
                       v-if="channelStatusAnnouncement.trim()"
@@ -2073,7 +2071,7 @@
                       class="btn btn-primary !py-1"
                       :disabled="channelStatusAnnouncementSaving || !channelStatusAnnouncement.trim()"
                       @click="saveStatusAnnouncement"
-                    >{{ channelStatusAnnouncementSaving ? t("common.saving") : t("common.save") }}</button>
+                    >{{ channelStatusAnnouncementSaving ? t("common.saving") : t("admin.settings.channelStatus.announcementPublish") }}</button>
                   </div>
                 </div>
               </div>
@@ -2132,6 +2130,21 @@
                   </label>
                 </div>
                 <div v-else class="text-xs text-gray-400">{{ t("common.loading") }}</div>
+                <div
+                  v-if="channelStatusDirty"
+                  class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+                  data-testid="channel-status-groups-unsaved"
+                >
+                  <span>{{ t("admin.settings.channelStatus.unsavedChangesShort") }}</span>
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    :disabled="channelStatusSaving"
+                    @click="saveChannelStatusSettings"
+                  >
+                    {{ channelStatusSaving ? t("common.saving") : t("admin.settings.channelStatus.saveConfig") }}
+                  </button>
+                </div>
               </div>
 
               <div>
@@ -2180,7 +2193,14 @@
                 </div>
               </div>
             </div>
-            <div class="flex justify-end border-t border-gray-100 px-6 py-4 dark:border-dark-700">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 px-6 py-4 dark:border-dark-700">
+              <span
+                class="text-xs"
+                :class="channelStatusDirty ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-gray-500'"
+                data-testid="channel-status-dirty"
+              >
+                {{ channelStatusDirty ? t("admin.settings.channelStatus.unsavedChanges") : t("admin.settings.channelStatus.allChangesSaved") }}
+              </span>
               <button
                 type="button"
                 data-testid="channel-status-save"
@@ -2188,7 +2208,7 @@
                 :disabled="channelStatusSaving"
                 class="btn btn-primary btn-sm"
               >
-                {{ channelStatusSaving ? t("common.saving") : t("common.save") }}
+                {{ channelStatusSaving ? t("common.saving") : t("admin.settings.channelStatus.saveConfig") }}
               </button>
             </div>
           </div>
@@ -9436,6 +9456,17 @@ const channelStatusSelectedGroupIds = computed({
 });
 // 规则行的文本输入形态（逗号分隔）
 const channelStatusRuleRows = ref<Array<{ status_codes: string; keywords: string }>>([]);
+// 未保存更改标记：表单载荷与最近一次加载/保存的结果不一致时为 true。
+// 分组勾选、窗口、阈值、过滤规则都要点「保存配置」才生效——勾选处与底部同时提示，
+// 避免勾了分组却以为已生效（公告卡片的「发布公告」只保存公告）。
+const channelStatusSavedPayload = ref("");
+const channelStatusDirty = computed(
+  () => JSON.stringify(buildChannelStatusPayload()) !== channelStatusSavedPayload.value,
+);
+
+function snapshotChannelStatusPayload(): void {
+  channelStatusSavedPayload.value = JSON.stringify(buildChannelStatusPayload());
+}
 
 const addChannelStatusRule = () => {
   channelStatusRuleRows.value.push({ status_codes: "", keywords: "" });
@@ -12458,17 +12489,10 @@ async function savePanelRateLimitSettings() {
 }
 
 // 渠道状态统计方法
-// 渠道公告（单条覆盖式）：系统设置内常驻编辑入口。
+// 渠道公告（单条覆盖式）：系统设置内常驻编辑入口。与统计配置互不影响——
+// 「发布公告」立即生效；统计配置（分组/窗口/阈值/过滤规则）用底部「保存配置」。
 const channelStatusAnnouncement = ref("");
 const channelStatusAnnouncementSaving = ref(false);
-const channelStatusAnnouncementSaved = ref(false);
-let channelStatusAnnouncementSavedTimer: ReturnType<typeof setTimeout> | null = null;
-
-function markAnnouncementSaved(): void {
-  channelStatusAnnouncementSaved.value = true;
-  if (channelStatusAnnouncementSavedTimer) clearTimeout(channelStatusAnnouncementSavedTimer);
-  channelStatusAnnouncementSavedTimer = setTimeout(() => { channelStatusAnnouncementSaved.value = false; }, 2500);
-}
 
 async function loadChannelStatusAnnouncement() {
   try {
@@ -12483,9 +12507,11 @@ async function saveStatusAnnouncement() {
   channelStatusAnnouncementSaving.value = true;
   try {
     await adminAPI.settings.updateChannelStatusAnnouncement(channelStatusAnnouncement.value);
-    markAnnouncementSaved();
-  } catch {
-    // 保存失败：保持输入内容，用户可重试；错误由 API 拦截器统一提示。
+    appStore.showSuccess(t("admin.settings.channelStatus.announcementPublished"));
+  } catch (error: unknown) {
+    appStore.showError(
+      extractApiErrorMessage(error, t("admin.settings.channelStatus.saveFailed")),
+    );
   } finally {
     channelStatusAnnouncementSaving.value = false;
   }
@@ -12496,9 +12522,11 @@ async function clearStatusAnnouncement() {
   try {
     await adminAPI.settings.updateChannelStatusAnnouncement("");
     channelStatusAnnouncement.value = "";
-    markAnnouncementSaved();
-  } catch {
-    // 同上：错误由 API 拦截器统一提示。
+    appStore.showSuccess(t("admin.settings.channelStatus.announcementCleared"));
+  } catch (error: unknown) {
+    appStore.showError(
+      extractApiErrorMessage(error, t("admin.settings.channelStatus.saveFailed")),
+    );
   } finally {
     channelStatusAnnouncementSaving.value = false;
   }
@@ -12529,6 +12557,7 @@ async function loadChannelStatusSettings() {
     // Silent fail - settings will use defaults
   } finally {
     channelStatusLoading.value = false;
+    snapshotChannelStatusPayload();
   }
   // 分组选项（含停用分组，供白名单勾选）；专属分组不参与统计，不在列表中。失败时静默，仅影响选择列表展示
   try {
@@ -12594,6 +12623,7 @@ async function saveChannelStatusSettings() {
         keywords: (rule.keywords || []).join(", "),
       }),
     );
+    snapshotChannelStatusPayload();
     appStore.showSuccess(t("admin.settings.channelStatus.saved"));
   } catch (error: unknown) {
     appStore.showError(

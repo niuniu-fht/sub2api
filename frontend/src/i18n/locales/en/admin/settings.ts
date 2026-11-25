@@ -234,7 +234,14 @@ export default {
       channelStatus: {
       announcement: 'Channel announcement',
       announcementLive: '● Live',
-      announcementHint: 'Single overwriting record: saving replaces the old announcement; status page shows it as a floating bar',
+              announcementHint: 'Single overwriting record: "Publish" applies immediately and replaces the old announcement; use "Save configuration" at the bottom for the statistics settings',
+        saveConfig: 'Save configuration',
+        unsavedChanges: 'Unsaved changes: groups, window, thresholds and filter rules take effect only after "Save configuration"',
+        unsavedChangesShort: 'Selection not saved yet',
+        allChangesSaved: 'All changes saved',
+        announcementPublish: 'Publish',
+        announcementPublished: 'Announcement published',
+        announcementCleared: 'Announcement removed',
 
         title: 'Channel Status Statistics',
         description: 'Periodically aggregates real generation records (usage logs + error logs) into per-group/model success rates and average generation times, with a built-in public status page (/status) and a public API (GET /api/v1/channel-status) for external systems.',
