@@ -1469,11 +1469,19 @@ export interface AccountSuccessStat {
   failures: number;
   /** 经账号切换后最终落在本账号成功的请求数（account_attempts 链长>1）。 */
   switched_to_requests?: number;
+  /** 区间内失败记录按状态码分类（计数 + 代表性错误消息）。 */
+  errors_by_code?: AccountErrorClass[];
   /** 百分比 0-100；-1 表示窗口内无请求。 */
   success_rate: number;
   avg_gen_ms: number;
   /** 24h 窗口逐小时明细。 */
   hourly?: AccountHourlyStat[];
+}
+
+export interface AccountErrorClass {
+  status: string;
+  count: number;
+  sample_message?: string;
 }
 
 export interface AccountSuccessStatsResponse {
@@ -1485,10 +1493,11 @@ export interface AccountSuccessStatsResponse {
 export async function getChannelStatusAccountStats(
   groupId: number,
   hours: number,
+  range?: { start?: string; end?: string },
 ): Promise<AccountSuccessStatsResponse> {
   const { data } = await apiClient.get<AccountSuccessStatsResponse>(
     "/admin/settings/channel-status/account-stats",
-    { params: { group_id: groupId, hours } },
+    { params: { group_id: groupId, hours, ...(range?.start ? { start_time: range.start } : {}), ...(range?.end ? { end_time: range.end } : {}) } },
   );
   return data;
 }

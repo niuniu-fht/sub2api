@@ -660,6 +660,9 @@ type AccountSuccessStat struct {
 	// SwitchedToRequests 是"经账号切换后最终落在本账号成功"的请求数
 	//（usage_logs.account_attempts 链长 >1），衡量链路转移到达量。
 	SwitchedToRequests int64         `json:"switched_to_requests,omitempty"`
+	// ErrorsByCode 是窗口/区间内该账号失败记录的状态码分类
+	//（status_code 计数 + 截断后的代表性错误消息），管理员排障用。
+	ErrorsByCode []AccountErrorClass `json:"errors_by_code,omitempty"`
 	SuccessRate float64             `json:"success_rate"` // 百分比 0-100；无请求时 -1 表示 unknown
 	AvgGenMs    int64               `json:"avg_gen_ms"`
 	Hourly      []AccountHourlyStat `json:"hourly"` // 仅 24h 窗口时返回：逐小时明细
@@ -679,7 +682,20 @@ type AccountHourlyStat struct {
 // 失败口径与渠道状态页一致：应用后台过滤规则、排除「模型不被分组内任何账号支持」
 // 的误配请求。渠道状态功能未开启时仍可用（过滤规则读不到则视为不过滤）。
 // 返回值第二个参数为实际生效的窗口小时数（调用方超范围时被收敛）。
+// AccountErrorClass 是账号在统计区间内某一类失败（按状态码归类）的计数与样例消息。
+type AccountErrorClass struct {
+	Status      string `json:"status"`
+	Count       int64  `json:"count"`
+	SampleMessage string `json:"sample_message,omitempty"`
+}
+
 func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID int64, windowHours int) ([]AccountSuccessStat, int, error) {
+	return s.AccountSuccessStatsRange(ctx, groupID, windowHours, time.Time{}, time.Time{})
+}
+
+// AccountSuccessStatsRange 支持任意 [start,end] 区间统计（管理员账号明细下钻用）。
+// start/end 为零值时回退 windowHours 回溯窗口；区间上限同样 30 天。
+func (s *ChannelStatusService) AccountSuccessStatsRange(ctx context.Context, groupID int64, windowHours int, startAt, endAt time.Time) ([]AccountSuccessStat, int, error) {
 	if s == nil || s.db == nil {
 		return nil, 0, errors.New("channel status service is not ready")
 	}
@@ -692,7 +708,18 @@ func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID 
 	if windowHours > 24*30 {
 		windowHours = 24 * 30
 	}
-	start := timezone.Now().Add(-time.Duration(windowHours) * time.Hour)
+	now := timezone.Now()
+	start := now.Add(-time.Duration(windowHours) * time.Hour)
+	if !startAt.IsZero() {
+		start = startAt
+	}
+	end := now
+	if !endAt.IsZero() {
+		end = endAt
+	}
+	// 区间模式下逐小时明细退化为"按小时重建"：仍用 24 桶锚定区间起点，
+	// 超过 24h 的区间不输出 hourly（前端只显示汇总行）。
+	windowHours = int(end.Sub(start).Hours() + 0.5)
 
 	var rules []ChannelStatusFilterRule
 	var thresholds ChannelStatusThresholds
@@ -708,6 +735,9 @@ func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID 
 	cntMsByAccount := map[int64]int64{}
 	failuresByAccount := map[int64]int64{}
 	switchedByAccount := map[int64]int64{}
+	errorsByCodeAccount := map[int64]map[string]int64{}
+	errorSampleAccount := map[int64]map[string]string{}
+	errorClassesByAccount := map[int64][]AccountErrorClass{}
 	// 逐小时明细（仅 24h 窗口）：account_id → hour index → 统计
 	const hourlyBuckets = 24
 	hourlyRequests := map[int64][]int64{}
@@ -740,9 +770,9 @@ func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID 
 		       count(*) FILTER (WHERE jsonb_array_length(account_attempts) > 1) AS switched,
 		       date_trunc('hour', created_at) AS bucket_hour
 		FROM usage_logs
-		WHERE group_id = $1 AND created_at >= $2 AND account_id IS NOT NULL
+		WHERE group_id = $1 AND created_at >= $2 AND created_at <= $3 AND account_id IS NOT NULL
 		GROUP BY account_id, date_trunc('hour', created_at)
-	`, groupID, start)
+	`, groupID, start, end)
 	if err != nil {
 		return nil, 0, fmt.Errorf("query account usage: %w", err)
 	}
@@ -783,10 +813,10 @@ func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID 
 		       coalesce(upstream_error_message, error_message, '') AS message,
 		       created_at
 		FROM ops_error_logs
-		WHERE group_id = $1 AND created_at >= $2 AND account_id IS NOT NULL
+		WHERE group_id = $1 AND created_at >= $2 AND created_at <= $3 AND account_id IS NOT NULL
 		ORDER BY created_at DESC
 		LIMIT 50000
-	`, groupID, start)
+	`, groupID, start, end)
 	if err != nil {
 		return nil, 0, fmt.Errorf("query account errors: %w", err)
 	}
@@ -810,6 +840,22 @@ func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID 
 			ensureHourly(accountID)
 			hourlyFailures[accountID][hourIndex(createdAt)]++
 		}
+		codeKey := fmt.Sprintf("%d", clientStatus)
+		if errorsByCodeAccount[accountID] == nil {
+			errorsByCodeAccount[accountID] = map[string]int64{}
+			errorSampleAccount[accountID] = map[string]string{}
+		}
+		errorsByCodeAccount[accountID][codeKey]++
+		sampleMsg := strings.TrimSpace(message)
+		if len(sampleMsg) > 100 {
+			sampleMsg = sampleMsg[:100] + "…"
+		}
+		if sampleMsg != "" {
+			// 每类只保留第一条（最新，因 ORDER BY created_at DESC）作为样例。
+			if _, exists := errorSampleAccount[accountID][fmt.Sprintf("%d", clientStatus)]; !exists {
+				errorSampleAccount[accountID][fmt.Sprintf("%d", clientStatus)] = sampleMsg
+			}
+		}
 	}
 	if err := errorRows.Err(); err != nil {
 		_ = errorRows.Close()
@@ -832,6 +878,21 @@ func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID 
 		if cntMsByAccount[accountID] > 0 {
 			avgMs = int64(math.Round(sumMsByAccount[accountID] / float64(cntMsByAccount[accountID])))
 		}
+		if codes := errorsByCodeAccount[accountID]; len(codes) > 0 {
+			classes := make([]AccountErrorClass, 0, len(codes))
+			for code, cnt := range codes {
+				classes = append(classes, AccountErrorClass{
+					Status:        code,
+					Count:         cnt,
+					SampleMessage: errorSampleAccount[accountID][code],
+				})
+			}
+			sort.Slice(classes, func(i, j int) bool { return classes[i].Count > classes[j].Count })
+			if len(classes) > 6 {
+				classes = classes[:6]
+			}
+			errorClassesByAccount[accountID] = classes
+		}
 		stat := AccountSuccessStat{
 			AccountID:           accountID,
 			Requests:            requests,
@@ -839,6 +900,7 @@ func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID 
 			SwitchedToRequests:  switchedByAccount[accountID],
 			SuccessRate:         ratePercent(requests, requests+failures),
 			AvgGenMs:            avgMs,
+			ErrorsByCode:        errorClassesByAccount[accountID],
 		}
 		// 仅 24h 窗口输出逐小时明细；桶时间锚定在窗口起点，与账号表汇总同源。
 		if windowHours == hourlyBuckets && hourlyRequests[accountID] != nil {

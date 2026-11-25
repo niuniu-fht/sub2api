@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -133,7 +134,26 @@ func (h *ChannelStatusHandler) GetAccountSuccessStats(c *gin.Context) {
 	if v, convErr := strconv.Atoi(c.Query("hours")); convErr == nil && v > 0 {
 		hours = v
 	}
-	accounts, windowHours, err := h.statusService.AccountSuccessStats(c.Request.Context(), groupID, hours)
+	// 可选区间（RFC3339）：start_time/end_time 优先于 hours 回溯窗口，
+	// 供渠道状态页账号明细按选中时段/自定义区间下钻。
+	var startAt, endAt time.Time
+	if raw := strings.TrimSpace(c.Query("start_time")); raw != "" {
+		if parsed, perr := time.Parse(time.RFC3339, raw); perr == nil {
+			startAt = parsed
+		} else {
+			response.BadRequest(c, "start_time must be RFC3339")
+			return
+		}
+	}
+	if raw := strings.TrimSpace(c.Query("end_time")); raw != "" {
+		if parsed, perr := time.Parse(time.RFC3339, raw); perr == nil {
+			endAt = parsed
+		} else {
+			response.BadRequest(c, "end_time must be RFC3339")
+			return
+		}
+	}
+	accounts, windowHours, err := h.statusService.AccountSuccessStatsRange(c.Request.Context(), groupID, hours, startAt, endAt)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

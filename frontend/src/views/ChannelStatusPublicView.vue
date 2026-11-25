@@ -289,6 +289,21 @@
                   leave-to-class="max-h-0 opacity-0"
                 >
                   <div v-if="accountsExpanded[group.id]" class="overflow-hidden">
+                    <div class="mb-2 flex flex-wrap items-center gap-2">
+                      <div class="flex gap-1 rounded-lg bg-gray-100 p-0.5 dark:bg-dark-900">
+                        <button
+                          v-for="opt in accountRangeOptions"
+                          :key="opt.value"
+                          type="button"
+                          class="rounded px-2 py-0.5 text-[10px] font-medium transition"
+                          :class="accountRange[group.id] === opt.value ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'"
+                          @click.stop="setAccountRange(group.id, opt.value)"
+                        >{{ opt.label }}</button>
+                      </div>
+                      <span v-if="isBucketSelected(group)" class="text-[10px] text-primary-600 dark:text-primary-400">
+                        {{ t('statusPage.drilldownTitle', { range: bucketRangeLabel(group, selectedBuckets[group.id] as number) }) }}
+                      </span>
+                    </div>
                     <div v-if="accountStatsLoading[group.id]" class="py-3 text-center text-xs text-gray-400">
                       {{ t('common.loading') }}
                     </div>
@@ -306,6 +321,7 @@
                             <th class="py-1.5 pr-4 text-right font-semibold">{{ t('statusPage.avgGenCol') }}</th>
                             <th class="py-1.5 pr-6 font-semibold">{{ t('statusPage.successRateCol') }}</th>
                             <th class="py-1.5 font-semibold">{{ t('statusPage.hourlyCol') }}</th>
+                            <th class="py-1.5 font-semibold">{{ t('statusPage.errorsCol') }}</th>
                           </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
@@ -346,6 +362,17 @@
                                 ></div>
                               </div>
                             </td>
+                            <td class="py-2">
+                              <div class="flex max-w-[240px] flex-wrap items-center gap-1">
+                                <span
+                                  v-for="ec in acc.errors_by_code || []"
+                                  :key="ec.status"
+                                  class="rounded bg-red-50 px-1.5 py-0.5 font-mono text-[10px] font-medium text-red-600 dark:bg-red-900/30 dark:text-red-300"
+                                  :title="ec.sample_message || ec.status"
+                                >{{ ec.status }} ×{{ ec.count }}</span>
+                                <span v-if="!(acc.errors_by_code || []).length" class="text-[10px] text-gray-400">—</span>
+                              </div>
+                            </td>
                           </tr>
                         </tbody>
                       </table>
@@ -362,7 +389,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PlazaNavBar from '@/components/modelPlaza/PlazaNavBar.vue'
 import AutoRefreshButton from '@/components/common/AutoRefreshButton.vue'
@@ -545,7 +572,7 @@ async function loadAccountStats(groupId: number): Promise<void> {
         accountNameById.value = {}
       }
     }
-    const res = await getChannelStatusAccountStats(groupId, snapshot.value.window_hours || 24)
+    const res = await getChannelStatusAccountStats(groupId, 168, accountStatsRangeFor(groupId))
     accountStats.value = { ...accountStats.value, [groupId]: res.accounts || [] }
   } catch {
     accountStats.value = { ...accountStats.value, [groupId]: [] }
@@ -621,6 +648,55 @@ function toggleBucket(groupId: number, idx: number): void {
 function clearBucket(groupId: number): void {
   selectedBuckets.value = { ...selectedBuckets.value, [groupId]: null }
 }
+
+// 账号明细统计范围：window=快照整窗；3d/7d=自定义区间；选中时间线桶时优先按该小时联动。
+const accountRange = ref<Record<number, string>>({})
+const accountRangeOptions = computed(() => [
+  { value: 'window', label: t('statusPage.rangeWindow') },
+  { value: '3d', label: t('statusPage.range3d') },
+  { value: '7d', label: t('statusPage.range7d') },
+])
+
+function setAccountRange(groupId: number, value: string): void {
+  accountRange.value = { ...accountRange.value, [groupId]: value }
+  delete accountStats.value[groupId]
+  void loadAccountStats(groupId)
+}
+
+// 桶联动：选中时间线某小时后，重新加载账号统计为该小时区间。
+watch(selectedBuckets, (sel, prev) => {
+  for (const key of Object.keys(sel)) {
+    const groupId = Number(key)
+    if (!accountsExpanded.value[groupId]) continue
+    const now = (sel as Record<number, number | null>)[groupId]
+    const before = ((prev || {}) as Record<number, number | null>)[groupId]
+    if (now !== before) {
+      delete accountStats.value[groupId]
+      void loadAccountStats(groupId)
+    }
+  }
+})
+
+function accountStatsRangeFor(groupId: number): { start?: string; end?: string } {
+  // 选中时间线桶时优先联动该小时
+  const bucketIdx = selectedBuckets.value[groupId]
+  if (bucketIdx !== null && bucketIdx !== undefined) {
+    const group = (snapshot.value?.groups || []).find((g) => g.id === groupId)
+    const buckets = group ? orderedTimeline(group) : []
+    const bucket = buckets[bucketIdx]
+    if (bucket) {
+      const endMs = bucket.bucket_start_ms + 3600_000
+      return { start: new Date(bucket.bucket_start_ms).toISOString(), end: new Date(endMs).toISOString() }
+    }
+  }
+  const range = accountRange.value[groupId] || 'window'
+  if (range === '3d' || range === '7d') {
+    const hours = range === '3d' ? 72 : 168
+    return { start: new Date(Date.now() - hours * 3600_000).toISOString() }
+  }
+  return {}
+}
+
 
 /** 模型明细数据源：选中时间线桶时展示该桶的按小时统计，否则展示整窗统计。
  * 下钻视图保留「该时段只有失败」的模型行（requests=0 也有诊断价值），只滤掉空名；
