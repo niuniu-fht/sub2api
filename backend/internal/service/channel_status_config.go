@@ -42,6 +42,7 @@ type ChannelStatusConfig struct {
 	FilterRules    []ChannelStatusFilterRule `json:"filter_rules"`
 	Thresholds     ChannelStatusThresholds   `json:"thresholds"`
 	// DisplayGroupIDs 状态页/公开 API 只展示这些分组（白名单）；空 = 展示全部分组。
+	// 白名单内的分组即使统计窗口内没有记录也会输出（状态 unknown）。
 	DisplayGroupIDs []int64 `json:"display_group_ids"`
 }
 

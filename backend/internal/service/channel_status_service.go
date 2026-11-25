@@ -52,6 +52,7 @@ var msgEmbeddedHTTPStatusRe = regexp.MustCompile(`HTTP (\d{3})`)
 //   - "<badge color="success">" 开头 → 成功行误入错误表，完全跳过；
 //   - 消息内嵌 "HTTP N"（如 AI Studio 429 包在 200 行）→ 分类真实码 "N"，计入失败；
 //   - 其余（池不可用/无可用账号/分组停用等业务失败）→ 分类 "200"，计入失败。
+//
 // skip=true 表示该行既不算失败也不进分类（用户视角与尝试视角一致跳过）。
 func classifyStatus200(message string) (classStatus string, skip bool) {
 	if strings.HasPrefix(message, "<badge color=\"success\">") {
@@ -131,22 +132,71 @@ type GroupStatus struct {
 }
 
 type ChannelStatusSnapshot struct {
-	GeneratedAtMs int64         `json:"generated_at_ms"`
-	WindowHours   int           `json:"window_hours"`
-	RefreshSec    int           `json:"refresh_seconds"`
-	Overall       string        `json:"overall"` // operational | degraded | down | unknown
+	GeneratedAtMs int64  `json:"generated_at_ms"`
+	WindowHours   int    `json:"window_hours"`
+	RefreshSec    int    `json:"refresh_seconds"`
+	Overall       string `json:"overall"` // operational | degraded | down | unknown
 	// Thresholds 是状态分级阈值（healthy/degraded 百分比），随快照下发：
 	// 前端切换「最近 1 小时」口径时用它对 last_hour 成功率重新分级状态徽章。
-	Thresholds    ChannelStatusThresholds `json:"thresholds"`
-	AvgGenMs      int64         `json:"avg_gen_ms"`  // 全站成功请求平均耗时；0 表示无样本
-	FastestMs     int64         `json:"fastest_ms"` // 全站成功耗时分布
-	SlowestMs     int64         `json:"slowest_ms"`
-	P95Ms         int64         `json:"p95_ms"`
-	P99Ms         int64         `json:"p99_ms"`
-	Groups        []GroupStatus `json:"groups"`
+	Thresholds ChannelStatusThresholds `json:"thresholds"`
+	AvgGenMs   int64                   `json:"avg_gen_ms"` // 全站成功请求平均耗时；0 表示无样本
+	FastestMs  int64                   `json:"fastest_ms"` // 全站成功耗时分布
+	SlowestMs  int64                   `json:"slowest_ms"`
+	P95Ms      int64                   `json:"p95_ms"`
+	P99Ms      int64                   `json:"p99_ms"`
+	Groups     []GroupStatus           `json:"groups"`
 }
 
 const channelStatusTimelineBuckets = 24
+
+// channelStatusGroupMeta 是组装快照时用到的分组元信息。
+type channelStatusGroupMeta struct {
+	Name      string
+	Platform  string
+	Exclusive bool
+}
+
+// channelStatusDisplayIDs 从窗口内有记录的分组（activeIDs）算出快照要输出的分组：
+// 只保留公开分组（专属分组与已删除分组不进快照）；配置了展示白名单时只输出
+// 白名单内的分组，并把白名单里窗口内没有记录的分组补在末尾（状态为 unknown）——
+// 管理员显式勾选的分组必须可见，否则低流量分组勾选后看不到，会被误认为配置未生效。
+// 白名单为空表示展示全部有记录的公开分组。
+func channelStatusDisplayIDs(activeIDs, whitelist []int64, groupMeta map[int64]channelStatusGroupMeta) []int64 {
+	isPublic := func(id int64) bool {
+		meta, ok := groupMeta[id]
+		return ok && !meta.Exclusive
+	}
+	if len(whitelist) == 0 {
+		publicIDs := make([]int64, 0, len(activeIDs))
+		for _, id := range activeIDs {
+			if isPublic(id) {
+				publicIDs = append(publicIDs, id)
+			}
+		}
+		return publicIDs
+	}
+	allowed := make(map[int64]struct{}, len(whitelist))
+	for _, id := range whitelist {
+		allowed[id] = struct{}{}
+	}
+	displayIDs := make([]int64, 0, len(whitelist))
+	seen := make(map[int64]struct{}, len(whitelist))
+	for _, id := range activeIDs {
+		if _, ok := allowed[id]; !ok || !isPublic(id) {
+			continue
+		}
+		seen[id] = struct{}{}
+		displayIDs = append(displayIDs, id)
+	}
+	for _, id := range whitelist {
+		if _, ok := seen[id]; ok || !isPublic(id) {
+			continue
+		}
+		seen[id] = struct{}{}
+		displayIDs = append(displayIDs, id)
+	}
+	return displayIDs
+}
 
 // channelLatencyStats 成功请求耗时的分布统计（同一窗口内），由
 // Aggregate/AccountSuccessStatsRange 的 percentile_cont 查询填充。
@@ -652,11 +702,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	_ = latencyRows.Close()
 
 	// 3) 分组元信息（名称/平台/是否专属）
-	groupMeta := map[int64]struct {
-		Name      string
-		Platform  string
-		Exclusive bool
-	}{}
+	groupMeta := map[int64]channelStatusGroupMeta{}
 	metaRows, err := s.db.QueryContext(ctx, `SELECT id, name, coalesce(platform, ''), coalesce(is_exclusive, false) FROM groups`)
 	if err != nil {
 		return nil, fmt.Errorf("query groups: %w", err)
@@ -669,11 +715,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 			_ = metaRows.Close()
 			return nil, fmt.Errorf("scan group row: %w", err)
 		}
-		groupMeta[id] = struct {
-			Name      string
-			Platform  string
-			Exclusive bool
-		}{Name: name, Platform: platform, Exclusive: exclusive}
+		groupMeta[id] = channelStatusGroupMeta{Name: name, Platform: platform, Exclusive: exclusive}
 	}
 	if err := metaRows.Err(); err != nil {
 		_ = metaRows.Close()
@@ -681,7 +723,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	}
 	_ = metaRows.Close()
 
-	// 4) 组装快照
+	// 4) 组装快照：先收集窗口内有记录的分组 ID（升序），再按公开性/展示白名单筛选
 	ids := make([]int64, 0, len(agg.successRequests))
 	for id := range agg.successRequests {
 		ids = append(ids, id)
@@ -693,31 +735,7 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 
-	// 只统计公开（非专属）分组：专属分组不进快照；已删除的分组（无元信息）同样跳过
-	publicIDs := make([]int64, 0, len(ids))
-	for _, id := range ids {
-		meta, ok := groupMeta[id]
-		if !ok || meta.Exclusive {
-			continue
-		}
-		publicIDs = append(publicIDs, id)
-	}
-	ids = publicIDs
-
-	// 展示白名单：配置了 display_group_ids 时只输出这些分组
-	if len(config.DisplayGroupIDs) > 0 {
-		allowed := make(map[int64]struct{}, len(config.DisplayGroupIDs))
-		for _, id := range config.DisplayGroupIDs {
-			allowed[id] = struct{}{}
-		}
-		filtered := ids[:0]
-		for _, id := range ids {
-			if _, ok := allowed[id]; ok {
-				filtered = append(filtered, id)
-			}
-		}
-		ids = filtered
-	}
+	ids = channelStatusDisplayIDs(ids, config.DisplayGroupIDs, groupMeta)
 
 	groups := make([]GroupStatus, 0, len(ids))
 	overallDown, overallDegraded := false, false
@@ -924,22 +942,22 @@ var (
 
 // AccountSuccessStat 单账号在窗口内的成功/失败统计。
 type AccountSuccessStat struct {
-	AccountID   int64               `json:"account_id"`
-	Requests    int64               `json:"requests"`
-	Failures    int64               `json:"failures"`
+	AccountID int64 `json:"account_id"`
+	Requests  int64 `json:"requests"`
+	Failures  int64 `json:"failures"`
 	// SwitchedToRequests 是"经账号切换后最终落在本账号成功"的请求数
 	//（usage_logs.account_attempts 链长 >1），衡量链路转移到达量。
-	SwitchedToRequests int64         `json:"switched_to_requests,omitempty"`
+	SwitchedToRequests int64 `json:"switched_to_requests,omitempty"`
 	// ErrorsByCode 是窗口/区间内该账号失败记录的状态码分类
 	//（status_code 计数 + 截断后的代表性错误消息），管理员排障用。
 	ErrorsByCode []AccountErrorClass `json:"errors_by_code,omitempty"`
-	SuccessRate float64             `json:"success_rate"` // 百分比 0-100；无请求时 -1 表示 unknown
-	AvgGenMs    int64               `json:"avg_gen_ms"`
-	FastestMs   int64               `json:"fastest_ms"` // 该账号成功请求的耗时分布
-	SlowestMs   int64               `json:"slowest_ms"`
-	P95Ms       int64               `json:"p95_ms"`
-	P99Ms       int64               `json:"p99_ms"`
-	Hourly      []AccountHourlyStat `json:"hourly"` // 仅 24h 窗口时返回：逐小时明细
+	SuccessRate  float64             `json:"success_rate"` // 百分比 0-100；无请求时 -1 表示 unknown
+	AvgGenMs     int64               `json:"avg_gen_ms"`
+	FastestMs    int64               `json:"fastest_ms"` // 该账号成功请求的耗时分布
+	SlowestMs    int64               `json:"slowest_ms"`
+	P95Ms        int64               `json:"p95_ms"`
+	P99Ms        int64               `json:"p99_ms"`
+	Hourly       []AccountHourlyStat `json:"hourly"` // 仅 24h 窗口时返回：逐小时明细
 }
 
 // AccountHourlyStat 单账号单小时的成功/失败统计（状态分级口径同状态页阈值）。
@@ -958,8 +976,8 @@ type AccountHourlyStat struct {
 // 返回值第二个参数为实际生效的窗口小时数（调用方超范围时被收敛）。
 // AccountErrorClass 是账号在统计区间内某一类失败（按状态码归类）的计数与样例消息。
 type AccountErrorClass struct {
-	Status      string `json:"status"`
-	Count       int64  `json:"count"`
+	Status        string `json:"status"`
+	Count         int64  `json:"count"`
 	SampleMessage string `json:"sample_message,omitempty"`
 }
 
@@ -1214,17 +1232,17 @@ func (s *ChannelStatusService) AccountSuccessStatsRange(ctx context.Context, gro
 			errorClassesByAccount[accountID] = classes
 		}
 		stat := AccountSuccessStat{
-			AccountID:           accountID,
-			Requests:            requests,
-			Failures:            failures,
-			SwitchedToRequests:  switchedByAccount[accountID],
-			SuccessRate:         ratePercent(requests, requests+failures),
-			AvgGenMs:            avgMs,
-			FastestMs:           latencyByAccount[accountID].FastestMs,
-			SlowestMs:           latencyByAccount[accountID].SlowestMs,
-			P95Ms:               latencyByAccount[accountID].P95Ms,
-			P99Ms:               latencyByAccount[accountID].P99Ms,
-			ErrorsByCode:        errorClassesByAccount[accountID],
+			AccountID:          accountID,
+			Requests:           requests,
+			Failures:           failures,
+			SwitchedToRequests: switchedByAccount[accountID],
+			SuccessRate:        ratePercent(requests, requests+failures),
+			AvgGenMs:           avgMs,
+			FastestMs:          latencyByAccount[accountID].FastestMs,
+			SlowestMs:          latencyByAccount[accountID].SlowestMs,
+			P95Ms:              latencyByAccount[accountID].P95Ms,
+			P99Ms:              latencyByAccount[accountID].P99Ms,
+			ErrorsByCode:       errorClassesByAccount[accountID],
 		}
 		// 仅 24h 窗口输出逐小时明细；桶时间锚定在窗口起点，与账号表汇总同源。
 		if windowHours == hourlyBuckets && hourlyRequests[accountID] != nil {
