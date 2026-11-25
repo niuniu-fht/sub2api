@@ -200,6 +200,22 @@
                   </svg>
                   {{ t('statusPage.models') }}
                 </button>
+                <button
+                  v-if="embedded"
+                  type="button"
+                  class="ml-3 inline-flex items-center gap-1 text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                  :data-testid="`status-accounts-toggle-${group.id}`"
+                  @click.stop="toggleAccounts(group.id)"
+                >
+                  <svg
+                    class="h-3.5 w-3.5 transition-transform duration-200"
+                    :class="accountsExpanded[group.id] ? 'rotate-90' : ''"
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"
+                  >
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                  {{ t('statusPage.accountsToggle') }}
+                </button>
                 <Transition
                   enter-active-class="transition-all duration-300 ease-out"
                   enter-from-class="max-h-0 opacity-0"
@@ -260,6 +276,78 @@
                   </div>
                 </Transition>
               </div>
+
+              <!-- 账号明细（管理端嵌入模式）：分组内各账号成功率进度条 + 逐小时 mini 时间线 -->
+              <div v-if="embedded" class="mt-3">
+                <Transition
+                  enter-active-class="transition-all duration-300 ease-out"
+                  enter-from-class="max-h-0 opacity-0"
+                  enter-to-class="max-h-[2000px] opacity-100"
+                  leave-active-class="transition-all duration-200 ease-in"
+                  leave-from-class="max-h-[2000px] opacity-100"
+                  leave-to-class="max-h-0 opacity-0"
+                >
+                  <div v-if="accountsExpanded[group.id]" class="overflow-hidden">
+                    <div v-if="accountStatsLoading[group.id]" class="py-3 text-center text-xs text-gray-400">
+                      {{ t('common.loading') }}
+                    </div>
+                    <div v-else-if="(accountStats[group.id] || []).length === 0" class="py-3 text-center text-xs text-gray-400">
+                      {{ t('statusPage.accountsEmpty') }}
+                    </div>
+                    <div v-else class="overflow-x-auto">
+                      <table class="w-full text-left text-xs">
+                        <thead>
+                          <tr class="text-[10px] uppercase tracking-widest text-gray-400">
+                            <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.accountCol') }}</th>
+                            <th class="py-1.5 pr-4 text-right font-semibold">{{ t('statusPage.requestsCol') }}</th>
+                            <th class="py-1.5 pr-4 text-right font-semibold">{{ t('statusPage.failuresCol') }}</th>
+                            <th class="py-1.5 pr-6 font-semibold">{{ t('statusPage.successRateCol') }}</th>
+                            <th class="py-1.5 font-semibold">{{ t('statusPage.hourlyCol') }}</th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 dark:divide-dark-700/60">
+                          <tr
+                            v-for="acc in accountStats[group.id] || []"
+                            :key="acc.account_id"
+                            class="transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/40"
+                            :data-testid="`status-account-${acc.account_id}`"
+                          >
+                            <td class="py-2 pr-4">
+                              <span class="font-medium text-gray-800 dark:text-gray-200">{{ accountName(acc.account_id) }}</span>
+                              <span class="ml-1.5 text-[10px] text-gray-400">#{{ acc.account_id }}</span>
+                            </td>
+                            <td class="py-2 pr-4 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ acc.requests }}</td>
+                            <td class="py-2 pr-4 text-right tabular-nums" :class="acc.failures > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'">{{ acc.failures }}</td>
+                            <td class="py-2 pr-6">
+                              <div class="flex items-center gap-2">
+                                <span class="w-12 shrink-0 tabular-nums font-medium" :class="rateTextClass(acc.success_rate)">{{ formatRate(acc.success_rate) }}</span>
+                                <div class="h-1.5 w-24 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
+                                  <div
+                                    class="h-full rounded-full transition-all duration-300"
+                                    :class="accountBarClass(acc.success_rate)"
+                                    :style="{ width: acc.success_rate >= 0 ? Math.min(100, acc.success_rate) + '%' : '0%' }"
+                                  ></div>
+                                </div>
+                              </div>
+                            </td>
+                            <td class="py-2">
+                              <div class="flex items-center gap-[3px]">
+                                <div
+                                  v-for="(h, hi) in accountHourlyBuckets(acc)"
+                                  :key="hi"
+                                  class="h-4 w-1.5 rounded-sm transition-transform hover:scale-y-125"
+                                  :class="accountHourlyClass(h)"
+                                  :title="accountHourlyTitle(h)"
+                                ></div>
+                              </div>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </Transition>
+              </div>
             </article>
           </div>
         </template>
@@ -277,6 +365,8 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import StatusTimeline from '@/components/channelStatus/StatusTimeline.vue'
+import { accountsAPI } from '@/api/admin/accounts'
+import { getChannelStatusAccountStats, type AccountSuccessStat } from '@/api/admin/settings'
 import { getChannelStatus, type ChannelHealthStatus, type ChannelStatusBucket, type ChannelStatusGroup, type ChannelStatusModelStat, type ChannelStatusSnapshot } from '@/api/channelStatus'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { useAppStore } from '@/stores/app'
@@ -419,6 +509,93 @@ function orderedTimeline(group: ChannelStatusGroup): ChannelStatusBucket[] {
 
 function toggleModels(id: number): void {
   expanded.value = { ...expanded.value, [id]: !expanded.value[id] }
+}
+
+// ---- 账号明细（管理端嵌入模式）：分组内各账号成功率 + 逐小时 mini 进度条 ----
+const accountsExpanded = ref<Record<number, boolean>>({})
+const accountStats = ref<Record<number, AccountSuccessStat[]>>({})
+const accountStatsLoading = ref<Record<number, boolean>>({})
+const accountNameById = ref<Record<number, string>>({})
+let accountNamesLoaded = false
+
+function toggleAccounts(id: number): void {
+  accountsExpanded.value = { ...accountsExpanded.value, [id]: !accountsExpanded.value[id] }
+  if (accountsExpanded.value[id]) void loadAccountStats(id)
+}
+
+async function loadAccountStats(groupId: number): Promise<void> {
+  if (accountStats.value[groupId]) return
+  if (!snapshot.value) return
+  accountStatsLoading.value = { ...accountStatsLoading.value, [groupId]: true }
+  try {
+    if (!accountNamesLoaded) {
+      accountNamesLoaded = true
+      try {
+        const res: any = await accountsAPI.list(1, 500, {})
+        const items: any[] = res?.items || []
+        const byId: Record<number, string> = {}
+        for (const a of items) byId[a.id] = a.name || `#${a.id}`
+        accountNameById.value = byId
+      } catch {
+        accountNameById.value = {}
+      }
+    }
+    const res = await getChannelStatusAccountStats(groupId, snapshot.value.window_hours || 24)
+    accountStats.value = { ...accountStats.value, [groupId]: res.accounts || [] }
+  } catch {
+    accountStats.value = { ...accountStats.value, [groupId]: [] }
+  } finally {
+    accountStatsLoading.value = { ...accountStatsLoading.value, [groupId]: false }
+  }
+}
+
+function accountName(id: number): string {
+  return accountNameById.value[id] || `#${id}`
+}
+
+function accountBarClass(rate: number): string {
+  if (rate < 0) return 'bg-gray-300 dark:bg-dark-600'
+  if (rate >= 99) return 'bg-emerald-500'
+  if (rate >= 90) return 'bg-amber-500'
+  return 'bg-red-500'
+}
+
+interface AccountHourlyCell {
+  requests: number
+  failures: number
+  success_rate: number
+  status: string
+  label: string
+}
+
+function accountHourlyBuckets(acc: AccountSuccessStat): AccountHourlyCell[] {
+  const hourly = acc.hourly || []
+  return hourly.map((h) => ({
+    requests: h.requests,
+    failures: h.failures,
+    success_rate: h.success_rate,
+    status: h.status,
+    label: new Date(h.hour_start_ms).toLocaleString(),
+  }))
+}
+
+function accountHourlyClass(h: AccountHourlyCell): string {
+  if (h.requests === 0) return 'bg-gray-200 dark:bg-dark-700'
+  switch (h.status) {
+    case 'operational':
+      return 'bg-emerald-500/80'
+    case 'degraded':
+      return 'bg-amber-500/80'
+    case 'down':
+      return 'bg-red-500/80'
+    default:
+      return 'bg-gray-300 dark:bg-dark-600'
+  }
+}
+
+function accountHourlyTitle(h: AccountHourlyCell): string {
+  if (h.requests === 0) return `${h.label} | ${t('statusPage.noRequests')}`
+  return `${h.label} | ${t('statusPage.requestsCol')}: ${h.requests} | ${t('statusPage.failuresCol')}: ${h.failures} | ${t('statusPage.successRateCol')}: ${h.success_rate.toFixed(1)}%`
 }
 
 // ---- 时间线下钻：点击某桶 → 模型明细切换为该时段数据；再点同一桶返回整窗 ----
