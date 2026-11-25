@@ -435,13 +435,16 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	}
 	_ = usageRows.Close()
 
-	// 2) 失败请求（ops_error_logs，行级取回后在 Go 侧应用过滤规则）
+	// 2) 失败请求（ops_error_logs，行级取回后在 Go 侧应用过滤规则）。
+	// 消息列必须 error_message 优先：已恢复行的 upstream_error_message 是无
+	// "Recovered" 标记的原始上游文案，若优先读它，Recovered 分类会全部失效
+	// （被误判为 200 业务失败）。
 	errorRows, err := s.db.QueryContext(ctx, `
 		SELECT group_id,
 		       coalesce(nullif(trim(requested_model), ''), model, '') AS model,
 		       coalesce(upstream_status_code, 0) AS upstream_status_code,
 		       coalesce(status_code, 0) AS status_code,
-		       coalesce(upstream_error_message, error_message, '') AS message,
+		       coalesce(nullif(error_message, ''), upstream_error_message, '') AS message,
 		       created_at
 		FROM ops_error_logs
 		WHERE created_at >= $1 AND group_id IS NOT NULL
@@ -859,7 +862,7 @@ func (s *ChannelStatusService) AccountSuccessStatsRange(ctx context.Context, gro
 		SELECT account_id,
 		       coalesce(upstream_status_code, 0) AS upstream_status_code,
 		       coalesce(status_code, 0) AS status_code,
-		       coalesce(upstream_error_message, error_message, '') AS message,
+		       coalesce(nullif(error_message, ''), upstream_error_message, '') AS message,
 		       created_at
 		FROM ops_error_logs
 		WHERE group_id = $1 AND created_at >= $2 AND created_at <= $3 AND account_id IS NOT NULL
