@@ -507,6 +507,7 @@ export default {
     switchedCol: 'Switched',
     switchedHint: 'Requests that succeeded on this account after account failover',
     errorsCol: 'Errors',
+    recoveredHint: 'Recovered intermediate failure (request ultimately succeeded after failover); ↻ prefix shows the real upstream status of that attempt',
     rangeWindow: 'Window',
     range3d: '3d',
     range7d: '7d',

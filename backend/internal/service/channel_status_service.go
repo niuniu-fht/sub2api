@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -36,6 +38,10 @@ type ChannelStatusService struct {
 }
 
 const channelStatusSnapshotRedisKey = "channel_status:snapshot"
+
+// recoveredUpstreamStatusRe 匹配「已恢复的中间失败」消息里的真实上游状态码，
+// 如 "Recovered upstream error 502: Image generation timed out"。
+var recoveredUpstreamStatusRe = regexp.MustCompile(`Recovered upstream error (\d+)`)
 
 // ---- 对外数据结构（JSON 即 API 响应契约，字段只含可公开展示信息） ----
 
@@ -840,7 +846,16 @@ func (s *ChannelStatusService) AccountSuccessStatsRange(ctx context.Context, gro
 			ensureHourly(accountID)
 			hourlyFailures[accountID][hourIndex(createdAt)]++
 		}
-		codeKey := fmt.Sprintf("%d", clientStatus)
+		// 错误分类码：status_code=200 的行是「已恢复的中间失败」（failover 换号后
+		// 最终成功，ops 行以 Recovered upstream error <code> 记录该次尝试），分类
+		// 用消息里的真实上游状态码并加 ↻ 前缀，与最终失败的红色徽章区分。
+		classStatus := fmt.Sprintf("%d", clientStatus)
+		if clientStatus == http.StatusOK {
+			if m := recoveredUpstreamStatusRe.FindStringSubmatch(message); m != nil {
+				classStatus = "↻" + m[1]
+			}
+		}
+		codeKey := classStatus
 		if errorsByCodeAccount[accountID] == nil {
 			errorsByCodeAccount[accountID] = map[string]int64{}
 			errorSampleAccount[accountID] = map[string]string{}

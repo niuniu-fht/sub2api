@@ -367,8 +367,9 @@
                                 <span
                                   v-for="ec in acc.errors_by_code || []"
                                   :key="ec.status"
-                                  class="rounded bg-red-50 px-1.5 py-0.5 font-mono text-[10px] font-medium text-red-600 dark:bg-red-900/30 dark:text-red-300"
-                                  :title="ec.sample_message || ec.status"
+                                  class="rounded px-1.5 py-0.5 font-mono text-[10px] font-medium"
+                                  :class="ec.status.startsWith('↻') ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300'"
+                                  :title="ec.status.startsWith('↻') ? (t('statusPage.recoveredHint') + ' — ' + (ec.sample_message || ec.status)) : (ec.sample_message || ec.status)"
                                 >{{ ec.status }} ×{{ ec.count }}</span>
                                 <span v-if="!(acc.errors_by_code || []).length" class="text-[10px] text-gray-400">—</span>
                               </div>

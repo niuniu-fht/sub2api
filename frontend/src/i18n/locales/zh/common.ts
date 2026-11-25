@@ -506,6 +506,7 @@ export default {
     switchedCol: '换号到达',
     switchedHint: '经账号切换（failover）后最终由该账号成功完成的请求数',
     errorsCol: '错误分类',
+    recoveredHint: '已恢复的中间失败（换号后最终成功），↻ 后为该次尝试的真实上游状态码',
     rangeWindow: '整窗',
     range3d: '近3天',
     range7d: '近7天',
