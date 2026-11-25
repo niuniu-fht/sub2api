@@ -65,7 +65,10 @@
                 · {{ t('statusPage.windowHours', { n: snapshot.window_hours }) }}
                 · {{ t('statusPage.refreshEvery', { n: snapshot.refresh_seconds }) }}
               </div>
-              <div class="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-gray-500 dark:text-gray-400">
+              <div
+                v-if="embedded && statsScope === 'window'"
+                class="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-gray-500 dark:text-gray-400"
+              >
                 <span>{{ t('statusPage.avgGenCol') }} <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(snapshot.avg_gen_ms) }}</span></span>
                 <span class="text-gray-300 dark:text-gray-600">·</span>
                 <span>{{ t('statusPage.fastestCol') }} <span class="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">{{ formatGenMs(snapshot.fastest_ms) }}</span></span>
@@ -78,14 +81,26 @@
               </div>
             </div>
           </div>
-          <AutoRefreshButton
-            :enabled="autoRefresh.enabled.value"
+          <div class="flex flex-shrink-0 items-center gap-3">
+            <div class="flex gap-1 rounded-lg bg-gray-100 p-0.5 dark:bg-dark-900" data-testid="status-scope-toggle">
+              <button
+                v-for="opt in scopeOptions"
+                :key="opt.value"
+                type="button"
+                class="rounded px-2.5 py-1 text-xs font-medium transition"
+                :class="statsScope === opt.value ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'"
+                @click="statsScope = opt.value"
+              >{{ opt.label }}</button>
+            </div>
+            <AutoRefreshButton
+              :enabled="autoRefresh.enabled.value"
             :interval-seconds="autoRefresh.intervalSeconds.value"
             :countdown="autoRefresh.countdown.value"
             :intervals="autoRefresh.intervals"
-            @update:enabled="autoRefresh.setEnabled"
-            @update:interval="autoRefresh.setInterval"
-          />
+              @update:enabled="autoRefresh.setEnabled"
+              @update:interval="autoRefresh.setInterval"
+            />
+          </div>
         </section>
 
         <!-- 首轮聚合未完成 -->
@@ -160,17 +175,20 @@
                     </div>
                     <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-gray-500 dark:text-gray-400">
                       <span>
-                        {{ t('statusPage.avgGenTime') }}
-                        <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(group.avg_gen_ms) }}</span>
+                        {{ t('statusPage.avgResponseTime') }}
+                        <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(scopeAvgMs(group)) }}</span>
+                        <span class="ml-1 text-[10px] text-gray-400 dark:text-gray-500">{{ statsScope === '1h' ? t('statusPage.scopeLastHour') : t('statusPage.scopeFullWindow') }}</span>
                       </span>
-                      <span class="text-gray-300 dark:text-gray-600">·</span>
-                      <span>{{ t('statusPage.fastestCol') }} <span class="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">{{ formatGenMs(group.fastest_ms) }}</span></span>
-                      <span class="text-gray-300 dark:text-gray-600">·</span>
-                      <span>P95 <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(group.p95_ms) }}</span></span>
-                      <span class="text-gray-300 dark:text-gray-600">·</span>
-                      <span>P99 <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(group.p99_ms) }}</span></span>
-                      <span class="text-gray-300 dark:text-gray-600">·</span>
-                      <span>{{ t('statusPage.slowestCol') }} <span class="font-medium tabular-nums text-red-500 dark:text-red-400">{{ formatGenMs(group.slowest_ms) }}</span></span>
+                      <template v-if="embedded && statsScope === 'window'">
+                        <span class="text-gray-300 dark:text-gray-600">·</span>
+                        <span>{{ t('statusPage.fastestCol') }} <span class="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">{{ formatGenMs(group.fastest_ms) }}</span></span>
+                        <span class="text-gray-300 dark:text-gray-600">·</span>
+                        <span>P95 <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(group.p95_ms) }}</span></span>
+                        <span class="text-gray-300 dark:text-gray-600">·</span>
+                        <span>P99 <span class="font-medium tabular-nums text-gray-700 dark:text-gray-200">{{ formatGenMs(group.p99_ms) }}</span></span>
+                        <span class="text-gray-300 dark:text-gray-600">·</span>
+                        <span>{{ t('statusPage.slowestCol') }} <span class="font-medium tabular-nums text-red-500 dark:text-red-400">{{ formatGenMs(group.slowest_ms) }}</span></span>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -184,9 +202,10 @@
                   </span>
                   <span
                     class="text-lg font-bold tabular-nums"
-                    :class="rateTextClass(group.success_rate)"
+                    :class="rateTextClass(scopeRate(group))"
+                    :title="statsScope === '1h' ? t('statusPage.scopeLastHour') : t('statusPage.scopeFullWindow')"
                   >
-                    {{ formatRate(group.success_rate) }}
+                    {{ formatRate(scopeRate(group)) }}
                   </span>
                 </div>
               </div>
@@ -437,6 +456,7 @@ import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import StatusTimeline from '@/components/channelStatus/StatusTimeline.vue'
 import { accountsAPI } from '@/api/admin/accounts'
 import { getChannelStatusAccountStats, type AccountSuccessStat } from '@/api/admin/settings'
+import { getChannelStatusSnapshot } from '@/api/admin/settings'
 import { getChannelStatus, type ChannelHealthStatus, type ChannelStatusBucket, type ChannelStatusGroup, type ChannelStatusModelStat, type ChannelStatusSnapshot } from '@/api/channelStatus'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { useAppStore } from '@/stores/app'
@@ -445,16 +465,37 @@ import type { GroupPlatform } from '@/types'
 
 const { t } = useI18n()
 
-withDefaults(defineProps<{
-  /** 管理端嵌入模式：跳过广场导航栏与页面级布局，由外层 AppLayout 提供 */
+const props = withDefaults(defineProps<{
+  /** 管理端嵌入模式：跳过广场导航栏与页面级布局，由外层 AppLayout 提供。
+   * 嵌入模式走管理端鉴权的完整快照接口（含耗时分布等详细指标）。 */
   embedded?: boolean
 }>(), {
   embedded: false,
 })
+const embedded = computed(() => props.embedded)
 const appStore = useAppStore()
 
 const snapshot = ref<ChannelStatusSnapshot | null>(null)
 const loading = ref(true)
+
+// 统计口径：默认「最近 1 小时」滚动窗口（所有用户可见），可切「全部窗口」。
+// 详细分布（最快/最长/P95/P99）与账号明细仅管理端（embedded）可见。
+type StatsScope = '1h' | 'window'
+const statsScope = ref<StatsScope>('1h')
+const scopeOptions = computed(() => [
+  { value: '1h' as StatsScope, label: t('statusPage.scopeLastHour') },
+  { value: 'window' as StatsScope, label: t('statusPage.scopeFullWindow') },
+])
+
+function scopeRate(group: ChannelStatusGroup): number {
+  if (statsScope.value === '1h' && group.last_hour) return group.last_hour.success_rate
+  return group.success_rate
+}
+
+function scopeAvgMs(group: ChannelStatusGroup): number {
+  if (statsScope.value === '1h' && group.last_hour) return group.last_hour.avg_gen_ms
+  return group.avg_gen_ms
+}
 const disabled = ref(false)
 const loadFailed = ref(false)
 const expanded = ref<Record<number, boolean>>({})
@@ -770,7 +811,9 @@ function bucketRangeLabel(group: ChannelStatusGroup, idx: number): string {
 
 async function load(): Promise<void> {
   try {
-    snapshot.value = await getChannelStatus()
+    snapshot.value = embedded.value
+      ? await getChannelStatusSnapshot()
+      : await getChannelStatus()
     disabled.value = false
     loadFailed.value = false
   } catch (err) {

@@ -62,6 +62,31 @@ func (h *ChannelStatusHandler) GetChannelStatus(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	// 公开接口脱敏：耗时分布（最快/最长/P95/P99）仅管理端可见。
+	response.Success(c, snapshot.PublicView())
+}
+
+// GetChannelStatusSnapshot 管理端完整快照（含耗时分布等详细指标）。
+// GET /api/v1/admin/settings/channel-status/snapshot
+func (h *ChannelStatusHandler) GetChannelStatusSnapshot(c *gin.Context) {
+	if !h.channelStatusEnabled(c) {
+		response.NotFound(c, "Channel status is not enabled")
+		return
+	}
+	snapshot, err := h.statusService.GetCachedSnapshot(c.Request.Context())
+	if err != nil {
+		if errors.Is(err, service.ErrChannelStatusNoSnapshot) {
+			response.Success(c, gin.H{
+				"generated_at_ms": time.Now().UnixMilli(),
+				"overall":         "unknown",
+				"groups":          []any{},
+				"ready":           false,
+			})
+			return
+		}
+		response.ErrorFrom(c, err)
+		return
+	}
 	response.Success(c, snapshot)
 }
 

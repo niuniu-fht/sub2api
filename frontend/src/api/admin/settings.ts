@@ -1494,6 +1494,14 @@ export interface AccountSuccessStatsResponse {
   accounts: AccountSuccessStat[];
 }
 
+/** 管理端完整渠道状态快照（含耗时分布等详细指标；公开接口已脱敏）。 */
+export async function getChannelStatusSnapshot(): Promise<import('../channelStatus').ChannelStatusSnapshot> {
+  const { data } = await apiClient.get<import('../channelStatus').ChannelStatusSnapshot>(
+    '/admin/settings/channel-status/snapshot',
+  )
+  return data
+}
+
 /** 分组内账号成功率/请求数（失败口径与渠道状态页一致）。 */
 export async function getChannelStatusAccountStats(
   groupId: number,

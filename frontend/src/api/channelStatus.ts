@@ -34,6 +34,14 @@ export interface ChannelStatusModelStat {
   p99_ms: number
 }
 
+/** 最近 1 小时滚动口径（用户态默认视图；无流量时缺省）。 */
+export interface ChannelStatusLastHour {
+  requests: number
+  failures: number
+  success_rate: number
+  avg_gen_ms: number
+}
+
 /** 单个分组的可用性状态。 */
 export interface ChannelStatusGroup {
   id: number
@@ -49,6 +57,8 @@ export interface ChannelStatusGroup {
   slowest_ms: number
   p95_ms: number
   p99_ms: number
+  /** 最近 1 小时滚动口径；窗口内无流量时缺省。 */
+  last_hour?: ChannelStatusLastHour
   models: ChannelStatusModelStat[]
   timeline: ChannelStatusBucket[]
 }

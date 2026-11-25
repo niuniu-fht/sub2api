@@ -102,6 +102,16 @@ type ChannelStatusBucket struct {
 	Models []ChannelStatusModelStatus `json:"models,omitempty"`
 }
 
+// ChannelStatusLastHour 最近 1 小时的滚动口径统计（成功率/平均耗时）。
+// 用户态状态页默认展示该口径，完整窗口数据可切换查看；详细分布（最快/
+// 最长/P95/P99）仅管理端接口返回，公开接口会脱敏掉。
+type ChannelStatusLastHour struct {
+	Requests    int64   `json:"requests"`
+	Failures    int64   `json:"failures"`
+	SuccessRate float64 `json:"success_rate"` // -1 表示该小时无请求
+	AvgGenMs    int64   `json:"avg_gen_ms"`
+}
+
 type GroupStatus struct {
 	ID          int64                      `json:"id"`
 	Name        string                     `json:"name"`
@@ -115,6 +125,7 @@ type GroupStatus struct {
 	SlowestMs   int64                      `json:"slowest_ms"`
 	P95Ms       int64                      `json:"p95_ms"`
 	P99Ms       int64                      `json:"p99_ms"`
+	LastHour    *ChannelStatusLastHour     `json:"last_hour,omitempty"`
 	Models      []ChannelStatusModelStatus `json:"models"`
 	Timeline    []ChannelStatusBucket      `json:"timeline"`
 }
@@ -468,6 +479,41 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 	}
 	_ = usageRows.Close()
 
+	// 1.5) 最近 1 小时滚动口径的成功数与平均耗时（用户态默认视图）。
+	lastHourCutoff := now.Add(-time.Hour)
+	lastHourSuccess := map[int64]int64{}
+	lastHourSumMs := map[int64]float64{}
+	lastHourCntMs := map[int64]int64{}
+	lastHourFailures := map[int64]int64{}
+	lastHourRows, err := s.db.QueryContext(ctx, `
+		SELECT group_id, count(*), avg(duration_ms)
+		FROM usage_logs
+		WHERE created_at >= $1 AND group_id IS NOT NULL
+		GROUP BY group_id
+	`, lastHourCutoff)
+	if err != nil {
+		return nil, fmt.Errorf("query last-hour usage: %w", err)
+	}
+	for lastHourRows.Next() {
+		var groupID int64
+		var requests int64
+		var avgMs *float64
+		if err := lastHourRows.Scan(&groupID, &requests, &avgMs); err != nil {
+			_ = lastHourRows.Close()
+			return nil, fmt.Errorf("scan last-hour usage row: %w", err)
+		}
+		lastHourSuccess[groupID] = requests
+		if avgMs != nil {
+			lastHourSumMs[groupID] = *avgMs * float64(requests)
+			lastHourCntMs[groupID] = requests
+		}
+	}
+	if err := lastHourRows.Err(); err != nil {
+		_ = lastHourRows.Close()
+		return nil, fmt.Errorf("iterate last-hour usage rows: %w", err)
+	}
+	_ = lastHourRows.Close()
+
 	// 2) 失败请求（ops_error_logs，行级取回后在 Go 侧应用过滤规则）。
 	// 消息列必须 error_message 优先：已恢复行的 upstream_error_message 是无
 	// "Recovered" 标记的原始上游文案，若优先读它，Recovered 分类会全部失效
@@ -515,6 +561,9 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 			}
 		}
 		agg.addFailure(groupID, model, createdAt)
+		if createdAt.After(lastHourCutoff) {
+			lastHourFailures[groupID]++
+		}
 	}
 	if err := errorRows.Err(); err != nil {
 		_ = errorRows.Close()
@@ -716,6 +765,20 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		if gl, ok := groupLatency[id]; ok {
 			gr.FastestMs, gr.SlowestMs, gr.P95Ms, gr.P99Ms = gl.FastestMs, gl.SlowestMs, gl.P95Ms, gl.P99Ms
 		}
+		lhSuccess := lastHourSuccess[id]
+		lhFailures := lastHourFailures[id]
+		if lhSuccess+lhFailures > 0 {
+			var lhAvg int64
+			if lastHourCntMs[id] > 0 {
+				lhAvg = int64(math.Round(lastHourSumMs[id] / float64(lastHourCntMs[id])))
+			}
+			gr.LastHour = &ChannelStatusLastHour{
+				Requests:    lhSuccess,
+				Failures:    lhFailures,
+				SuccessRate: ratePercent(lhSuccess, lhSuccess+lhFailures),
+				AvgGenMs:    lhAvg,
+			}
+		}
 		gr.Status = classifyChannelStatus(gr.SuccessRate, gr.Requests+gr.Failures > 0, config.Thresholds)
 
 		// 时间线（桶数固定 24，桶宽 = 窗口/24，与耗时分布查询同参数）
@@ -772,6 +835,41 @@ func (s *ChannelStatusService) Aggregate(ctx context.Context) (*ChannelStatusSna
 		P99Ms:         overallLatency.P99Ms,
 		Groups:        groups,
 	}, nil
+}
+
+// PublicView 返回脱敏后的快照副本：耗时分布（最快/最长/P95/P99）属于
+// 管理端详细指标，匿名/普通用户不可见——公开接口只保留成功率、平均耗时
+// 与最近 1 小时口径。平均耗时对用户可见（默认展示最近 1 小时口径）。
+func (s *ChannelStatusSnapshot) PublicView() *ChannelStatusSnapshot {
+	if s == nil {
+		return nil
+	}
+	clone := *s
+	clone.FastestMs, clone.SlowestMs, clone.P95Ms, clone.P99Ms = 0, 0, 0, 0
+	clone.Groups = make([]GroupStatus, len(s.Groups))
+	for i, g := range s.Groups {
+		gc := g
+		gc.FastestMs, gc.SlowestMs, gc.P95Ms, gc.P99Ms = 0, 0, 0, 0
+		gc.Models = make([]ChannelStatusModelStatus, len(g.Models))
+		for j, m := range g.Models {
+			mc := m
+			mc.FastestMs, mc.SlowestMs, mc.P95Ms, mc.P99Ms = 0, 0, 0, 0
+			gc.Models[j] = mc
+		}
+		gc.Timeline = make([]ChannelStatusBucket, len(g.Timeline))
+		for k, b := range g.Timeline {
+			bc := b
+			bc.Models = make([]ChannelStatusModelStatus, len(b.Models))
+			for j, m := range b.Models {
+				mc := m
+				mc.FastestMs, mc.SlowestMs, mc.P95Ms, mc.P99Ms = 0, 0, 0, 0
+				bc.Models[j] = mc
+			}
+			gc.Timeline[k] = bc
+		}
+		clone.Groups[i] = gc
+	}
+	return &clone
 }
 
 // StoreSnapshot 把快照写入内存 + Redis。
