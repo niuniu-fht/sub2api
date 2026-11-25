@@ -142,11 +142,8 @@
               <Icon name="megaphone" size="md" />
               <span
                 v-if="announcement?.content"
-                class="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5"
-              >
-                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
-                <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500"></span>
-              </span>
+                class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white dark:ring-dark-800"
+              ></span>
             </button>
             <div class="flex gap-1 rounded-lg bg-gray-100 p-0.5 dark:bg-dark-900" data-testid="status-scope-toggle">
               <button
@@ -692,8 +689,12 @@ const filterTabs = computed(() => [
   { value: 'unknown' as const, label: statusLabel('unknown') }
 ])
 
+/** 分组顺序：管理端配置了展示顺序（展示白名单）时即为其定义的顺序——快照已排好，这里
+ * 不再按状态/成功率重排，否则成功率一变分组就上下跳动。未配置时沿用默认的
+ * 「故障优先、成功率低者靠前」。 */
 const sortedGroups = computed<ChannelStatusGroup[]>(() => {
   const list = [...(snapshot.value?.groups ?? [])]
+  if (snapshot.value?.order_configured) return list
   list.sort((a, b) => {
     const sev = STATUS_SEVERITY[a.status] - STATUS_SEVERITY[b.status]
     if (sev !== 0) return sev

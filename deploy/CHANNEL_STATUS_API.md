@@ -104,5 +104,5 @@ GET /api/v1/channel-status
 
 - `GET /api/v1/admin/settings/channel-status` / `PUT`（管理员 JWT）：开关 `enabled` + 配置
   `config`（`window_hours` / `refresh_seconds` / `filter_rules[{status_codes,keywords}]` / `thresholds` / `display_group_ids`）
-- `display_group_ids`：展示白名单（只聚合输出这些分组）；空数组或不传 = 展示全部分组。白名单内的分组即使统计窗口内没有记录也会输出（`status` 为 `unknown`、请求数为 0）；专属分组与已删除分组始终不输出。
+- `display_group_ids`：展示白名单（只聚合输出这些分组）；空数组或不传 = 展示全部分组。白名单内的分组即使统计窗口内没有记录也会输出（`status` 为 `unknown`、请求数为 0）；专属分组与已删除分组始终不输出。配置了白名单时 `groups` 按白名单顺序输出（即状态页展示顺序，快照字段 `order_configured` 为 `true`）；未配置时按请求量降序（`order_configured` 为 `false`）。
 - 保存配置后服务端立即触发一轮聚合（无需等刷新间隔）。

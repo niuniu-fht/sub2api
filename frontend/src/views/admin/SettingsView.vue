@@ -2130,6 +2130,13 @@
                   </label>
                 </div>
                 <div v-else class="text-xs text-gray-400">{{ t("common.loading") }}</div>
+                <!-- 展示顺序：已勾选分组按此顺序出现在状态页（拖拽 / 置顶 / 上移 / 下移），随「保存配置」生效 -->
+                <ChannelStatusGroupOrderList
+                  v-if="channelStatusForm.config.display_group_ids.length > 0"
+                  v-model="channelStatusForm.config.display_group_ids"
+                  :options="channelStatusGroupOptions"
+                  class="mt-3"
+                />
                 <div
                   v-if="channelStatusDirty"
                   class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
@@ -9208,6 +9215,7 @@ import type {
 import type { ProviderInstance } from "@/types/payment";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import Icon from "@/components/icons/Icon.vue";
+import ChannelStatusGroupOrderList from "@/components/admin/settings/ChannelStatusGroupOrderList.vue";
 import Select, { type SelectOption } from "@/components/common/Select.vue";
 import {
   SITE_BILLING_MODES,

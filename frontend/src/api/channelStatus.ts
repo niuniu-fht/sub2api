@@ -72,6 +72,8 @@ export interface ChannelStatusSnapshot {
   overall: ChannelHealthStatus
   /** 状态分级阈值（百分比）：前端切换最近1小时口径时对 last_hour 重新分级。 */
   thresholds: { healthy: number; degraded: number }
+  /** 分组顺序由管理端的展示白名单定义：true 时 groups 已按该顺序排好，不得再重排。 */
+  order_configured: boolean
   /** 全站成功请求平均耗时（0 表示无样本）。 */
   avg_gen_ms: number
   /** 全站成功请求耗时分布（0 表示无样本）。 */

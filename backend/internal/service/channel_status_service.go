@@ -137,6 +137,9 @@ type ChannelStatusSnapshot struct {
 	WindowHours   int    `json:"window_hours"`
 	RefreshSec    int    `json:"refresh_seconds"`
 	Overall       string `json:"overall"` // operational | degraded | down | unknown
+	// OrderConfigured 表示分组顺序由管理端的展示白名单定义：true 时 Groups 已按该顺序
+	// 排好，前端不得再按状态/成功率重排；false 时为按请求量降序的默认顺序。
+	OrderConfigured bool `json:"order_configured"`
 	// Thresholds 是状态分级阈值（healthy/degraded 百分比），随快照下发：
 	// 前端切换「最近 1 小时」口径时用它对 last_hour 成功率重新分级状态徽章。
 	Thresholds ChannelStatusThresholds `json:"thresholds"`
@@ -158,10 +161,10 @@ type channelStatusGroupMeta struct {
 }
 
 // channelStatusDisplayIDs 从窗口内有记录的分组（activeIDs）算出快照要输出的分组：
-// 只保留公开分组（专属分组与已删除分组不进快照）；配置了展示白名单时只输出
-// 白名单内的分组，并把白名单里窗口内没有记录的分组补在末尾（状态为 unknown）——
-// 管理员显式勾选的分组必须可见，否则低流量分组勾选后看不到，会被误认为配置未生效。
-// 白名单为空表示展示全部有记录的公开分组。
+// 只保留公开分组（专属分组与已删除分组不进快照）。配置了展示白名单时按白名单顺序
+// 输出其中的公开分组——包括窗口内没有记录的（状态为 unknown）：管理员显式勾选的分组
+// 必须可见，否则低流量分组勾选后看不到，会被误认为配置未生效；白名单顺序即状态页
+// 展示顺序。白名单为空表示展示全部有记录的公开分组（保持 activeIDs 的顺序）。
 func channelStatusDisplayIDs(activeIDs, whitelist []int64, groupMeta map[int64]channelStatusGroupMeta) []int64 {
 	isPublic := func(id int64) bool {
 		meta, ok := groupMeta[id]
@@ -176,21 +179,12 @@ func channelStatusDisplayIDs(activeIDs, whitelist []int64, groupMeta map[int64]c
 		}
 		return publicIDs
 	}
-	allowed := make(map[int64]struct{}, len(whitelist))
-	for _, id := range whitelist {
-		allowed[id] = struct{}{}
-	}
+	// 配置了白名单：输出顺序即白名单顺序（管理员在设置里调整的展示顺序），窗口内没有
+	// 记录的白名单分组也按其位置输出；专属/已删除分组跳过，重复项只保留首个。
 	displayIDs := make([]int64, 0, len(whitelist))
 	seen := make(map[int64]struct{}, len(whitelist))
-	for _, id := range activeIDs {
-		if _, ok := allowed[id]; !ok || !isPublic(id) {
-			continue
-		}
-		seen[id] = struct{}{}
-		displayIDs = append(displayIDs, id)
-	}
 	for _, id := range whitelist {
-		if _, ok := seen[id]; ok || !isPublic(id) {
+		if _, dup := seen[id]; dup || !isPublic(id) {
 			continue
 		}
 		seen[id] = struct{}{}
@@ -854,7 +848,12 @@ func (s *ChannelStatusService) aggregate(ctx context.Context) (*ChannelStatusSna
 		groups = append(groups, gr)
 	}
 
-	sort.Slice(groups, func(i, j int) bool { return groups[i].Requests > groups[j].Requests })
+	// 未配置展示白名单时没有管理员定义的顺序，按请求量降序；配置了白名单则保持白名单
+	// 顺序（见 channelStatusDisplayIDs），不随实时流量变化。
+	orderConfigured := len(config.DisplayGroupIDs) > 0
+	if !orderConfigured {
+		sort.Slice(groups, func(i, j int) bool { return groups[i].Requests > groups[j].Requests })
+	}
 
 	overall := "unknown"
 	if len(groups) > 0 {
@@ -869,17 +868,18 @@ func (s *ChannelStatusService) aggregate(ctx context.Context) (*ChannelStatusSna
 	}
 
 	return &ChannelStatusSnapshot{
-		GeneratedAtMs: now.UnixMilli(),
-		WindowHours:   config.WindowHours,
-		RefreshSec:    config.RefreshSeconds,
-		Overall:       overall,
-		Thresholds:    config.Thresholds,
-		AvgGenMs:      overallLatency.AvgMs,
-		FastestMs:     overallLatency.FastestMs,
-		SlowestMs:     overallLatency.SlowestMs,
-		P95Ms:         overallLatency.P95Ms,
-		P99Ms:         overallLatency.P99Ms,
-		Groups:        groups,
+		GeneratedAtMs:   now.UnixMilli(),
+		WindowHours:     config.WindowHours,
+		RefreshSec:      config.RefreshSeconds,
+		Overall:         overall,
+		OrderConfigured: orderConfigured,
+		Thresholds:      config.Thresholds,
+		AvgGenMs:        overallLatency.AvgMs,
+		FastestMs:       overallLatency.FastestMs,
+		SlowestMs:       overallLatency.SlowestMs,
+		P95Ms:           overallLatency.P95Ms,
+		P99Ms:           overallLatency.P99Ms,
+		Groups:          groups,
 	}, nil
 }
 

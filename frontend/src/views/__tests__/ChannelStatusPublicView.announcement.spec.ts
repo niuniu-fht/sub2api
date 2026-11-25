@@ -136,5 +136,7 @@ describe('channel status announcement bar', () => {
     mocks.isAdmin = true
     const admin = await mountReady({ panel: true })
     expect(admin.get(EDIT).text()).toContain('statusPage.annEdit')
+    // 有生效公告时喇叭按钮右上角要有红点（曾因模板改坏只剩一个空元素）
+    expect(admin.get('[data-testid="status-announcement-btn"] .bg-red-500').exists()).toBe(true)
   })
 })

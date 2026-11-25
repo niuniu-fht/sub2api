@@ -40,12 +40,9 @@
               <Icon name="megaphone" size="md" :class="hasAnnouncement ? 'text-amber-500' : 'text-gray-400'" />
               <span
                 v-if="hasAnnouncement"
-                class="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5"
+                class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white dark:ring-dark-800"
                 data-testid="channels-announcement-dot"
-              >
-                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75"></span>
-                <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500"></span>
-              </span>
+              ></span>
             </button>
             <button
               @click="loadChannels"
