@@ -503,6 +503,8 @@ export default {
     accountCol: '账号',
     requestsCol: '请求数',
     failuresCol: '失败数',
+    switchedCol: '换号到达',
+    switchedHint: '经账号切换（failover）后最终由该账号成功完成的请求数',
     hourlyCol: '逐小时成功率',
     noRequests: '无请求',
     disabledTitle: '渠道状态页未启用',

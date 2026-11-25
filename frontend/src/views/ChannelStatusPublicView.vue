@@ -183,8 +183,9 @@
                 />
               </div>
 
-              <!-- 模型明细（可展开，带过渡）；点击时间线桶可下钻该时段数据 -->
-              <div v-if="namedModels(group).length > 0 || isBucketSelected(group)" class="mt-3">
+              <!-- 模型明细（可展开，带过渡）；点击时间线桶可下钻该时段数据。
+                   仅管理端嵌入模式提供：用户/匿名页只看分组级状态。 -->
+              <div v-if="embedded && (namedModels(group).length > 0 || isBucketSelected(group))" class="mt-3">
                 <button
                   type="button"
                   class="inline-flex items-center gap-1 text-xs font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
@@ -301,6 +302,8 @@
                             <th class="py-1.5 pr-4 font-semibold">{{ t('statusPage.accountCol') }}</th>
                             <th class="py-1.5 pr-4 text-right font-semibold">{{ t('statusPage.requestsCol') }}</th>
                             <th class="py-1.5 pr-4 text-right font-semibold">{{ t('statusPage.failuresCol') }}</th>
+                            <th class="py-1.5 pr-4 text-right font-semibold">{{ t('statusPage.switchedCol') }}</th>
+                            <th class="py-1.5 pr-4 text-right font-semibold">{{ t('statusPage.avgGenCol') }}</th>
                             <th class="py-1.5 pr-6 font-semibold">{{ t('statusPage.successRateCol') }}</th>
                             <th class="py-1.5 font-semibold">{{ t('statusPage.hourlyCol') }}</th>
                           </tr>
@@ -318,6 +321,8 @@
                             </td>
                             <td class="py-2 pr-4 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ acc.requests }}</td>
                             <td class="py-2 pr-4 text-right tabular-nums" :class="acc.failures > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-400'">{{ acc.failures }}</td>
+                            <td class="py-2 pr-4 text-right tabular-nums" :class="(acc.switched_to_requests || 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400'" :title="t('statusPage.switchedHint')">{{ acc.switched_to_requests || '—' }}</td>
+                            <td class="py-2 pr-4 text-right tabular-nums text-gray-600 dark:text-gray-300">{{ formatGenMs(acc.avg_gen_ms) }}</td>
                             <td class="py-2 pr-6">
                               <div class="flex items-center gap-2">
                                 <span class="w-12 shrink-0 tabular-nums font-medium" :class="rateTextClass(acc.success_rate)">{{ formatRate(acc.success_rate) }}</span>

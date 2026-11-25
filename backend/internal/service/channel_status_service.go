@@ -657,6 +657,9 @@ type AccountSuccessStat struct {
 	AccountID   int64               `json:"account_id"`
 	Requests    int64               `json:"requests"`
 	Failures    int64               `json:"failures"`
+	// SwitchedToRequests 是"经账号切换后最终落在本账号成功"的请求数
+	//（usage_logs.account_attempts 链长 >1），衡量链路转移到达量。
+	SwitchedToRequests int64         `json:"switched_to_requests,omitempty"`
 	SuccessRate float64             `json:"success_rate"` // 百分比 0-100；无请求时 -1 表示 unknown
 	AvgGenMs    int64               `json:"avg_gen_ms"`
 	Hourly      []AccountHourlyStat `json:"hourly"` // 仅 24h 窗口时返回：逐小时明细
@@ -704,6 +707,7 @@ func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID 
 	sumMsByAccount := map[int64]float64{}
 	cntMsByAccount := map[int64]int64{}
 	failuresByAccount := map[int64]int64{}
+	switchedByAccount := map[int64]int64{}
 	// 逐小时明细（仅 24h 窗口）：account_id → hour index → 统计
 	const hourlyBuckets = 24
 	hourlyRequests := map[int64][]int64{}
@@ -733,6 +737,7 @@ func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID 
 		SELECT account_id,
 		       count(*) AS requests,
 		       avg(duration_ms) AS avg_ms,
+		       count(*) FILTER (WHERE jsonb_array_length(account_attempts) > 1) AS switched,
 		       date_trunc('hour', created_at) AS bucket_hour
 		FROM usage_logs
 		WHERE group_id = $1 AND created_at >= $2 AND account_id IS NOT NULL
@@ -745,12 +750,14 @@ func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID 
 		var accountID int64
 		var requests int64
 		var avgMs *float64
+		var switched int64
 		var bucketHour time.Time
-		if err := usageRows.Scan(&accountID, &requests, &avgMs, &bucketHour); err != nil {
+		if err := usageRows.Scan(&accountID, &requests, &avgMs, &switched, &bucketHour); err != nil {
 			_ = usageRows.Close()
 			return nil, 0, fmt.Errorf("scan account usage row: %w", err)
 		}
 		requestsByAccount[accountID] += requests
+		switchedByAccount[accountID] += switched
 		if avgMs != nil {
 			sumMsByAccount[accountID] += *avgMs * float64(requests)
 			cntMsByAccount[accountID] += requests
@@ -826,11 +833,12 @@ func (s *ChannelStatusService) AccountSuccessStats(ctx context.Context, groupID 
 			avgMs = int64(math.Round(sumMsByAccount[accountID] / float64(cntMsByAccount[accountID])))
 		}
 		stat := AccountSuccessStat{
-			AccountID:   accountID,
-			Requests:    requests,
-			Failures:    failures,
-			SuccessRate: ratePercent(requests, requests+failures),
-			AvgGenMs:    avgMs,
+			AccountID:           accountID,
+			Requests:            requests,
+			Failures:            failures,
+			SwitchedToRequests:  switchedByAccount[accountID],
+			SuccessRate:         ratePercent(requests, requests+failures),
+			AvgGenMs:            avgMs,
 		}
 		// 仅 24h 窗口输出逐小时明细；桶时间锚定在窗口起点，与账号表汇总同源。
 		if windowHours == hourlyBuckets && hourlyRequests[accountID] != nil {

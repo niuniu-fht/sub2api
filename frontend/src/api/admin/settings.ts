@@ -1467,6 +1467,8 @@ export interface AccountSuccessStat {
   account_id: number;
   requests: number;
   failures: number;
+  /** 经账号切换后最终落在本账号成功的请求数（account_attempts 链长>1）。 */
+  switched_to_requests?: number;
   /** 百分比 0-100；-1 表示窗口内无请求。 */
   success_rate: number;
   avg_gen_ms: number;

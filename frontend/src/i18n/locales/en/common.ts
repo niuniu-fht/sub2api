@@ -504,6 +504,8 @@ export default {
     accountCol: 'Account',
     requestsCol: 'Requests',
     failuresCol: 'Failures',
+    switchedCol: 'Switched',
+    switchedHint: 'Requests that succeeded on this account after account failover',
     hourlyCol: 'Hourly success rate',
     noRequests: 'No requests',
     disabledTitle: 'Channel status page is disabled',
