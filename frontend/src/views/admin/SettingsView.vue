@@ -2132,10 +2132,11 @@
                 <div v-else class="text-xs text-gray-400">{{ t("common.loading") }}</div>
                 <!-- 展示顺序：已勾选分组按此顺序出现在状态页（拖拽 / 置顶 / 上移 / 下移），随「保存配置」生效 -->
                 <ChannelStatusGroupOrderList
-                  v-if="channelStatusForm.config.display_group_ids.length > 0"
-                  v-model="channelStatusForm.config.display_group_ids"
+                  v-if="channelStatusEffectiveGroupIds.length > 0"
+                  :model-value="channelStatusEffectiveGroupIds"
                   :options="channelStatusGroupOptions"
                   class="mt-3"
+                  @update:model-value="channelStatusForm.config.display_group_ids = $event"
                 />
                 <div
                   v-if="channelStatusDirty"
@@ -9464,6 +9465,15 @@ const channelStatusSelectedGroupIds = computed({
 });
 // 规则行的文本输入形态（逗号分隔）
 const channelStatusRuleRows = ref<Array<{ status_codes: string; keywords: string }>>([]);
+// 白名单里可能残留后来改成专属的分组：它们不会出现在状态页，勾选列表里也没有对应项。
+// 分组选项加载成功后，排序列表与保存的载荷都只保留仍可选的分组，
+// 避免留下一行既显示不出名字、也无法移除的 "#id"。选项加载失败时原样保留，不做过滤。
+const channelStatusEffectiveGroupIds = computed(() => {
+  const ids = channelStatusForm.config.display_group_ids;
+  if (channelStatusGroupOptions.value.length === 0) return ids;
+  const selectable = new Set(channelStatusGroupOptions.value.map((group) => group.id));
+  return ids.filter((id) => selectable.has(id));
+});
 // 未保存更改标记：表单载荷与最近一次加载/保存的结果不一致时为 true。
 // 分组勾选、窗口、阈值、过滤规则都要点「保存配置」才生效——勾选处与底部同时提示，
 // 避免勾了分组却以为已生效（公告卡片的「发布公告」只保存公告）。
@@ -12604,7 +12614,7 @@ function buildChannelStatusPayload() {
       refresh_seconds: channelStatusForm.config.refresh_seconds,
       filter_rules: rules,
       thresholds: channelStatusForm.config.thresholds,
-      display_group_ids: channelStatusForm.config.display_group_ids,
+      display_group_ids: channelStatusEffectiveGroupIds.value,
     },
   };
 }
